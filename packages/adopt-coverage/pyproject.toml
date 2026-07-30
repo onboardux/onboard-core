@@ -1,0 +1,15 @@
+[project]
+name = "adopt-coverage"
+version = "0.3.0.dev0"
+description = "recompute_coverage and the cache-disagreement alarm. Implemented in S4."
+requires-python = ">=3.12"
+# `no-covered-cache-write` contract: this is the ONLY package permitted to write
+# `covered_cache` or `covered_cache_at`.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_coverage"]

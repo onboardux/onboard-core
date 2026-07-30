@@ -1,0 +1,105 @@
+"""The `adopt` CLI entry point.
+
+Three postures are set here and inherited by every command added later:
+
+* **`--json` on every command.** The JSON envelope is a contract from 0.3.0.
+* **Offline by default.** Network egress requires `--allow-network`. In offline
+  mode the process opens no socket other than to a configured local adapter
+  endpoint.
+* **Typed errors map to stable exit codes.** `0` success, `1` operational
+  failure, `2` usage error, `3` policy refusal, `4` degraded success with
+  findings. The mapping lives in `adopt_obs.errors` -- a second copy here would
+  be a second place to get it wrong.
+"""
+
+import sys
+from typing import Annotated
+
+import click
+import typer
+
+from adopt_cli.commands import doctor as doctor_command
+from adopt_cli.commands import version as version_command
+from adopt_cli.json_out import emit, emit_error
+from adopt_obs import AdoptError, ExitCode, get_logger
+
+__all__ = ["app", "main"]
+
+app = typer.Typer(
+    name="adopt",
+    help="Adoption-Phase Platform CLI. Offline by default; no telemetry, ever.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+
+JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
+NetworkOption = Annotated[
+    bool,
+    typer.Option(
+        "--allow-network",
+        help="Permit network egress for this invocation. Offline is the default posture.",
+    ),
+]
+
+
+@app.callback()
+def _root(ctx: typer.Context, allow_network: NetworkOption = False) -> None:
+    """Set the process posture before any command runs."""
+    ctx.ensure_object(dict)
+    ctx.obj["allow_network"] = allow_network
+
+
+@app.command()
+def version(json_output: JsonOption = False) -> None:
+    """Report the binary, schema and export versions and the build provenance."""
+    emit(version_command.build_payload(), as_json=json_output, title="adopt version")
+
+
+@app.command()
+def doctor(json_output: JsonOption = False) -> None:
+    """Report every configuration key with its resolved value and source.
+
+    Exits `4` when there are findings: degraded success, not failure. `doctor`
+    never repairs what it reports.
+    """
+    payload, findings = doctor_command.build_payload()
+    emit(payload, as_json=json_output, title="adopt doctor")
+    if findings:
+        raise typer.Exit(ExitCode.DEGRADED_WITH_FINDINGS)
+
+
+def _wants_json(argv: list[str] | None) -> bool:
+    return "--json" in (argv if argv is not None else sys.argv[1:])
+
+
+def _exit_code_of(error: click.ClickException | click.exceptions.Exit) -> int:
+    if isinstance(error, click.exceptions.Exit):
+        return int(error.exit_code)
+    if isinstance(error, click.UsageError):
+        error.show()
+        return ExitCode.USAGE_ERROR
+    error.show()
+    return ExitCode.OPERATIONAL_FAILURE
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Console-script entry point carrying the contracts §13 exit-code mapping.
+
+    A typed `AdoptError` escaping a command is rendered as the one documented
+    envelope and mapped to its category's exit code here, so no command has to
+    remember to do it. Click's own control-flow exceptions are translated in the
+    same place for the same reason.
+    """
+    log = get_logger("adopt_cli")
+    try:
+        app(args=argv, standalone_mode=False)
+    except AdoptError as error:
+        emit_error(error.to_envelope(), as_json=_wants_json(argv))
+        log.error("cli.failed", code=str(error.code), category=str(error.category))
+        return error.exit_code
+    except click.exceptions.Abort:
+        log.warn("cli.aborted")
+        return ExitCode.OPERATIONAL_FAILURE
+    except (click.ClickException, click.exceptions.Exit) as error:
+        return _exit_code_of(error)
+    return ExitCode.SUCCESS

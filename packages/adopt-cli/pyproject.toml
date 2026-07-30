@@ -1,0 +1,22 @@
+[project]
+name = "adopt-cli"
+version = "0.3.0.dev0"
+description = "The adopt command surface: config resolution, JSON mode, exit codes."
+requires-python = ">=3.12"
+dependencies = [
+    "adopt-const",
+    "adopt-obs",
+    "typer>=0.12,<1",
+    "rich>=13,<15",
+    "click>=8,<9",
+]
+
+[project.scripts]
+adopt = "adopt_cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_cli"]

@@ -1,0 +1,238 @@
+"""Typed errors, the code registry, categories, and the exit-code mapping.
+
+Every error the programme raises across a package boundary is an
+:class:`AdoptError` carrying a code from :class:`ErrorCode`. The registry below
+is the executable half of ``02-contracts-build0.md`` §13;
+``scripts/error_registry_sync.py`` fails the build when the two disagree in
+either direction, so a code cannot be added to the code without being
+documented, nor documented without being implemented.
+
+**Category is derived from the code, not supplied by the caller.** The
+implementation spec's signature ``AdoptError(code, category, message, hint)``
+still works, but passing a category that contradicts the registry raises rather
+than being accepted -- one code meaning two categories on two call sites is
+exactly the drift the registry exists to prevent.
+
+The exit-code mapping lives here rather than in the CLI because it is a
+function of the category, and the category is owned here. A second copy in the
+CLI would be a second place to get it wrong.
+"""
+
+from enum import StrEnum
+from typing import Final
+
+__all__ = [
+    "CATEGORY_EXIT_CODES",
+    "ERROR_CATEGORIES",
+    "AdoptError",
+    "ErrorCategory",
+    "ErrorCode",
+    "ExitCode",
+    "exit_code_for",
+]
+
+
+class ErrorCategory(StrEnum):
+    """The five categories in contracts §13."""
+
+    USAGE = "usage"
+    POLICY = "policy"
+    INTEGRITY = "integrity"
+    TRANSIENT = "transient"
+    INTERNAL = "internal"
+
+
+class ExitCode:
+    """Stable process exit codes (contracts §13, PRD F16.7).
+
+    Not an enum: these are returned to a shell, compared by integrators in
+    scripts, and must stay plain integers at every boundary.
+    """
+
+    SUCCESS: Final[int] = 0
+    OPERATIONAL_FAILURE: Final[int] = 1
+    USAGE_ERROR: Final[int] = 2
+    # const-sync: ok -- a contracts §13 exit code, fixed by contract, not a tunable.
+    POLICY_REFUSAL: Final[int] = 3
+    DEGRADED_WITH_FINDINGS: Final[int] = 4
+
+
+CATEGORY_EXIT_CODES: Final[dict[ErrorCategory, int]] = {
+    ErrorCategory.USAGE: ExitCode.USAGE_ERROR,
+    ErrorCategory.POLICY: ExitCode.POLICY_REFUSAL,
+    ErrorCategory.INTEGRITY: ExitCode.OPERATIONAL_FAILURE,
+    ErrorCategory.INTERNAL: ExitCode.OPERATIONAL_FAILURE,
+    # A transient failure is an operational failure to the caller. It is
+    # retriable, but the process still did not do what it was asked.
+    ErrorCategory.TRANSIENT: ExitCode.OPERATIONAL_FAILURE,
+}
+
+
+class ErrorCode(StrEnum):
+    """Every error code in contracts §13. Adding one here without adding it
+    there (or the reverse) fails `error-registry-sync`."""
+
+    ADOPT_OFFLINE_DENIED = "ADOPT_OFFLINE_DENIED"
+    ADOPT_CONFIG_UNRESOLVED = "ADOPT_CONFIG_UNRESOLVED"
+
+    SCHEMA_NON_ADDITIVE = "SCHEMA_NON_ADDITIVE"
+    SCHEMA_GENERATED_DRIFT = "SCHEMA_GENERATED_DRIFT"
+    SCHEMA_VERSION_TOO_NEW = "SCHEMA_VERSION_TOO_NEW"
+    SCHEMA_MIGRATION_PENDING = "SCHEMA_MIGRATION_PENDING"
+    SCHEMA_MIGRATION_FAILED = "SCHEMA_MIGRATION_FAILED"
+
+    SCOPE_SLUG_INVALID = "SCOPE_SLUG_INVALID"
+    SCOPE_SLUG_IMMUTABLE = "SCOPE_SLUG_IMMUTABLE"
+    SCOPE_SLUG_REUSED = "SCOPE_SLUG_REUSED"
+    SCOPE_VIOLATION = "SCOPE_VIOLATION"
+
+    URI_MALFORMED = "URI_MALFORMED"
+    URI_TOO_LONG = "URI_TOO_LONG"
+    URI_SCHEME_UNKNOWN = "URI_SCHEME_UNKNOWN"
+    URI_DOUBLE_ENCODED = "URI_DOUBLE_ENCODED"
+
+    REVISION_CHAIN_FORK = "REVISION_CHAIN_FORK"
+    REVISION_IMMUTABLE = "REVISION_IMMUTABLE"
+    REVISION_HEAD_DANGLING = "REVISION_HEAD_DANGLING"
+
+    COVERAGE_CACHE_DISAGREEMENT = "COVERAGE_CACHE_DISAGREEMENT"
+    FRESHNESS_SENSOR_DEGRADED = "FRESHNESS_SENSOR_DEGRADED"
+
+    EXPORT_VERSION_UNSUPPORTED = "EXPORT_VERSION_UNSUPPORTED"
+    EXPORT_DIGEST_MISMATCH = "EXPORT_DIGEST_MISMATCH"
+    EXPORT_ROUNDTRIP_UNSTABLE = "EXPORT_ROUNDTRIP_UNSTABLE"
+
+    DETECT_AMBIGUOUS = "DETECT_AMBIGUOUS"
+    TIER_INSUFFICIENT = "TIER_INSUFFICIENT"
+    TIER_DECLINE_RECOMMENDED = "TIER_DECLINE_RECOMMENDED"
+
+    MANIFEST_UNDECLARED_HOST = "MANIFEST_UNDECLARED_HOST"
+    MANIFEST_MISSING_SAFE_PATH = "MANIFEST_MISSING_SAFE_PATH"
+    MANIFEST_INVALID = "MANIFEST_INVALID"
+
+    ENVELOPE_CONTENT_UNDER_METADATA_ONLY = "ENVELOPE_CONTENT_UNDER_METADATA_ONLY"
+    ENVELOPE_POLICY_NOT_PERMITTED = "ENVELOPE_POLICY_NOT_PERMITTED"
+
+    AGENT_ADAPTER_UNKNOWN = "AGENT_ADAPTER_UNKNOWN"
+    AGENT_OFFLINE_ADAPTER_DENIED = "AGENT_OFFLINE_ADAPTER_DENIED"
+    AGENT_BUDGET_EXHAUSTED = "AGENT_BUDGET_EXHAUSTED"
+    AGENT_OUTPUT_SCHEMA = "AGENT_OUTPUT_SCHEMA"
+    AGENT_PROVIDER_ERROR = "AGENT_PROVIDER_ERROR"
+
+    WORKFLOW_STEP_EXHAUSTED = "WORKFLOW_STEP_EXHAUSTED"
+    WORKFLOW_BODY_IMPURE = "WORKFLOW_BODY_IMPURE"
+    WORKFLOW_DUPLICATE_START = "WORKFLOW_DUPLICATE_START"
+
+    LICENCE_POLICY_VIOLATION = "LICENCE_POLICY_VIOLATION"
+
+
+#: Code -> category, verbatim from the contracts §13 table.
+ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
+    ErrorCode.ADOPT_OFFLINE_DENIED: ErrorCategory.POLICY,
+    ErrorCode.ADOPT_CONFIG_UNRESOLVED: ErrorCategory.USAGE,
+    ErrorCode.SCHEMA_NON_ADDITIVE: ErrorCategory.POLICY,
+    ErrorCode.SCHEMA_GENERATED_DRIFT: ErrorCategory.INTEGRITY,
+    ErrorCode.SCHEMA_VERSION_TOO_NEW: ErrorCategory.POLICY,
+    ErrorCode.SCHEMA_MIGRATION_PENDING: ErrorCategory.USAGE,
+    ErrorCode.SCHEMA_MIGRATION_FAILED: ErrorCategory.INTEGRITY,
+    ErrorCode.SCOPE_SLUG_INVALID: ErrorCategory.USAGE,
+    ErrorCode.SCOPE_SLUG_IMMUTABLE: ErrorCategory.POLICY,
+    ErrorCode.SCOPE_SLUG_REUSED: ErrorCategory.POLICY,
+    ErrorCode.SCOPE_VIOLATION: ErrorCategory.POLICY,
+    ErrorCode.URI_MALFORMED: ErrorCategory.USAGE,
+    ErrorCode.URI_TOO_LONG: ErrorCategory.USAGE,
+    ErrorCode.URI_SCHEME_UNKNOWN: ErrorCategory.USAGE,
+    ErrorCode.URI_DOUBLE_ENCODED: ErrorCategory.USAGE,
+    ErrorCode.REVISION_CHAIN_FORK: ErrorCategory.INTEGRITY,
+    ErrorCode.REVISION_IMMUTABLE: ErrorCategory.POLICY,
+    ErrorCode.REVISION_HEAD_DANGLING: ErrorCategory.INTEGRITY,
+    ErrorCode.COVERAGE_CACHE_DISAGREEMENT: ErrorCategory.INTEGRITY,
+    ErrorCode.FRESHNESS_SENSOR_DEGRADED: ErrorCategory.POLICY,
+    ErrorCode.EXPORT_VERSION_UNSUPPORTED: ErrorCategory.POLICY,
+    ErrorCode.EXPORT_DIGEST_MISMATCH: ErrorCategory.INTEGRITY,
+    ErrorCode.EXPORT_ROUNDTRIP_UNSTABLE: ErrorCategory.INTEGRITY,
+    ErrorCode.DETECT_AMBIGUOUS: ErrorCategory.USAGE,
+    ErrorCode.TIER_INSUFFICIENT: ErrorCategory.POLICY,
+    ErrorCode.TIER_DECLINE_RECOMMENDED: ErrorCategory.POLICY,
+    ErrorCode.MANIFEST_UNDECLARED_HOST: ErrorCategory.POLICY,
+    ErrorCode.MANIFEST_MISSING_SAFE_PATH: ErrorCategory.POLICY,
+    ErrorCode.MANIFEST_INVALID: ErrorCategory.USAGE,
+    ErrorCode.ENVELOPE_CONTENT_UNDER_METADATA_ONLY: ErrorCategory.POLICY,
+    ErrorCode.ENVELOPE_POLICY_NOT_PERMITTED: ErrorCategory.POLICY,
+    ErrorCode.AGENT_ADAPTER_UNKNOWN: ErrorCategory.USAGE,
+    ErrorCode.AGENT_OFFLINE_ADAPTER_DENIED: ErrorCategory.POLICY,
+    ErrorCode.AGENT_BUDGET_EXHAUSTED: ErrorCategory.POLICY,
+    ErrorCode.AGENT_OUTPUT_SCHEMA: ErrorCategory.INTERNAL,
+    ErrorCode.AGENT_PROVIDER_ERROR: ErrorCategory.TRANSIENT,
+    ErrorCode.WORKFLOW_STEP_EXHAUSTED: ErrorCategory.INTERNAL,
+    ErrorCode.WORKFLOW_BODY_IMPURE: ErrorCategory.POLICY,
+    ErrorCode.WORKFLOW_DUPLICATE_START: ErrorCategory.USAGE,
+    ErrorCode.LICENCE_POLICY_VIOLATION: ErrorCategory.POLICY,
+}
+
+#: `AGENT_BUDGET_EXHAUSTED` is returned as `AgentResult.status` and is **never
+#: raised** (contracts §13). Constructing it as an exception is a programming
+#: error, not a runtime condition, so it is refused at construction.
+_NEVER_RAISED: Final[frozenset[ErrorCode]] = frozenset({ErrorCode.AGENT_BUDGET_EXHAUSTED})
+
+
+def exit_code_for(code: ErrorCode) -> int:
+    """The process exit code a given error code should terminate with."""
+    return CATEGORY_EXIT_CODES[ERROR_CATEGORIES[code]]
+
+
+class AdoptError(Exception):
+    """The one error type that crosses a package boundary.
+
+    Never raise a bare exception across a package boundary and never swallow
+    one. A message is for a human; the ``code`` is what callers, tests and the
+    CLI's exit status branch on.
+    """
+
+    def __init__(
+        self,
+        code: ErrorCode,
+        category: ErrorCategory | None = None,
+        message: str = "",
+        hint: str | None = None,
+        *,
+        run_id: str | None = None,
+    ) -> None:
+        registered = ERROR_CATEGORIES[code]
+        if category is not None and category is not registered:
+            raise ValueError(
+                f"{code} is registered as {registered}, not {category}. "
+                "Change contracts §13 and ERROR_CATEGORIES together, or use the "
+                "registered category."
+            )
+        if code in _NEVER_RAISED:
+            raise ValueError(f"{code} is a returned status, never a raised error (contracts §13).")
+        self.code: Final[ErrorCode] = code
+        self.category: Final[ErrorCategory] = registered
+        self.message: Final[str] = message
+        self.hint: Final[str | None] = hint
+        self.run_id: Final[str | None] = run_id
+        super().__init__(message or str(code))
+
+    @property
+    def exit_code(self) -> int:
+        """The process exit code this error should terminate with."""
+        return exit_code_for(self.code)
+
+    def to_envelope(self) -> dict[str, dict[str, str | None]]:
+        """Render the one documented error envelope from contracts §13.
+
+        Only the fields the contract declares. In particular the traceback and
+        the exception chain are deliberately absent: an envelope is emitted to
+        a client-facing surface, and a traceback carries file paths and, via
+        local variables in some renderings, content.
+        """
+        return {
+            "error": {
+                "code": str(self.code),
+                "category": str(self.category),
+                "message": self.message,
+                "hint": self.hint,
+                "run_id": self.run_id,
+            }
+        }

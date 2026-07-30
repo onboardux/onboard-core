@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+build/
+dist/
+
+# Environments
+.venv/
+.env
+.env.local
+
+# Local store and scratch
+.adopt/
+/tmp/
+
+# Never commit a private-repo artifact into the Apache-2.0 repository.
+# `adopt-plane` is a separate repository (handoff index CR-03) and is never
+# vendored here. If this pattern ever matches something, that is the
+# boundary violation the pattern exists to catch.
+adopt-plane/
+plane_*/

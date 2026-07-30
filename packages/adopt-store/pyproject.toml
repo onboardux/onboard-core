@@ -1,0 +1,15 @@
+[project]
+name = "adopt-store"
+version = "0.3.0.dev0"
+description = "SQLite realization, facades, the revision writer, doctor, the VectorIndex seam. Implemented in S2/S3."
+requires-python = ">=3.12"
+# `no-raw-sqlite` import contract: only `adopt_store.sqlite` may import sqlite3.
+# `no-vector-impl`: only `adopt_store.vector` may import a vector driver.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_store"]

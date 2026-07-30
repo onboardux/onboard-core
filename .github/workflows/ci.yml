@@ -1,0 +1,123 @@
+name: ci
+
+# Every job here is a gate, and every gate was proven by a planted violation
+# before it was wired in. A gate nobody has seen fail is a gate nobody should
+# trust.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The constants tables and the error registry live in the handoff pack, which
+  # is a separate repository. Both sync gates read them from here.
+  ADOPT_IMPL_SPEC_PATH: ${{ github.workspace }}/pack/builds/build_0/03-implementation-spec-build0.md
+  ADOPT_CONTRACTS_PATH: ${{ github.workspace }}/pack/builds/build_0/02-contracts-build0.md
+
+jobs:
+  lint:
+    name: lint (ruff, mypy --strict, twelve import contracts)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: adopt-core
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync
+        working-directory: adopt-core
+        run: uv sync --all-packages
+      - name: Ruff
+        working-directory: adopt-core
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: mypy --strict
+        working-directory: adopt-core
+        run: uv run mypy --strict packages/ scripts/ tools/
+      - name: Import contracts
+        working-directory: adopt-core
+        run: uv run lint-imports --config importlinter.ini
+
+  constants-sync:
+    name: constants-sync
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: adopt-core
+      - name: Check out the handoff pack
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ADOPT_PACK_REPOSITORY }}
+          path: pack
+      - uses: astral-sh/setup-uv@v5
+      - working-directory: adopt-core
+        run: uv sync --all-packages
+      - name: Constants table matches both modules
+        working-directory: adopt-core
+        run: uv run python scripts/constants_sync.py --check
+
+  error-registry-sync:
+    name: error-registry-sync
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: adopt-core
+      - name: Check out the handoff pack
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.ADOPT_PACK_REPOSITORY }}
+          path: pack
+      - uses: astral-sh/setup-uv@v5
+      - working-directory: adopt-core
+        run: uv sync --all-packages
+      - name: Contracts §13 matches the error module, both directions
+        working-directory: adopt-core
+        run: uv run python scripts/error_registry_sync.py --check
+
+  licence-gate:
+    name: licence-gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      - name: Prove the gate still rejects
+        run: uv run python scripts/licence_gate.py --self-test
+      - name: Check the installed tree
+        run: uv run python scripts/licence_gate.py --check
+
+  unit:
+    name: unit (ratcheted to CI_UNIT_MAX_MINUTES)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      # The ratchet is a hard failure: a green suite over budget still fails.
+      # Adding runtime requires removing equivalent runtime in the same change.
+      - name: Unit suite
+        run: uv run python scripts/ci_ratchet.py --budget unit -- uv run pytest -m unit
+
+  property:
+    name: property
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      # Seeded so a failure is reproducible from the log alone. The nightly
+      # run uses a fresh seed to keep exploring the space.
+      - name: Property suite
+        run: uv run pytest -m property --hypothesis-seed=0

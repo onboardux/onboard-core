@@ -1,0 +1,50 @@
+# Ruff configuration -- `adopt-core`.
+#
+# Lint is not stylistic here: the rules selected below are the ones that carry a
+# runtime invariant (no bare except, no mutable default, no shadowed builtin in a
+# public signature). Formatting is delegated wholesale to `ruff format`.
+
+target-version = "py312"
+line-length = 100
+src = ["packages", "scripts", "tools", "tests", "bench"]
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit
+    "T20",  # flake8-print -- stdout is the CLI's, not a library's
+    "RET",  # flake8-return
+    "SIM",  # flake8-simplify
+    "PTH",  # flake8-use-pathlib
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",  # line length is enforced by the formatter
+]
+
+[lint.per-file-ignores]
+# Tests may assert, use magic values, and plant deliberately unsafe fixtures.
+"tests/**" = ["S101", "S105", "S106", "S108", "S603", "S607"]
+# Gate scripts and the CLI are the two places that legitimately write to stdout.
+"scripts/**" = ["T20", "S603", "S607"]
+"tools/**" = ["T20"]
+"packages/adopt-cli/**" = ["T20"]
+
+[lint.isort]
+known-first-party = [
+    "adopt_const", "adopt_obs", "adopt_schema", "adopt_model", "adopt_scope",
+    "adopt_identity", "adopt_store", "adopt_coverage", "adopt_freshness",
+    "adopt_export", "adopt_detect", "adopt_policy", "adopt_agent",
+    "adopt_workflow", "adopt_cli",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

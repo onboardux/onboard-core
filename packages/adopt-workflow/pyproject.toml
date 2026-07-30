@@ -1,0 +1,16 @@
+[project]
+name = "adopt-workflow"
+version = "0.3.0.dev0"
+description = "The Workflow facade, the in-process test backend, the purity checker. Implemented in S8."
+requires-python = ">=3.12"
+# `no-dbos` import contract: no DBOS symbol appears in this package. The only
+# DBOS importer in the programme is `plane_workflow.dbos_backend`, in the closed
+# repository.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_workflow"]

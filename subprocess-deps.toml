@@ -1,0 +1,22 @@
+# Copyleft dependencies invoked as subprocesses, never linked.
+#
+# The dependency licence policy is permissive-only in-binary. A copyleft tool
+# may still be *used*, provided it is invoked across a process boundary and the
+# invocation site is declared here. Declaring the site is what turns "we only
+# shell out to it" from an intention into a fact `scripts/licence_gate.py` can
+# check.
+#
+# Build 0 declares none. The entries the design anticipates -- universal-ctags,
+# Semgrep CE, Pandoc and Quarto, all GPL or LGPL -- belong to later build items
+# and are added in the change that first invokes them, together with the module
+# and function that does the invoking.
+#
+# Format:
+#
+#   [[subprocess]]
+#   name = "universal-ctags"
+#   licence = "GPL-2.0-or-later"
+#   invocation_site = "adopt_extract/ctags.py:run_ctags"
+#   reason = "Symbol extraction for languages without a tree-sitter grammar."
+
+subprocess = []

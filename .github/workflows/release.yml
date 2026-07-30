@@ -1,0 +1,145 @@
+name: release
+
+# WIRED, NOT PUBLISHING.
+#
+# Every step below runs against scripts that exist today. The two steps that put
+# bytes in front of a user -- the PyPI upload and the GitHub release -- are gated
+# on `inputs.publish`, which defaults to false and stays false until S9.
+#
+# Wiring it now rather than at S9 is deliberate. Supply-chain duties are the part
+# of a release most often discovered to be missing on the day of the release, and
+# a release missing an SBOM, provenance or a signature is not a release
+# (PRD F15.6, NFR N14). The machinery is proven months before it is needed.
+#
+# NOT WIRED YET, and why: the three single-file platform binaries. Packing them
+# requires a packer dependency (PyInstaller, Nuitka or similar), and no
+# dependency enters this tree before it has passed the licence gate and has a
+# row in `licence-verifications.md`. That decision belongs to S9's release task.
+# Until then this workflow builds and signs the wheel, and the BINARY_MAX_MB
+# assertion applies to whatever artefacts are present.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the artefacts. Leave false until S9."
+        type: boolean
+        default: false
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-packages
+
+      - name: Build the wheels
+        run: uv build --all-packages --out-dir dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  supply-chain:
+    name: SBOM, provenance, signatures
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Licence gate at release strictness
+        # Blocks on any dependency still `pending-audit`, any lapsed
+        # re-verification date, and any installed distribution with no row.
+        # This is the gate that currently, correctly, refuses to ship.
+        run: uv run python scripts/licence_gate.py --check --strict-verify
+
+      - name: CycloneDX SBOM
+        run: >-
+          uv run python -m scripts.emit_sbom
+          --out dist/sbom.cdx.json
+          --name adopt-core
+          --version ${{ github.ref_name }}
+
+      - name: SLSA provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign every artefact
+        run: |
+          set -euo pipefail
+          for artefact in dist/*; do
+            [ -f "$artefact" ] || continue
+            case "$artefact" in *.sig|*.pem|*.intoto.jsonl) continue;; esac
+            cosign sign-blob --yes \
+              --output-signature "$artefact.sig" \
+              --output-certificate "$artefact.pem" \
+              "$artefact"
+          done
+
+      - name: Refuse to proceed unless the release is complete
+        # SBOM present and non-empty, a signature beside every artefact,
+        # provenance attested, and nothing over BINARY_MAX_MB.
+        run: uv run python -m scripts.assert_release_complete --dir dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: dist/
+
+  publish:
+    name: publish (disabled until S9)
+    needs: supply-chain
+    if: ${{ inputs.publish == true }}
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: dist/
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Verify every signature before publishing anything
+        run: |
+          set -euo pipefail
+          for artefact in dist/*; do
+            case "$artefact" in *.sig|*.pem|*.intoto.jsonl) continue;; esac
+            cosign verify-blob \
+              --certificate "$artefact.pem" \
+              --signature "$artefact.sig" \
+              --certificate-identity-regexp '.*' \
+              --certificate-oidc-issuer-regexp '.*' \
+              "$artefact"
+          done
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: false

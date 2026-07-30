@@ -1,0 +1,51 @@
+# `adopt-core` — uv workspace root (virtual; carries no package of its own).
+#
+# Repository layout, locked tooling and package responsibilities are governed by
+# `03-implementation-spec-build0.md` §1. Do not add a dependency here without
+# running `scripts/licence_gate.py` first and adding its row to
+# `licence-verifications.md` -- the gate fails on a dependency with no record.
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+adopt-const = { workspace = true }
+adopt-obs = { workspace = true }
+adopt-schema = { workspace = true }
+adopt-model = { workspace = true }
+adopt-scope = { workspace = true }
+adopt-identity = { workspace = true }
+adopt-store = { workspace = true }
+adopt-coverage = { workspace = true }
+adopt-freshness = { workspace = true }
+adopt-export = { workspace = true }
+adopt-detect = { workspace = true }
+adopt-policy = { workspace = true }
+adopt-agent = { workspace = true }
+adopt-workflow = { workspace = true }
+adopt-cli = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6,<1",
+    "mypy>=1.11,<2",
+    "import-linter>=2.0,<3",
+    "pytest>=8,<9",
+    "pytest-benchmark>=4,<6",
+    "hypothesis>=6.100,<7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Sleeps in tests are banned (impl spec §5) -- use the injectable clock.
+addopts = "-q --strict-markers --strict-config"
+markers = [
+    "unit: fast, deterministic, no external dependency",
+    "property: hypothesis-driven invariant test",
+    "e2e: one of the nine critical user journeys",
+    "golden: the G0 fixture round-trip suite",
+    "conformance: adapter conformance suite",
+    "durability: workflow kill-and-resume drill",
+    "bench: performance harness for an NFR gate constant",
+]
+filterwarnings = ["error"]

@@ -31,6 +31,7 @@ coincidental: any float tunable, and any integer tunable of 1000 or more.
 
 import argparse
 import ast
+import contextlib
 import os
 import re
 import sys
@@ -103,16 +104,18 @@ class Report:
 
 
 def _coerce(token: str) -> ScalarValue:
+    """Read a table cell as int, then float, then string.
+
+    A ladder, not a swallow: each rung is a legitimate declared type, and the
+    string rung is where `SLUG_PATTERN` lands.
+    """
     cleaned = token.strip()
     numeric = cleaned.replace("_", "")
-    try:
+    with contextlib.suppress(ValueError):
         return int(numeric)
-    except ValueError:
-        pass
-    try:
+    with contextlib.suppress(ValueError):
         return float(numeric)
-    except ValueError:
-        return cleaned
+    return cleaned
 
 
 def _expand_shorthand(previous: str | None, token: str) -> str:

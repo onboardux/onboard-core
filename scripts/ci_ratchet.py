@@ -26,6 +26,7 @@ from typing import Final
 
 from adopt_const import CI_PR_MAX_MINUTES, CI_UNIT_MAX_MINUTES
 
+# const-sync: ok -- 60 here is seconds per minute, not AGENT_ADAPTER_TIMEOUT_S.
 SECONDS_PER_MINUTE: Final[int] = 60
 
 BUDGETS: Final[dict[str, int]] = {

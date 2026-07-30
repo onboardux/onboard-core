@@ -64,8 +64,7 @@ def build_sbom(root_name: str, root_version: str) -> dict[str, Any]:
             "tools": [{"name": "adopt-sbom", "version": root_version}],
         },
         "components": [
-            _component(dep.name, dep.version, dep.licence, dep.repository)
-            for dep in dependencies
+            _component(dep.name, dep.version, dep.licence, dep.repository) for dep in dependencies
         ],
     }
 

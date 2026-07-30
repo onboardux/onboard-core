@@ -18,6 +18,7 @@ from typing import Final
 
 from adopt_const import BINARY_MAX_MB
 
+# const-sync: ok -- 1024 here is the binary prefix, not URI_MAX_BYTES.
 BYTES_PER_MB: Final[int] = 1024 * 1024
 
 #: Artefacts that are themselves evidence, not things needing evidence.

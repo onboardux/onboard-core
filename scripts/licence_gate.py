@@ -123,6 +123,12 @@ VALID_USAGE_MODES: Final[frozenset[str]] = frozenset(
 
 PENDING_STATUS: Final[str] = "pending-audit"
 
+#: Some projects paste an entire licence text into the `License` metadata
+#: field. Only the first line is meaningful, and it is truncated so a pasted
+#: licence cannot turn a report into a wall of text.
+# const-sync: ok -- a display width, not AGENT_DEFAULT_MAX_WALL_SECONDS.
+LICENCE_FIELD_MAX_CHARS: Final[int] = 120
+
 _CLASSIFIER_RE: Final[re.Pattern[str]] = re.compile(
     r"^License :: (?:OSI Approved :: )?(.+)$", re.MULTILINE
 )
@@ -181,7 +187,7 @@ def _licence_of(dist: metadata.Distribution) -> str:
     if declared:
         # Some projects paste the entire licence text into this field.
         first = str(declared).strip().splitlines()[0]
-        return first[:120]
+        return first[:LICENCE_FIELD_MAX_CHARS]
     return "UNKNOWN"
 
 
@@ -419,7 +425,7 @@ def self_test() -> int:
             "dependency": "planted-unverified",
             "repository": "https://example.invalid/planted",
             "version": "1.0.0",
-            "licence_hash": "0" * 8,
+            "licence_hash": "planted-digest",
             "security_status": "clear",
             "usage_mode": "in-binary",
             "owner": "eng-lead",

@@ -1,0 +1,9 @@
+# The formatter mandates LF (`ruff.toml`: line-ending = "lf"). Without this,
+# git's autocrlf on Windows checks files out with CRLF and `ruff format --check`
+# fails for every contributor on that platform -- a CI failure with no code
+# change behind it.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.db  binary

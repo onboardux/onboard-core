@@ -1,0 +1,2165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adopt.dev/schema/export.schema.json",
+  "title": "adopt export bundle rows",
+  "description": "GENERATED FROM schema/canonical.yaml -- DO NOT EDIT.\nRegenerate with `adopt-schema generate`. A hand edit is SCHEMA_GENERATED_DRIFT\nand CI fails on it, because a hand-edited realization means the manifest has\nsilently stopped being the single source of truth.",
+  "x-schema-version": 3,
+  "x-export-version": 3,
+  "$defs": {
+    "classifier_version": {
+      "title": "classifier_version",
+      "description": "A released classifier build; referenced by revisions and classifications.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version_label": {
+          "type": "string"
+        },
+        "training_data_categories": {
+          "type": "string"
+        },
+        "model_card_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "released_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "retired_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "version_label",
+        "training_data_categories",
+        "released_at"
+      ]
+    },
+    "firm": {
+      "title": "firm",
+      "description": "The delivery firm; the root of every scope chain.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "name",
+        "created_at"
+      ]
+    },
+    "approval": {
+      "title": "approval",
+      "description": "A recorded human approval of a revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subject_type": {
+          "enum": [
+            "knowledge_revision",
+            "probe_revision",
+            "binding_revision"
+          ]
+        },
+        "subject_id": {
+          "type": "string"
+        },
+        "actor_id": {
+          "type": "string"
+        },
+        "approved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "scope_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "subject_type",
+        "subject_id",
+        "actor_id",
+        "approved_at"
+      ]
+    },
+    "engagement": {
+      "title": "engagement",
+      "description": "A client engagement within a firm.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "firm_id": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "client_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "ended_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "firm_id",
+        "slug",
+        "name",
+        "created_at"
+      ]
+    },
+    "system": {
+      "title": "system",
+      "description": "A client system under an engagement.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "engagement_id": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "archetype": {
+          "enum": [
+            "web",
+            "platform",
+            "lowcode",
+            "data",
+            "ai",
+            null
+          ]
+        },
+        "lifecycle_state": {
+          "enum": [
+            "DISCOVERED",
+            "SETUP",
+            "PILOT",
+            "LIVE",
+            "PAUSED",
+            "DEGRADED",
+            "ARCHIVED",
+            "DISCONNECTED"
+          ]
+        },
+        "deployment_mode": {
+          "enum": [
+            "mode_1",
+            "mode_2",
+            "mode_3",
+            null
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "engagement_id",
+        "slug",
+        "name",
+        "lifecycle_state",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "environment": {
+      "title": "environment",
+      "description": "A deployment environment of a system; mandatory in every identity URI.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "is_billable": {
+          "type": "boolean"
+        },
+        "data_residency_region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "slug",
+        "name",
+        "is_billable",
+        "created_at"
+      ]
+    },
+    "system_lifecycle_event": {
+      "title": "system_lifecycle_event",
+      "description": "Merges, splits and state transitions; a transition is never silent.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "from_state": {
+          "enum": [
+            "DISCOVERED",
+            "SETUP",
+            "PILOT",
+            "LIVE",
+            "PAUSED",
+            "DEGRADED",
+            "ARCHIVED",
+            "DISCONNECTED",
+            null
+          ]
+        },
+        "to_state": {
+          "enum": [
+            "DISCOVERED",
+            "SETUP",
+            "PILOT",
+            "LIVE",
+            "PAUSED",
+            "DEGRADED",
+            "ARCHIVED",
+            "DISCONNECTED"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "related_system_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "to_state",
+        "reason",
+        "occurred_at"
+      ]
+    },
+    "connector": {
+      "title": "connector",
+      "description": "A registered connector for a system.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "outbound_relay",
+            "local_only"
+          ]
+        },
+        "registered_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_seen_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "degraded",
+            "revoked"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "mode",
+        "registered_at",
+        "status"
+      ]
+    },
+    "review_batch": {
+      "title": "review_batch",
+      "description": "A coalesced set of changes presented to a human once.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "batch_key": {
+          "type": "string"
+        },
+        "item_count": {
+          "type": "integer"
+        },
+        "draft_md": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "opened_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "resolved_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "resolution": {
+          "enum": [
+            "confirmed",
+            "corrected",
+            "rejected",
+            null
+          ]
+        },
+        "review_minutes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "batch_key",
+        "item_count",
+        "opened_at"
+      ]
+    },
+    "ownership_assignment": {
+      "title": "ownership_assignment",
+      "description": "Who owns a system or engagement, and why they were assigned.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "engagement_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "system",
+            "engagement",
+            "practice",
+            "pooled"
+          ]
+        },
+        "actor_or_group_id": {
+          "type": "string"
+        },
+        "is_group": {
+          "type": "boolean"
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "assigned_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "assignment_reason": {
+          "enum": [
+            "handover",
+            "departure",
+            "escalation",
+            "policy",
+            null
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "actor_or_group_id",
+        "is_group",
+        "effective_from"
+      ]
+    },
+    "audit_event": {
+      "title": "audit_event",
+      "description": "An immutable record of who did what.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "firm_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event_type": {
+          "type": "string"
+        },
+        "actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subject_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "event_type",
+        "occurred_at"
+      ]
+    },
+    "value_baseline": {
+      "title": "value_baseline",
+      "description": "A measured starting point a value claim is made against.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "confidence_label": {
+          "enum": [
+            "measured",
+            "buyer_reported",
+            "modelled",
+            "low_confidence"
+          ]
+        },
+        "captured_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "method_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "captured_at",
+        "metric",
+        "value",
+        "unit",
+        "confidence_label"
+      ]
+    },
+    "value_event": {
+      "title": "value_event",
+      "description": "One ledger entry; the vocabulary is §8's value_event_type.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "occurred_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "event_type": {
+          "type": "string"
+        },
+        "minutes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence_label": {
+          "enum": [
+            "measured",
+            "buyer_reported",
+            "modelled",
+            "low_confidence"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "occurred_at",
+        "event_type",
+        "confidence_label"
+      ]
+    },
+    "identity": {
+      "title": "identity",
+      "description": "A referent addressed by one canonical URI.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        },
+        "firm_id": {
+          "type": "string"
+        },
+        "engagement_id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "environment_id": {
+          "type": "string"
+        },
+        "identity_kind": {
+          "enum": [
+            "endpoint",
+            "db_field",
+            "state_transition",
+            "symbol",
+            "metadata_component",
+            "prompt",
+            "tool_schema",
+            "model_pin",
+            "retrieval_config",
+            "flag",
+            "job",
+            "config_key",
+            "ui_component"
+          ]
+        },
+        "namespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "local_key": {
+          "type": "string"
+        },
+        "first_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_seen": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "covered_cache": {
+          "type": "boolean"
+        },
+        "covered_cache_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "retention_policy_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "uri",
+        "firm_id",
+        "engagement_id",
+        "system_id",
+        "environment_id",
+        "identity_kind",
+        "local_key",
+        "first_seen",
+        "last_seen",
+        "covered_cache"
+      ]
+    },
+    "knowledge_item": {
+      "title": "knowledge_item",
+      "description": "A unit of knowledge; content lives in revisions.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "firm_id": {
+          "type": "string"
+        },
+        "engagement_id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "environment_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "answer",
+            "procedure",
+            "rationale",
+            "surface",
+            "recipe"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "current_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "freshness_state": {
+          "enum": [
+            "fresh",
+            "stale",
+            "unverified",
+            "retired",
+            "observation_stale"
+          ]
+        },
+        "data_residency_region": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retention_policy_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "firm_id",
+        "engagement_id",
+        "system_id",
+        "kind",
+        "title",
+        "freshness_state",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "sensor": {
+      "title": "sensor",
+      "description": "A change-sensing channel; its health gates freshness.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "environment_id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "webhook",
+            "ci",
+            "audit_trail",
+            "probe",
+            "trace",
+            "contract"
+          ]
+        },
+        "health": {
+          "enum": [
+            "HEALTHY",
+            "DEGRADED",
+            "STALE",
+            "FAILED",
+            "DISABLED",
+            "UNVERIFIED"
+          ]
+        },
+        "expected_cadence_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "last_attempted_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "last_success_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "last_event_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "credential_expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "safe_path_verified_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "observed_volume_baseline": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "missing_event_threshold": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "degradation_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remediation_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "environment_id",
+        "kind",
+        "health"
+      ]
+    },
+    "probe_definition": {
+      "title": "probe_definition",
+      "description": "A named behavioral probe against a system environment.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "environment_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "current_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "schedule_cron": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "environment_id",
+        "name",
+        "created_at"
+      ]
+    },
+    "change_event": {
+      "title": "change_event",
+      "description": "An observed change in a system environment.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "environment_id": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "artifact",
+            "provider",
+            "data"
+          ]
+        },
+        "detected_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "referent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "batch_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "raw": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "environment_id",
+        "source",
+        "detected_at"
+      ]
+    },
+    "silent_repair_eligibility": {
+      "title": "silent_repair_eligibility",
+      "description": "Whether a scope has earned the right to act without a human.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "environment_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "archetype": {
+          "type": "string"
+        },
+        "identity_kind": {
+          "type": "string"
+        },
+        "extractor_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classifier_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "enum": [
+            "DISABLED",
+            "DETECTION_ONLY",
+            "REVIEW_REQUIRED",
+            "SILENT_ELIGIBLE",
+            "SUSPENDED"
+          ]
+        },
+        "observed_event_count": {
+          "type": "integer"
+        },
+        "precision_ci_lower": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "state_changed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "state_reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "archetype",
+        "identity_kind",
+        "state",
+        "observed_event_count",
+        "state_changed_at",
+        "state_reason"
+      ]
+    },
+    "observability_boundary": {
+      "title": "observability_boundary",
+      "description": "What may be observed and what may leave; hard-limits every downstream claim.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "environment_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier": {
+          "enum": [
+            "T0",
+            "T1",
+            "T2",
+            "T3",
+            "T4"
+          ]
+        },
+        "covered": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "not_covered": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "knowledge_plane_location": {
+          "enum": [
+            "customer",
+            "firm",
+            "vendor_isolated"
+          ]
+        },
+        "control_plane_location": {
+          "enum": [
+            "vendor",
+            "customer"
+          ]
+        },
+        "permitted_outbound_categories": {
+          "type": [
+            "object",
+            "array"
+          ]
+        },
+        "last_successful_observation_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "safe_probe_status": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contractual_approval_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "declared_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "contractual": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "tier",
+        "knowledge_plane_location",
+        "control_plane_location",
+        "permitted_outbound_categories",
+        "declared_at",
+        "contractual"
+      ]
+    },
+    "identity_revision": {
+      "title": "identity_revision",
+      "description": "An append-only observation of an identity; moves carry an alias.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "identity_id": {
+          "type": "string"
+        },
+        "extractor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extractor_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "alias_of_identity_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "moved",
+            "dead"
+          ]
+        },
+        "supersedes_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_by_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "identity_id",
+        "status",
+        "created_at"
+      ]
+    },
+    "knowledge_revision": {
+      "title": "knowledge_revision",
+      "description": "An append-only content revision of a knowledge item.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "body_md": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recipe_json": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authority_class": {
+          "enum": [
+            "artifact_observed",
+            "behavior_observed",
+            "human_confirmed"
+          ]
+        },
+        "verification": {
+          "enum": [
+            "verified",
+            "unverified",
+            "conflicted",
+            null
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "snapshot_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "source_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "classifier_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "supersedes_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_by_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item_id",
+        "authority_class",
+        "created_at"
+      ]
+    },
+    "death_condition": {
+      "title": "death_condition",
+      "description": "The condition under which an item stops being true; every item needs one.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {
+          "type": "string"
+        },
+        "condition": {
+          "enum": [
+            "referent_retired",
+            "contradicted_by_observation",
+            "unused_past_threshold"
+          ]
+        },
+        "threshold": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "item_id",
+        "condition"
+      ]
+    },
+    "audience_tag": {
+      "title": "audience_tag",
+      "description": "Who a knowledge item is for.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {
+          "type": "string"
+        },
+        "audience": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_id",
+        "audience"
+      ]
+    },
+    "binding": {
+      "title": "binding",
+      "description": "Ties a knowledge item to the identity it describes.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "identity_id": {
+          "type": "string"
+        },
+        "current_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "is_load_bearing": {
+          "type": "boolean"
+        },
+        "freshness_state": {
+          "enum": [
+            "fresh",
+            "stale",
+            "unverified",
+            "retired",
+            "observation_stale"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "item_id",
+        "identity_id",
+        "is_load_bearing",
+        "freshness_state",
+        "created_at"
+      ]
+    },
+    "sensor_heartbeat": {
+      "title": "sensor_heartbeat",
+      "description": "One observation attempt; silence is never read as stability.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sensor_id": {
+          "type": "string"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "empty",
+            "failure",
+            "skipped"
+          ]
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sensor_id",
+        "observed_at",
+        "outcome"
+      ]
+    },
+    "probe_definition_revision": {
+      "title": "probe_definition_revision",
+      "description": "An append-only probe definition; a revision without a safe path is unrepresentable.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "probe_definition_id": {
+          "type": "string"
+        },
+        "interaction": {
+          "type": "string"
+        },
+        "safe_path": {
+          "enum": [
+            "mock",
+            "sandbox",
+            "shadow"
+          ]
+        },
+        "diff_method": {
+          "enum": [
+            "exact",
+            "embedding_sim",
+            "llm_judge",
+            "contract_delta"
+          ]
+        },
+        "capability_manifest": {
+          "type": "string"
+        },
+        "artifact_signature": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approved_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approved_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "approval_expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "supersedes_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "probe_definition_id",
+        "interaction",
+        "safe_path",
+        "diff_method",
+        "capability_manifest",
+        "created_at"
+      ]
+    },
+    "classification": {
+      "title": "classification",
+      "description": "What a change means for one identity; the cascade is item 10.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "change_event_id": {
+          "type": "string"
+        },
+        "identity_id": {
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "BINDING_INTACT_RENDER_ONLY",
+            "BINDING_INTACT_SEMANTICS_CHANGED",
+            "BINDING_MOVED",
+            "BINDING_DEAD",
+            "UNBOUND_NEW"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "decided_by": {
+          "enum": [
+            "cascade_step_1",
+            "cascade_step_2",
+            "cascade_step_3",
+            "cascade_step_4",
+            "model"
+          ]
+        },
+        "classifier_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "acted_silently": {
+          "type": "boolean"
+        },
+        "sampled_for_audit": {
+          "type": "boolean"
+        },
+        "audit_verdict": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "change_event_id",
+        "identity_id",
+        "class",
+        "decided_by",
+        "evidence",
+        "acted_silently",
+        "sampled_for_audit",
+        "created_at"
+      ]
+    },
+    "provenance": {
+      "title": "provenance",
+      "description": "Where a revision's claim came from.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision_id": {
+          "type": "string"
+        },
+        "source_type": {
+          "enum": [
+            "commit",
+            "pr",
+            "ticket",
+            "adr",
+            "probe_output",
+            "trace",
+            "human"
+          ]
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "observed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "revision_id",
+        "source_type",
+        "source_ref"
+      ]
+    },
+    "binding_revision": {
+      "title": "binding_revision",
+      "description": "An append-only observation of a binding.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "binding_id": {
+          "type": "string"
+        },
+        "extractor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extractor_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "locator_rung": {
+          "enum": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            null
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "moved",
+            "retired"
+          ]
+        },
+        "supersedes_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_by_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "binding_id",
+        "status",
+        "created_at"
+      ]
+    },
+    "conflict": {
+      "title": "conflict",
+      "description": "Bet 4 -- intent and reality disagree; representable, never resolved away.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "identity_id": {
+          "type": "string"
+        },
+        "intent_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actual_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detected_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "disposition": {
+          "enum": [
+            "open",
+            "defect_filed",
+            "drift_accepted"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "identity_id",
+        "detected_at",
+        "disposition"
+      ]
+    },
+    "baseline_version": {
+      "title": "baseline_version",
+      "description": "The recorded environment a probe's baseline output was captured under.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "probe_definition_revision_id": {
+          "type": "string"
+        },
+        "environment_id": {
+          "type": "string"
+        },
+        "model_provider_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retrieval_dataset_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool_schema_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "feature_flags": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "judge_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "judge_policy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fixture_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "redaction_policy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recorded_output": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "approved_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "probe_definition_revision_id",
+        "environment_id",
+        "created_at"
+      ]
+    },
+    "review_item": {
+      "title": "review_item",
+      "description": "One knowledge item inside a review batch.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "review_batch_id": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "proposed_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolution": {
+          "enum": [
+            "confirmed",
+            "corrected",
+            "rejected",
+            null
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "review_batch_id",
+        "item_id"
+      ]
+    },
+    "escalation": {
+      "title": "escalation",
+      "description": "A question the system could not answer, and what happened to it.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "system_id": {
+          "type": "string"
+        },
+        "question": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "enum": [
+            "ungrounded",
+            "stale",
+            "bug_report"
+          ]
+        },
+        "prior_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "promoted",
+            "reassigned"
+          ]
+        },
+        "channel": {
+          "enum": [
+            "slack",
+            "teams",
+            "servicenow",
+            "jsm",
+            "portal",
+            "email",
+            null
+          ]
+        },
+        "owner_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "answered_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidate_revision_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "opened_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "answered_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "system_id",
+        "branch",
+        "status",
+        "opened_at"
+      ]
+    },
+    "probe_run": {
+      "title": "probe_run",
+      "description": "One execution of a probe revision.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "probe_definition_revision_id": {
+          "type": "string"
+        },
+        "baseline_version_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "outcome": {
+          "enum": [
+            "success",
+            "diff",
+            "failure",
+            "blocked_by_manifest"
+          ]
+        },
+        "cleanup_verified": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "probe_definition_revision_id",
+        "started_at",
+        "outcome",
+        "cleanup_verified"
+      ]
+    },
+    "probe_observation": {
+      "title": "probe_observation",
+      "description": "What a probe run observed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "probe_run_id": {
+          "type": "string"
+        },
+        "output": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "similarity": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "judge_verdict": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "probe_run_id"
+      ]
+    }
+  }
+}

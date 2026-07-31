@@ -1,9 +1,21 @@
 [project]
 name = "adopt-schema"
 version = "0.3.0.dev0"
-description = "Manifest loader, four emitters, the additive-only linter, and migrations. Implemented in S1."
+description = "Manifest loader, four emitters, the additive-only linter, and migrations."
 requires-python = ">=3.12"
-dependencies = []
+# `sqlite3` is deliberately absent: the `no-raw-sqlite` import contract names
+# this package as a source module, so `migrate.apply` drives an injected
+# `MigrationTarget` rather than opening a connection of its own.
+dependencies = [
+    "adopt-const",
+    "adopt-obs",
+    "pydantic>=2,<3",
+    "pyyaml>=6,<7",
+    "typer>=0.12,<1",
+]
+
+[project.scripts]
+adopt-schema = "adopt_schema.cli:main"
 
 [build-system]
 requires = ["hatchling"]

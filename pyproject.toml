@@ -33,6 +33,11 @@ dev = [
     "pytest>=8,<9",
     "pytest-benchmark>=4,<6",
     "hypothesis>=6.100,<7",
+    # Stubs, not a runtime dependency: `mypy --strict` with
+    # `disallow_any_unimported` rejects an untyped import outright, and
+    # silencing it with an ignore would hide every future type error in the
+    # manifest loader's YAML boundary.
+    "types-PyYAML>=6,<7",
 ]
 
 [tool.pytest.ini_options]

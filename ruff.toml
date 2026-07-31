@@ -35,6 +35,9 @@ ignore = [
 "scripts/**" = ["T20", "S603", "S607"]
 "tools/**" = ["T20"]
 "packages/adopt-cli/**" = ["T20"]
+# A benchmark harness reports to stdout and drives `psql` as a subprocess; it is
+# a measurement tool, not library code, and is never linked into the wheel.
+"bench/**" = ["T20", "S603", "S607"]
 
 [lint.isort]
 known-first-party = [

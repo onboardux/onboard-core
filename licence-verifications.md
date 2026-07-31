@@ -48,6 +48,7 @@ before `0.3.0` ships.
 | Dependency | Repository | Version | Licence hash | Security status | Usage mode | Owner | Re-verification date | Licence |
 |---|---|---|---|---|---|---|---|---|
 | `annotated-doc` | https://github.com/fastapi/annotated-doc | 0.0.5 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
+| `annotated-types` | https://github.com/annotated-types/annotated-types | 0.8.0 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
 | `click` | https://github.com/pallets/click | 8.4.2 | `118dbcd2d5c9f9b2` | pending-audit | in-binary | eng-lead | 2026-10-30 | BSD-3-Clause |
 | `colorama` | https://github.com/tartley/colorama | 0.4.6 | `684e9824f05014cf` | pending-audit | in-binary | eng-lead | 2026-10-30 | BSD-3-Clause |
 | `grimp` | https://github.com/seddonym/grimp | 3.15 | `684e9824f05014cf` | pending-audit | dev-only | eng-lead | 2026-10-30 | BSD-3-Clause |
@@ -63,15 +64,35 @@ before `0.3.0` ships.
 | `pathspec` | https://github.com/cpburnz/python-pathspec | 1.1.1 | `09962c1dc23fac80` | pending-audit | dev-only | eng-lead | 2026-10-30 | MPL-2.0 |
 | `pluggy` | https://github.com/pytest-dev/pluggy | 1.6.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
 | `py-cpuinfo` | https://github.com/workhorsy/py-cpuinfo | 9.0.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
+| `pydantic` | https://github.com/pydantic/pydantic | 2.13.4 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
+| `pydantic-core` | https://github.com/pydantic/pydantic-core | 2.46.4 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
 | `pygments` | https://github.com/pygments/pygments | 2.20.0 | `248dd895a2f89e28` | pending-audit | in-binary | eng-lead | 2026-10-30 | BSD-2-Clause |
 | `pytest` | https://github.com/pytest-dev/pytest | 8.4.2 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
 | `pytest-benchmark` | https://github.com/ionelmc/pytest-benchmark | 5.2.3 | `248dd895a2f89e28` | pending-audit | dev-only | eng-lead | 2026-10-30 | BSD-2-Clause |
+| `pyyaml` | https://github.com/yaml/pyyaml | 6.0.3 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
 | `rich` | https://github.com/Textualize/rich | 14.3.4 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
 | `ruff` | https://github.com/astral-sh/ruff | 0.16.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
 | `shellingham` | https://github.com/sarugaku/shellingham | 1.5.4 | `d8d62d58d661d5dd` | pending-audit | in-binary | eng-lead | 2026-10-30 | ISC |
 | `sortedcontainers` | https://github.com/grantjenks/python-sortedcontainers | 2.4.0 | `6a666d685ab3d80b` | pending-audit | dev-only | eng-lead | 2026-10-30 | Apache-2.0 |
 | `typer` | https://github.com/fastapi/typer | 0.27.0 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
 | `typing-extensions` | https://github.com/python/typing_extensions | 4.16.0 | `606b04e71db9ca7a` | pending-audit | in-binary | eng-lead | 2026-10-30 | PSF-2.0 |
+| `types-pyyaml` | https://github.com/python/typeshed | 6.0.12.20260724 | `2af71558e438db0b` | pending-audit | dev-only | eng-lead | 2026-10-30 | Apache-2.0 |
+| `typing-inspection` | https://github.com/pydantic/typing-inspection | 0.4.2 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
+
+## Toolchain that is never distributed
+
+The development container and the CI runner provide `git`, `uv`, the `sqlite3`
+command-line shell and the PostgreSQL client (`psql`). **None of them is a
+Python distribution, none appears in `uv.lock`, and none is linked into the
+wheel or the single-file binary** — they are the tools that build and validate
+the artifact, in the same class as the compiler. They therefore carry no row
+above, and `licence_gate.py` does not see them.
+
+Recorded here rather than omitted, because "why is `sqlite3` not in the table"
+is a reasonable review question and the answer should not have to be inferred:
+the SQLite shell is public domain and the PostgreSQL client is under the
+permissive PostgreSQL Licence, so neither would fail the policy even if it were
+linked — which it is not.
 
 ## Notes on two copyleft dev dependencies
 

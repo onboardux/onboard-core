@@ -1,0 +1,924 @@
+# The canonical schema. THE single source of truth for every persisted shape.
+#
+# Governed by `02-contracts-build0.md` §2 (grammar) and §3 (the DDL this file
+# generates). Every realization -- SQLite DDL, Postgres DDL, the JSON export
+# schema and the Pydantic models -- is generated from here and none is
+# hand-edited. `adopt-schema generate --check` fails on drift.
+#
+# Created at version 3 from scratch. There is no version 1 or 2 in this line,
+# and no ALTER path from the withdrawn 0.1.x schema will ever be written.
+#
+# Editing this file after the 0.3.0 tag is additive-only, enforced by
+# `adopt-schema lint`. Removal is `retired_in_version`; the physical object
+# stays and is written NULL.
+
+schema_version: 3
+export_version: 3
+
+# ---------------------------------------------------------------------------
+# Enums -- declared once, emitted as CHECK constraints in both dialects (CR-10),
+# so a store handed to a client is self-describing forever without our code.
+#
+# A declared enum need not be referenced: `value_event_type` is the vocabulary
+# §8 defines for `value_event.event_type`, which source spec §4 declares as free
+# TEXT with no constraint. Declaring it here gives items 9-12 one home for the
+# vocabulary without inventing a constraint the DDL does not have.
+# ---------------------------------------------------------------------------
+enums:
+  archetype:
+    since: 3
+    values: [web, platform, lowcode, data, ai]
+  lifecycle_state:
+    since: 3
+    values: [DISCOVERED, SETUP, PILOT, LIVE, PAUSED, DEGRADED, ARCHIVED, DISCONNECTED]
+  deployment_mode:
+    since: 3
+    values: [mode_1, mode_2, mode_3]
+  identity_kind:
+    since: 3
+    values: [endpoint, db_field, state_transition, symbol, metadata_component,
+             prompt, tool_schema, model_pin, retrieval_config, flag, job,
+             config_key, ui_component]
+  identity_status:
+    since: 3
+    values: [active, moved, dead]
+  item_kind:
+    since: 3
+    values: [answer, procedure, rationale, surface, recipe]
+  freshness_state:
+    since: 3
+    values: [fresh, stale, unverified, retired, observation_stale]
+  authority_class:
+    since: 3
+    values: [artifact_observed, behavior_observed, human_confirmed]
+  verification:
+    since: 3
+    values: [verified, unverified, conflicted]
+  source_type:
+    since: 3
+    values: [commit, pr, ticket, adr, probe_output, trace, human]
+  death_cause:
+    since: 3
+    values: [referent_retired, contradicted_by_observation, unused_past_threshold]
+  binding_status:
+    since: 3
+    values: [active, moved, retired]
+  disposition:
+    since: 3
+    values: [open, defect_filed, drift_accepted]
+  connector_mode:
+    since: 3
+    values: [outbound_relay, local_only]
+  connector_status:
+    since: 3
+    values: [active, degraded, revoked]
+  sensor_kind:
+    since: 3
+    values: [webhook, ci, audit_trail, probe, trace, contract]
+  sensor_health:
+    since: 3
+    values: [HEALTHY, DEGRADED, STALE, FAILED, DISABLED, UNVERIFIED]
+  heartbeat_outcome:
+    since: 3
+    values: [success, empty, failure, skipped]
+  safe_path:
+    since: 3
+    values: [mock, sandbox, shadow]
+  diff_method:
+    since: 3
+    values: [exact, embedding_sim, llm_judge, contract_delta]
+  probe_outcome:
+    since: 3
+    values: [success, diff, failure, blocked_by_manifest]
+  change_source:
+    since: 3
+    values: [artifact, provider, data]
+  impact_class:
+    since: 3
+    values: [BINDING_INTACT_RENDER_ONLY, BINDING_INTACT_SEMANTICS_CHANGED,
+             BINDING_MOVED, BINDING_DEAD, UNBOUND_NEW]
+  decided_by:
+    since: 3
+    values: [cascade_step_1, cascade_step_2, cascade_step_3, cascade_step_4, model]
+  silent_repair_state:
+    since: 3
+    values: [DISABLED, DETECTION_ONLY, REVIEW_REQUIRED, SILENT_ELIGIBLE, SUSPENDED]
+  review_resolution:
+    since: 3
+    values: [confirmed, corrected, rejected]
+  approval_subject:
+    since: 3
+    values: [knowledge_revision, probe_revision, binding_revision]
+  escalation_branch:
+    since: 3
+    values: [ungrounded, stale, bug_report]
+  escalation_status:
+    since: 3
+    values: [open, answered, promoted, reassigned]
+  escalation_channel:
+    since: 3
+    values: [slack, teams, servicenow, jsm, portal, email]
+  ownership_scope:
+    since: 3
+    values: [system, engagement, practice, pooled]
+  assignment_reason:
+    since: 3
+    values: [handover, departure, escalation, policy]
+  tier:
+    since: 3
+    values: [T0, T1, T2, T3, T4]
+  knowledge_plane:
+    since: 3
+    values: [customer, firm, vendor_isolated]
+  control_plane:
+    since: 3
+    values: [vendor, customer]
+  confidence_label:
+    since: 3
+    values: [measured, buyer_reported, modelled, low_confidence]
+  value_event_type:
+    since: 3
+    values: [question.received, question.grounded, question.reused_confirmed_canon,
+             question.escalated, question.reopened, correction.confirmed,
+             correction.minutes_spent, change.detected, knowledge.marked_stale,
+             content.regenerated, content.reviewed, content.retired,
+             review.minutes_spent, handover.generated, handover.correction_minutes,
+             sensor_unavailable, fde_reengagement_required]
+  locator_rung:
+    since: 3
+    values: [1, 2, 3, 4, 5]
+
+# ---------------------------------------------------------------------------
+# Tables -- all 37 from source spec §4, including every one no Build 0 code
+# writes to, so that no later build item ever writes a migration.
+# ---------------------------------------------------------------------------
+tables:
+
+  # ═══════════════ META ═══════════════
+
+  schema_meta:
+    since: 3
+    purpose: One appended row per version-write event; the migration log.
+    scope_level: global
+    exportable: false
+    # Deliberately empty (CR-04): source spec §4 declares no primary key, and
+    # rows are appended and never updated, so there is nothing to address a row
+    # by. Declared explicitly so that "no key" is a decision, not an omission.
+    primary_key: []
+    columns:
+      - { name: schema_version, type: int,  nullable: false }
+      - { name: export_version, type: int,  nullable: false }
+      - { name: written_by,     type: text, nullable: false }
+      - { name: written_at,     type: ts,   nullable: false }
+
+  classifier_version:
+    since: 3
+    purpose: A released classifier build; referenced by revisions and classifications.
+    scope_level: global
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,                       type: id,   nullable: false }
+      - { name: version_label,            type: text, nullable: false }
+      # De-identified feature categories only.
+      - { name: training_data_categories, type: text, nullable: false }
+      - { name: model_card_ref,           type: text }
+      - { name: released_at,              type: ts,   nullable: false }
+      - { name: retired_at,               type: ts }
+
+  # ═══════════════ SCOPE HIERARCHY ═══════════════
+
+  firm:
+    since: 3
+    purpose: The delivery firm; the root of every scope chain.
+    scope_level: firm
+    scope_ref: { firm: id }
+    exportable: true
+    primary_key: [id]
+    columns:
+      # CR-05: immutable; URIs are built from slugs, never from ULIDs.
+      - { name: id,         type: id,   nullable: false }
+      - { name: slug,       type: slug, nullable: false, unique: true }
+      - { name: name,       type: text, nullable: false }
+      - { name: created_at, type: ts,   nullable: false }
+
+  engagement:
+    since: 3
+    purpose: A client engagement within a firm.
+    scope_level: engagement
+    scope_ref: { firm: firm_id, engagement: id }
+    exportable: true
+    primary_key: [id]
+    unique: [[firm_id, slug]]
+    columns:
+      - { name: id,           type: id,   nullable: false }
+      - { name: firm_id,      type: id,   nullable: false, references: firm.id }
+      - { name: slug,         type: slug, nullable: false }
+      - { name: name,         type: text, nullable: false }
+      # Free text; the client_account entity is deferred.
+      - { name: client_label, type: text }
+      - { name: started_at,   type: ts }
+      - { name: ended_at,     type: ts }
+      - { name: created_at,   type: ts,   nullable: false }
+
+  system:
+    since: 3
+    purpose: A client system under an engagement.
+    scope_level: system
+    scope_ref: { via: [engagement_id] }
+    exportable: true
+    primary_key: [id]
+    unique: [[engagement_id, slug]]
+    columns:
+      - { name: id,              type: id,   nullable: false }
+      - { name: engagement_id,   type: id,   nullable: false, references: engagement.id }
+      - { name: slug,            type: slug, nullable: false }
+      - { name: name,            type: text, nullable: false }
+      - { name: archetype,       type: enum(archetype) }
+      - { name: lifecycle_state, type: enum(lifecycle_state), nullable: false }
+      - { name: deployment_mode, type: enum(deployment_mode) }
+      - { name: created_at,      type: ts,   nullable: false }
+      - { name: updated_at,      type: ts,   nullable: false }
+
+  environment:
+    since: 3
+    purpose: A deployment environment of a system; mandatory in every identity URI.
+    scope_level: environment
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    unique: [[system_id, slug]]
+    columns:
+      - { name: id,                    type: id,   nullable: false }
+      - { name: system_id,             type: id,   nullable: false, references: system.id }
+      - { name: slug,                  type: slug, nullable: false }
+      # prod|staging|dr|...
+      - { name: name,                  type: text, nullable: false }
+      # Recorded and never interpreted in Build 0 (owner decisions 14, 17).
+      - { name: is_billable,           type: bool, nullable: false, default: false }
+      - { name: data_residency_region, type: text }
+      - { name: created_at,            type: ts,   nullable: false }
+
+  system_lifecycle_event:
+    since: 3
+    purpose: Merges, splits and state transitions; a transition is never silent.
+    scope_level: system
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,         type: id,   nullable: false }
+      - { name: system_id,  type: id,   nullable: false, references: system.id }
+      - { name: from_state, type: enum(lifecycle_state) }
+      - { name: to_state,   type: enum(lifecycle_state), nullable: false }
+      - { name: reason,     type: text, nullable: false }
+      # The counterpart on a merge or split.
+      - { name: related_system_id, type: id, references: system.id }
+      - { name: occurred_at, type: ts,  nullable: false }
+      - { name: actor_id,    type: text }
+    indexes:
+      - { name: idx_sle_system, columns: [system_id, occurred_at] }
+
+  # ═══════════════ IDENTITY ═══════════════
+
+  identity:
+    since: 3
+    purpose: A referent addressed by one canonical URI.
+    scope_level: environment
+    scope_ref: { firm: firm_id, engagement: engagement_id }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,  type: id,  nullable: false }
+      # adopt://{firm}/{eng}/{sys}/{env}/{kind}/{ns}/{key}
+      - { name: uri, type: uri, nullable: false, unique: true }
+      # CR-09: FKs added -- these columns are what RLS is expressed from, and an
+      # unreferenced scope column is a silent integrity hole.
+      - { name: firm_id,        type: id, nullable: false, references: firm.id }
+      - { name: engagement_id,  type: id, nullable: false, references: engagement.id }
+      - { name: system_id,      type: id, nullable: false, references: system.id }
+      - { name: environment_id, type: id, nullable: false, references: environment.id }
+      - { name: identity_kind,  type: enum(identity_kind), nullable: false }
+      - { name: namespace,      type: text }
+      - { name: local_key,      type: text, nullable: false }
+      - { name: first_seen,     type: ts,   nullable: false }
+      - { name: last_seen,      type: ts,   nullable: false }
+      # NON-AUTHORITATIVE (§7). Written only by adopt_coverage.
+      - { name: covered_cache,       type: bool, nullable: false, default: false }
+      - { name: covered_cache_at,    type: ts }
+      - { name: retention_policy_id, type: text }
+    indexes:
+      - { name: idx_identity_scope, columns: [system_id, environment_id] }
+      - { name: idx_identity_kind,  columns: [identity_kind] }
+
+  # NOTE: `identity` has NO current_revision_id column -- source spec §4 declares
+  # none. Its current revision is the one no other revision supersedes (§5). The
+  # other three revision families carry an explicit head pointer; identity
+  # derives its head. A derived head and a stored head are equally single-headed.
+  identity_revision:
+    since: 3
+    purpose: An append-only observation of an identity; moves carry an alias.
+    scope_level: environment
+    scope_ref: { via: [identity_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,                type: id, nullable: false }
+      - { name: identity_id,       type: id, nullable: false, references: identity.id }
+      - { name: extractor,         type: text }
+      - { name: extractor_version, type: text }
+      - { name: source_version,    type: text }
+      - { name: confidence,        type: real }
+      # The move/alias chain.
+      - { name: alias_of_identity_id, type: id, references: identity.id }
+      - { name: status, type: enum(identity_status), nullable: false }
+      - { name: supersedes_revision_id, type: id, references: identity_revision.id }
+      - { name: created_at,          type: ts, nullable: false }
+      - { name: created_by_actor_id, type: text }
+    indexes:
+      - { name: idx_idrev_identity, columns: [identity_id, created_at] }
+
+  # ═══════════════ KNOWLEDGE ═══════════════
+
+  knowledge_item:
+    since: 3
+    purpose: A unit of knowledge; content lives in revisions.
+    scope_level: environment
+    scope_ref: { firm: firm_id, engagement: engagement_id }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,             type: id, nullable: false }
+      - { name: firm_id,        type: id, nullable: false, references: firm.id }
+      - { name: engagement_id,  type: id, nullable: false, references: engagement.id }
+      - { name: system_id,      type: id, nullable: false, references: system.id }
+      # Nullable: an item may span environments.
+      - { name: environment_id, type: id, references: environment.id }
+      - { name: kind,  type: enum(item_kind), nullable: false }
+      - { name: title, type: text, nullable: false }
+      # CR-07: a pointer with no FK. Parent -> revision -> parent is a cyclic FK,
+      # and this rebuild forbids the ALTER sequence that would resolve it.
+      # Validated by the revision helpers and by `store doctor`.
+      - { name: current_revision_id,   type: id }
+      - { name: freshness_state,       type: enum(freshness_state), nullable: false }
+      - { name: data_residency_region, type: text }
+      - { name: retention_policy_id,   type: text }
+      - { name: created_at, type: ts, nullable: false }
+      - { name: updated_at, type: ts, nullable: false }
+    indexes:
+      - { name: idx_ki_scope,     columns: [system_id, environment_id] }
+      - { name: idx_ki_freshness, columns: [system_id, freshness_state] }
+
+  knowledge_revision:
+    since: 3
+    purpose: An append-only content revision of a knowledge item.
+    scope_level: environment
+    scope_ref: { via: [item_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,      type: id, nullable: false }
+      - { name: item_id, type: id, nullable: false, references: knowledge_item.id }
+      - { name: body_md, type: md }
+      # Render-on-demand instruction; locator rungs in §9.
+      - { name: recipe_json,     type: text }
+      - { name: authority_class, type: enum(authority_class), nullable: false }
+      - { name: verification,    type: enum(verification) }
+      - { name: confidence,      type: real }
+      - { name: snapshot_date,   type: ts }
+      - { name: source_version,  type: text }
+      - { name: classifier_version_id,  type: id, references: classifier_version.id }
+      - { name: supersedes_revision_id, type: id, references: knowledge_revision.id }
+      - { name: created_at,          type: ts, nullable: false }
+      - { name: created_by_actor_id, type: text }
+    indexes:
+      - { name: idx_krev_item, columns: [item_id, created_at] }
+
+  provenance:
+    since: 3
+    purpose: Where a revision's claim came from.
+    scope_level: environment
+    scope_ref: { via: [revision_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,          type: id, nullable: false }
+      - { name: revision_id, type: id, nullable: false, references: knowledge_revision.id }
+      - { name: source_type, type: enum(source_type), nullable: false }
+      - { name: source_ref,  type: text, nullable: false }
+      - { name: observed_at, type: ts }
+    indexes:
+      - { name: idx_prov_rev, columns: [revision_id] }
+
+  death_condition:
+    since: 3
+    purpose: The condition under which an item stops being true; every item needs one.
+    scope_level: environment
+    scope_ref: { via: [item_id] }
+    exportable: true
+    primary_key: [item_id, condition]
+    columns:
+      - { name: item_id,   type: id, nullable: false, references: knowledge_item.id }
+      - { name: condition, type: enum(death_cause), nullable: false }
+      - { name: threshold, type: text }
+
+  audience_tag:
+    since: 3
+    purpose: Who a knowledge item is for.
+    scope_level: environment
+    scope_ref: { via: [item_id] }
+    exportable: true
+    primary_key: [item_id, audience]
+    columns:
+      - { name: item_id,  type: id,   nullable: false, references: knowledge_item.id }
+      - { name: audience, type: text, nullable: false }
+
+  # ═══════════════ BINDING ═══════════════
+
+  binding:
+    since: 3
+    purpose: Ties a knowledge item to the identity it describes.
+    scope_level: environment
+    scope_ref: { via: [item_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,          type: id, nullable: false }
+      - { name: item_id,     type: id, nullable: false, references: knowledge_item.id }
+      - { name: identity_id, type: id, nullable: false, references: identity.id }
+      # CR-07: pointer, no FK.
+      - { name: current_revision_id, type: id }
+      # Drives freshness propagation (§8). Defaults true, so an unset writer
+      # errs toward staleness rather than toward false confidence.
+      - { name: is_load_bearing, type: bool, nullable: false, default: true }
+      - { name: freshness_state, type: enum(freshness_state), nullable: false }
+      - { name: created_at,      type: ts, nullable: false }
+    indexes:
+      - { name: idx_binding_pair,     columns: [item_id, identity_id], unique: true }
+      - { name: idx_binding_identity, columns: [identity_id] }
+
+  binding_revision:
+    since: 3
+    purpose: An append-only observation of a binding.
+    scope_level: environment
+    scope_ref: { via: [binding_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,                type: id, nullable: false }
+      - { name: binding_id,        type: id, nullable: false, references: binding.id }
+      - { name: extractor,         type: text }
+      - { name: extractor_version, type: text }
+      - { name: confidence,        type: real }
+      # Which rung of the semantic locator hierarchy resolved the referent (§9).
+      - { name: locator_rung, type: enum(locator_rung) }
+      - { name: status,       type: enum(binding_status), nullable: false }
+      - { name: supersedes_revision_id, type: id, references: binding_revision.id }
+      - { name: created_at,          type: ts, nullable: false }
+      - { name: created_by_actor_id, type: text }
+    indexes:
+      - { name: idx_brev_binding, columns: [binding_id, created_at] }
+
+  conflict:
+    since: 3
+    purpose: Bet 4 -- intent and reality disagree; representable, never resolved away.
+    scope_level: environment
+    scope_ref: { via: [identity_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,          type: id, nullable: false }
+      - { name: identity_id, type: id, nullable: false, references: identity.id }
+      # CR-17: FKs added to knowledge_revision.
+      - { name: intent_revision_id, type: id, references: knowledge_revision.id }
+      - { name: actual_revision_id, type: id, references: knowledge_revision.id }
+      - { name: detected_at, type: ts, nullable: false }
+      - { name: disposition, type: enum(disposition), nullable: false }
+
+  # ═══════════════ CONNECTIVITY & SENSING ═══════════════
+
+  connector:
+    since: 3
+    purpose: A registered connector for a system.
+    scope_level: system
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,            type: id, nullable: false }
+      - { name: system_id,     type: id, nullable: false, references: system.id }
+      - { name: mode,          type: enum(connector_mode), nullable: false }
+      - { name: registered_at, type: ts, nullable: false }
+      - { name: last_seen_at,  type: ts }
+      - { name: version,       type: text }
+      - { name: status,        type: enum(connector_status), nullable: false }
+
+  sensor:
+    since: 3
+    purpose: A change-sensing channel; its health gates freshness.
+    scope_level: environment
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,             type: id, nullable: false }
+      - { name: system_id,      type: id, nullable: false, references: system.id }
+      - { name: environment_id, type: id, nullable: false, references: environment.id }
+      - { name: kind,           type: enum(sensor_kind),   nullable: false }
+      - { name: health,         type: enum(sensor_health), nullable: false }
+      # A NULL cadence silently disables the missed-heartbeat check, which is
+      # why `store doctor` reports one.
+      - { name: expected_cadence_seconds, type: int }
+      - { name: last_attempted_at,     type: ts }
+      - { name: last_success_at,       type: ts }
+      - { name: last_event_at,         type: ts }
+      - { name: credential_expires_at, type: ts }
+      - { name: safe_path_verified_at, type: ts }
+      - { name: observed_volume_baseline, type: real }
+      - { name: missing_event_threshold,  type: int }
+      - { name: degradation_reason,       type: text }
+      - { name: owner_actor_id,           type: text }
+      - { name: remediation_status,       type: text }
+    indexes:
+      - { name: idx_sensor_scope, columns: [system_id, environment_id, health] }
+
+  sensor_heartbeat:
+    since: 3
+    purpose: One observation attempt; silence is never read as stability.
+    scope_level: environment
+    scope_ref: { via: [sensor_id] }
+    exportable: true
+    primary_key: [sensor_id, observed_at]
+    columns:
+      - { name: sensor_id,   type: id, nullable: false, references: sensor.id }
+      - { name: observed_at, type: ts, nullable: false }
+      - { name: outcome,     type: enum(heartbeat_outcome), nullable: false }
+      - { name: detail,      type: text }
+
+  # ═══════════════ PROBES ═══════════════
+
+  probe_definition:
+    since: 3
+    purpose: A named behavioral probe against a system environment.
+    scope_level: environment
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,             type: id,   nullable: false }
+      - { name: system_id,      type: id,   nullable: false, references: system.id }
+      - { name: environment_id, type: id,   nullable: false, references: environment.id }
+      - { name: name,           type: text, nullable: false }
+      # CR-07: pointer, no FK.
+      - { name: current_revision_id, type: id }
+      - { name: schedule_cron,       type: text }
+      - { name: created_at,          type: ts, nullable: false }
+
+  probe_definition_revision:
+    since: 3
+    purpose: An append-only probe definition; a revision without a safe path is unrepresentable.
+    scope_level: environment
+    scope_ref: { via: [probe_definition_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,                  type: id,   nullable: false }
+      - { name: probe_definition_id, type: id,   nullable: false, references: probe_definition.id }
+      - { name: interaction,         type: text, nullable: false }
+      # NOT NULL is the point: the schema, not a rule, makes a probe without a
+      # safe path impossible. That is a design property, never a relaxable check.
+      - { name: safe_path,   type: enum(safe_path),   nullable: false }
+      - { name: diff_method, type: enum(diff_method), nullable: false }
+      # Schema in §7.
+      - { name: capability_manifest, type: text, nullable: false }
+      - { name: artifact_signature,  type: text }
+      - { name: approved_by,         type: text }
+      - { name: approved_at,         type: ts }
+      # Returned to the caller; Build 0 does not judge expiry -- item 8 enforces.
+      - { name: approval_expires_at, type: ts }
+      - { name: supersedes_revision_id, type: id, references: probe_definition_revision.id }
+      - { name: created_at, type: ts, nullable: false }
+
+  baseline_version:
+    since: 3
+    purpose: The recorded environment a probe's baseline output was captured under.
+    scope_level: environment
+    scope_ref: { via: [probe_definition_revision_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id, type: id, nullable: false }
+      - { name: probe_definition_revision_id, type: id, nullable: false,
+          references: probe_definition_revision.id }
+      - { name: environment_id, type: id, nullable: false, references: environment.id }
+      - { name: model_provider_version,   type: text }
+      - { name: retrieval_dataset_version, type: text }
+      - { name: tool_schema_version,      type: text }
+      - { name: feature_flags,            type: text }
+      - { name: judge_model,              type: text }
+      - { name: judge_policy,             type: text }
+      - { name: fixture_version,          type: text }
+      - { name: redaction_policy,         type: text }
+      - { name: recorded_output,          type: text }
+      - { name: fingerprint,              type: text }
+      - { name: created_at,  type: ts, nullable: false }
+      - { name: approved_at, type: ts }
+
+  probe_run:
+    since: 3
+    purpose: One execution of a probe revision.
+    scope_level: environment
+    scope_ref: { via: [probe_definition_revision_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id, type: id, nullable: false }
+      - { name: probe_definition_revision_id, type: id, nullable: false,
+          references: probe_definition_revision.id }
+      - { name: baseline_version_id, type: id, references: baseline_version.id }
+      - { name: started_at,  type: ts, nullable: false }
+      - { name: finished_at, type: ts }
+      - { name: outcome,     type: enum(probe_outcome), nullable: false }
+      - { name: cleanup_verified, type: bool, nullable: false, default: false }
+
+  probe_observation:
+    since: 3
+    purpose: What a probe run observed.
+    scope_level: environment
+    scope_ref: { via: [probe_run_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,            type: id, nullable: false }
+      - { name: probe_run_id,  type: id, nullable: false, references: probe_run.id }
+      - { name: output,        type: text }
+      - { name: fingerprint,   type: text }
+      - { name: similarity,    type: real }
+      - { name: judge_verdict, type: text }
+
+  # ═══════════════ CHANGE & GOVERNANCE ═══════════════
+
+  change_event:
+    since: 3
+    purpose: An observed change in a system environment.
+    scope_level: environment
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,             type: id, nullable: false }
+      - { name: system_id,      type: id, nullable: false, references: system.id }
+      - { name: environment_id, type: id, nullable: false, references: environment.id }
+      - { name: source,         type: enum(change_source), nullable: false }
+      - { name: detected_at,    type: ts, nullable: false }
+      - { name: referent,       type: text }
+      # Blast-radius coalescing.
+      - { name: batch_key,      type: text }
+      - { name: raw,            type: text }
+    indexes:
+      - { name: idx_change_batch, columns: [batch_key] }
+
+  classification:
+    since: 3
+    purpose: What a change means for one identity; the cascade is item 10.
+    scope_level: environment
+    scope_ref: { via: [change_event_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,              type: id, nullable: false }
+      - { name: change_event_id, type: id, nullable: false, references: change_event.id }
+      - { name: identity_id,     type: id, nullable: false, references: identity.id }
+      - { name: class,           type: enum(impact_class), nullable: false }
+      - { name: confidence,      type: real }
+      - { name: decided_by,      type: enum(decided_by), nullable: false }
+      - { name: classifier_version_id, type: id, references: classifier_version.id }
+      - { name: evidence,        type: text, nullable: false }
+      - { name: acted_silently,     type: bool, nullable: false, default: false }
+      - { name: sampled_for_audit,  type: bool, nullable: false, default: false }
+      - { name: audit_verdict,      type: text }
+      - { name: created_at,         type: ts, nullable: false }
+    indexes:
+      - { name: idx_cls_pair, columns: [change_event_id, identity_id], unique: true }
+
+  silent_repair_eligibility:
+    since: 3
+    purpose: Whether a scope has earned the right to act without a human.
+    scope_level: environment
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,             type: id, nullable: false }
+      - { name: system_id,      type: id, nullable: false, references: system.id }
+      - { name: environment_id, type: id, references: environment.id }
+      # Declared as free TEXT in source spec §4, not as the enum vocabulary.
+      - { name: archetype,         type: text, nullable: false }
+      - { name: identity_kind,     type: text, nullable: false }
+      - { name: extractor_version, type: text }
+      - { name: classifier_version_id, type: id, references: classifier_version.id }
+      - { name: state, type: enum(silent_repair_state), nullable: false }
+      - { name: observed_event_count, type: int, nullable: false, default: 0 }
+      - { name: precision_ci_lower,   type: real }
+      - { name: state_changed_at, type: ts,   nullable: false }
+      - { name: state_reason,     type: text, nullable: false }
+
+  review_batch:
+    since: 3
+    purpose: A coalesced set of changes presented to a human once.
+    scope_level: system
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,         type: id,   nullable: false }
+      - { name: system_id,  type: id,   nullable: false, references: system.id }
+      - { name: batch_key,  type: text, nullable: false }
+      - { name: item_count, type: int,  nullable: false }
+      # Pre-drafted regeneration.
+      - { name: draft_md,       type: md }
+      - { name: owner_actor_id, type: text }
+      - { name: opened_at,      type: ts, nullable: false }
+      - { name: resolved_at,    type: ts }
+      - { name: resolution,     type: enum(review_resolution) }
+      # Feeds the value ledger.
+      - { name: review_minutes, type: real }
+
+  review_item:
+    since: 3
+    purpose: One knowledge item inside a review batch.
+    scope_level: system
+    scope_ref: { via: [review_batch_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,              type: id, nullable: false }
+      - { name: review_batch_id, type: id, nullable: false, references: review_batch.id }
+      - { name: item_id,         type: id, nullable: false, references: knowledge_item.id }
+      - { name: proposed_revision_id, type: id, references: knowledge_revision.id }
+      - { name: resolution,      type: enum(review_resolution) }
+
+  approval:
+    since: 3
+    purpose: A recorded human approval of a revision.
+    # OPEN DEFECT, not a design. Source spec §4 gives this table no scope column
+    # and no foreign key -- `subject_id` is polymorphic across three tables and
+    # keeps no FK (CR-17) -- so its RLS policy is not expressible from row scope,
+    # which PRD F4.2 requires of every scoped table. It approves knowledge,
+    # probe and binding revisions, every one of which is client-scoped, so this
+    # is unambiguously tenant data sitting outside tenant isolation.
+    #
+    # Declared `unscoped` rather than `global` so the gap is machine-readable and
+    # loud instead of a table that quietly received no policy. Resolving it means
+    # adding scope columns to the canonical DDL, which is an owner shape decision,
+    # not an implementer's -- so it is escalated rather than absorbed.
+    scope_level: unscoped
+    unscoped_reason: >-
+      Polymorphic subject with no scope column and no foreign key in source spec
+      §4; scope is not derivable from the row. Escalated as a shape decision.
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,           type: id, nullable: false }
+      - { name: subject_type, type: enum(approval_subject), nullable: false }
+      # Polymorphic: no FK, validated by the facade. A polymorphic FK is not
+      # expressible, and pretending otherwise produces an emitter that cannot run.
+      - { name: subject_id,   type: id,   nullable: false }
+      - { name: actor_id,     type: text, nullable: false }
+      - { name: approved_at,  type: ts,   nullable: false }
+      - { name: scope_note,   type: text }
+      - { name: expires_at,   type: ts }
+
+  escalation:
+    since: 3
+    purpose: A question the system could not answer, and what happened to it.
+    scope_level: system
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,        type: id, nullable: false }
+      - { name: system_id, type: id, nullable: false, references: system.id }
+      - { name: question,  type: text }
+      - { name: branch,    type: enum(escalation_branch), nullable: false }
+      - { name: prior_revision_id, type: id, references: knowledge_revision.id }
+      - { name: status,    type: enum(escalation_status), nullable: false }
+      - { name: channel,   type: enum(escalation_channel) }
+      - { name: owner_actor_id, type: text }
+      - { name: answered_by,    type: text }
+      - { name: candidate_revision_id, type: id, references: knowledge_revision.id }
+      - { name: opened_at,   type: ts, nullable: false }
+      - { name: answered_at, type: ts }
+
+  ownership_assignment:
+    since: 3
+    purpose: Who owns a system or engagement, and why they were assigned.
+    scope_level: engagement
+    # Both foreign keys are nullable, so the policy is the OR of both branches.
+    # A row reachable through neither is invisible to every tenant, which is the
+    # correct failure direction.
+    scope_ref: { via: [engagement_id, system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,            type: id, nullable: false }
+      - { name: system_id,     type: id, references: system.id }
+      - { name: engagement_id, type: id, references: engagement.id }
+      - { name: scope,         type: enum(ownership_scope), nullable: false }
+      - { name: actor_or_group_id, type: text, nullable: false }
+      - { name: is_group,       type: bool, nullable: false, default: true }
+      - { name: effective_from, type: ts,   nullable: false }
+      - { name: effective_to,   type: ts }
+      - { name: assigned_by,    type: text }
+      - { name: assignment_reason, type: enum(assignment_reason) }
+
+  audit_event:
+    since: 3
+    purpose: An immutable record of who did what.
+    scope_level: firm
+    scope_ref: { firm: firm_id }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,          type: id, nullable: false }
+      - { name: firm_id,     type: id, references: firm.id }
+      - { name: system_id,   type: id, references: system.id }
+      - { name: event_type,  type: text, nullable: false }
+      - { name: actor_id,    type: text }
+      - { name: subject_ref, type: text }
+      - { name: detail,      type: text }
+      - { name: occurred_at, type: ts, nullable: false }
+    indexes:
+      - { name: idx_audit_scope, columns: [firm_id, occurred_at] }
+
+  # ═══════════════ BOUNDARY ═══════════════
+
+  observability_boundary:
+    since: 3
+    purpose: What may be observed and what may leave; hard-limits every downstream claim.
+    scope_level: system
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,             type: id, nullable: false }
+      - { name: system_id,      type: id, nullable: false, references: system.id }
+      - { name: environment_id, type: id, references: environment.id }
+      - { name: tier,           type: enum(tier), nullable: false }
+      - { name: covered,        type: text }
+      - { name: not_covered,    type: text }
+      - { name: knowledge_plane_location, type: enum(knowledge_plane), nullable: false }
+      - { name: control_plane_location,   type: enum(control_plane),   nullable: false }
+      # JSON list. The boundary is the authority for what may leave, never the
+      # caller's declaration, which is why this lives on the row and not in config.
+      - { name: permitted_outbound_categories, type: json, nullable: false,
+          default: '["metadata_only"]' }
+      - { name: last_successful_observation_at, type: ts }
+      - { name: safe_probe_status,       type: text }
+      - { name: owner_actor_id,          type: text }
+      - { name: contractual_approval_ref, type: text }
+      - { name: declared_at,  type: ts,   nullable: false }
+      - { name: contractual,  type: bool, nullable: false, default: false }
+
+  # ═══════════════ VALUE LEDGER ═══════════════
+
+  value_baseline:
+    since: 3
+    purpose: A measured starting point a value claim is made against.
+    scope_level: system
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,          type: id,   nullable: false }
+      - { name: system_id,   type: id,   nullable: false, references: system.id }
+      - { name: captured_at, type: ts,   nullable: false }
+      - { name: metric,      type: text, nullable: false }
+      - { name: value,       type: real, nullable: false }
+      - { name: unit,        type: text, nullable: false }
+      # NOT NULL by design: every value carries its confidence label into every
+      # surface it reaches, so no figure from estimated inputs can be presented
+      # as a financial saving. The schema enforces the claims discipline.
+      - { name: confidence_label, type: enum(confidence_label), nullable: false }
+      - { name: captured_by,  type: text }
+      - { name: method_note,  type: text }
+
+  value_event:
+    since: 3
+    purpose: One ledger entry; the vocabulary is §8's value_event_type.
+    scope_level: system
+    scope_ref: { via: [system_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,          type: id, nullable: false }
+      - { name: system_id,   type: id, nullable: false, references: system.id }
+      - { name: occurred_at, type: ts, nullable: false }
+      # Vocabulary in §8; source spec §4 declares no CHECK, so none is emitted.
+      - { name: event_type,  type: text, nullable: false }
+      - { name: minutes,     type: real }
+      - { name: actor_id,    type: text }
+      - { name: source_ref,  type: text }
+      - { name: confidence_label, type: enum(confidence_label), nullable: false }
+    indexes:
+      - { name: idx_value_system, columns: [system_id, occurred_at] }

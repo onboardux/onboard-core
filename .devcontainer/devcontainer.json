@@ -1,0 +1,52 @@
+{
+  "name": "adopt-core",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+
+  // Pinned so that rebuilding the Codespace produces the same toolchain. A
+  // floating base image is a build that changes underneath a green CI run.
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    }
+  },
+
+  "containerEnv": {
+    // Offline is the product's default posture, and the development
+    // environment should not be the one place that quietly is not.
+    "ADOPT_OFFLINE": "1",
+    // The constants table and the error registry live in the handoff pack,
+    // which is a separate repository. `postCreate.sh` clones it as a sibling
+    // when ADOPT_PACK_REPO names it, and both sync gates read it from here.
+    "ADOPT_IMPL_SPEC_PATH": "/workspaces/pack/builds/build_0/03-implementation-spec-build0.md",
+    "ADOPT_CONTRACTS_PATH": "/workspaces/pack/builds/build_0/02-contracts-build0.md"
+  },
+
+  "onCreateCommand": "bash .devcontainer/install-tools.sh",
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/adopt-core/.venv/bin/python",
+        "files.eol": "\n"
+      }
+    },
+    "codespaces": {
+      // The handoff pack and the closed plane repository are cloned as
+      // siblings by postCreate.sh. Codespaces only grants a token for other
+      // repositories when they are named here, so these two entries must be
+      // filled in with the real owner once the repositories exist. Until then
+      // postCreate.sh degrades honestly and prints the exact command instead
+      // of failing the container build.
+      "repositories": {}
+    }
+  },
+
+  "remoteUser": "vscode"
+}

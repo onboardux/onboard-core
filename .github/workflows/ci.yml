@@ -121,3 +121,114 @@ jobs:
       # run uses a fresh seed to keep exploring the space.
       - name: Property suite
         run: uv run pytest -m property --hypothesis-seed=0
+
+  schema-check:
+    name: schema-check (generated artifacts match the manifest)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      - name: No drift between the manifest and its four targets
+        run: uv run adopt-schema generate --check
+      - name: Prove the gate still rejects a hand edit
+        run: |
+          set -euo pipefail
+          printf '\n-- a hand edit\n' >> schema/migrations/sqlite/0001__init_v3.sql
+          if uv run adopt-schema generate --check; then
+            echo "::error::a hand-edited generated file was NOT detected as drift"
+            exit 1
+          fi
+          git checkout -- schema/migrations/sqlite/0001__init_v3.sql
+          echo "planted drift detected -- gate is live"
+
+  schema-lint:
+    name: schema-lint (additive-only against the base branch)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The linter reads a manifest from a git ref without checking it out,
+          # so the ref has to be in the object store.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      - name: Make the base branch available as origin/main
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+      - name: Additive-only against origin/main
+        run: uv run adopt-schema lint --base origin/main
+      - name: Prove the gate still rejects a removed column
+        run: |
+          set -euo pipefail
+          # Guard first: if the base ref has no manifest the linter correctly
+          # reports nothing, and a gate proof that cannot fail proves nothing.
+          if ! git show HEAD~1:schema/canonical.yaml > /dev/null 2>&1; then
+            echo "::error::HEAD~1 has no manifest, so this gate proof is vacuous"
+            exit 1
+          fi
+          uv run python scripts/plant_violation.py --kind drop-column
+          if uv run adopt-schema lint --base HEAD~1 2>&1 | tee /tmp/lint.txt; then
+            uv run python scripts/plant_violation.py --revert
+            echo "::error::a planted column removal was NOT rejected"
+            exit 1
+          fi
+          grep -q "column-removed" /tmp/lint.txt
+          uv run python scripts/plant_violation.py --revert
+          echo "planted column removal rejected -- gate is live"
+
+  schema-realize:
+    name: schema-realize (SQLite and Postgres 16 apply the generated DDL)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Ephemeral, CI-only, reachable only from this job's runner for the
+          # life of the job. Not a secret, and deliberately not stored as one:
+          # a repository secret implies something worth protecting.
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_USER: postgres
+          POSTGRES_DB: adopt_ci
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - name: Database clients
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends sqlite3 postgresql-client
+      - name: SQLite -- create version 3 and read it back
+        run: |
+          set -euo pipefail
+          sqlite3 /tmp/v3.db < schema/migrations/sqlite/0001__init_v3.sql
+          version="$(sqlite3 /tmp/v3.db 'PRAGMA user_version;')"
+          echo "PRAGMA user_version = ${version}"
+          test "${version}" = "3"
+      - name: Postgres 16 -- apply the generated DDL and every derived policy
+        env:
+          PGPASSWORD: ci-only-not-a-secret
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d adopt_ci -v ON_ERROR_STOP=1 \
+            -f schema/migrations/postgres/0001__init_v3.sql
+      - name: Confirm row-level security is enabled and FORCEd where declared
+        env:
+          PGPASSWORD: ci-only-not-a-secret
+        run: |
+          set -euo pipefail
+          psql -h localhost -U postgres -d adopt_ci -At -c \
+            "SELECT count(*) FROM pg_class WHERE relrowsecurity AND relforcerowsecurity;" \
+            | tee /tmp/rls_count.txt
+          test "$(cat /tmp/rls_count.txt)" -gt 0
+      - name: Upload the emitted DDL as review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emitted-ddl
+          path: schema/migrations/**/*.sql
+

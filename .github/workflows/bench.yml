@@ -1,0 +1,133 @@
+name: bench
+
+# The reference runner, and nowhere else.
+#
+# `bench/RUNNER.md` pins `ubuntu-24.04`, GitHub-hosted, standard class as the one
+# machine an NFR constant means anything on. Rule 1: benchmarks assert only
+# there. Rule 4: nightly and at release, never per pull request -- per-PR
+# benchmarking on shared runners measures the neighbours. Rule: the benchmark job
+# runs alone, which is why this is its own workflow with one job in it.
+#
+# The run also captures the machine it ran on. A performance number without a
+# machine attached is an anecdote, and PRD Q6 is closed by evidence from the
+# runner rather than by someone pasting `lscpu` output into a document.
+
+on:
+  schedule:
+    # Nightly, off the hour, so it does not contend with everything else that
+    # runs at midnight.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never two benchmark runs at once: they would share the runner pool and
+  # measure each other.
+  group: bench
+  cancel-in-progress: false
+
+jobs:
+  schema-bench:
+    name: N1 -- schema create, both dialects, on the reference runner
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-secret
+          POSTGRES_USER: postgres
+          POSTGRES_DB: adopt_bench
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    env:
+      # The explicit signal the harness asserts on. Set here and nowhere else,
+      # so "am I the reference runner" is a decision this workflow makes rather
+      # than something the harness guesses from the environment.
+      ADOPT_BENCH_REFERENCE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+
+      - name: PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client
+
+      - name: Capture the reference runner profile
+        run: |
+          set -euo pipefail
+          {
+            echo "# Reference runner ratification"
+            echo
+            echo "Captured automatically by \`.github/workflows/bench.yml\` on the"
+            echo "\`ubuntu-24.04\` GitHub-hosted runner pinned in \`bench/RUNNER.md\`."
+            echo "Nobody pasted this in by hand, which is the point: PRD Q6 asks what"
+            echo "machine the twelve NFR constants mean, and only the machine can answer."
+            echo
+            echo "| Property | Value |"
+            echo "|---|---|"
+            echo "| Workflow run | \`${GITHUB_RUN_ID}\` attempt \`${GITHUB_RUN_ATTEMPT}\` |"
+            echo "| Commit | \`${GITHUB_SHA}\` |"
+            echo "| Runner label | \`ubuntu-24.04\` |"
+            echo "| Runner image | \`${ImageOS:-unknown}\` \`${ImageVersion:-unknown}\` |"
+            echo "| Architecture | \`$(uname -m)\` |"
+            echo "| vCPU | \`$(nproc)\` |"
+            echo "| Python | \`$(python3 --version 2>&1)\` |"
+            echo
+            echo '## `cat /etc/os-release`'
+            echo
+            echo '```'
+            cat /etc/os-release
+            echo '```'
+            echo
+            echo '## `lscpu`'
+            echo
+            echo '```'
+            lscpu
+            echo '```'
+            echo
+            echo '## `free -h`'
+            echo
+            echo '```'
+            free -h
+            echo '```'
+          } > runner-profile.md
+          cat runner-profile.md
+
+      - name: N1 -- schema create, both dialects
+        env:
+          ADOPT_BENCH_PG_DSN: postgresql://postgres:ci-only-not-a-secret@localhost:5432/adopt_bench
+        run: |
+          set -euo pipefail
+          uv run python -m bench.schema_bench --assert | tee bench-schema.txt
+
+      - name: Append the measurement to the runner profile
+        if: always()
+        run: |
+          {
+            echo
+            echo '## N1 -- `bench.schema_bench --assert`'
+            echo
+            echo '```'
+            cat bench-schema.txt
+            echo '```'
+          } >> runner-profile.md
+
+      - name: Upload the ratification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-profile
+          path: |
+            runner-profile.md
+            bench-schema.txt

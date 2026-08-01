@@ -45,8 +45,15 @@ def _planted_secrets() -> list[str]:
 SECRETS = _planted_secrets()
 
 
+@pytest.mark.property
 def test_the_fixture_tree_is_not_empty() -> None:
-    """Guard the guard: an empty tree would make the property vacuously true."""
+    """Guard the guard: an empty tree would make the property vacuously true.
+
+    Marked, because an unmarked test is selected by neither the `unit` job nor
+    the `property` job and therefore runs nowhere in CI -- which would leave the
+    one assertion protecting the planted-secret corpus watching from outside the
+    building.
+    """
     assert len(SECRETS) >= 6, "the planted-secret fixture tree lost its fixtures"
 
 

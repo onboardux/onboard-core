@@ -42,10 +42,21 @@ A benchmark green on a bigger machine tells us nothing about the constant.
 
 The concrete vCPU, memory and storage figures above are the published
 specification for the standard GitHub-hosted Linux runner class. **They must be
-confirmed against the actual runner** by capturing `lscpu`, `free -h` and the
-runner image version into `bench/RATIFICATION.md` on the first benchmark run,
-before S1 exits. Until that capture exists, this file records an intent, not a
-measurement — which is why the status line above says provisional.
+confirmed against the actual runner**, and that capture is now automated rather
+than asked of a person: `.github/workflows/bench.yml` records `lscpu`, `free -h`,
+`/etc/os-release` and the runner image identifiers alongside the N1 measurement
+and uploads them as the `runner-profile` artifact. Committing that artifact as
+`bench/RATIFICATION.md` closes PRD Q6.
 
-The first benchmark harness lands with S1 (`bench/schema_bench.py`, asserting
-`SCHEMA_CREATE_P95_SECONDS`).
+Until that workflow has run, this file records an intent, not a measurement —
+which is why the status line above still says provisional.
+
+**How a harness knows it is here.** The workflow sets `ADOPT_BENCH_REFERENCE=1`,
+and a harness asserts only when it sees it. That is an explicit signal rather
+than something inferred from the environment: inferring it wrongly gives either a
+gate that never fires or a gate that fires on the wrong hardware, and both are
+worse than a switch the workflow sets on purpose.
+
+The first benchmark harness landed with S1 (`bench/schema_bench.py`, asserting
+`SCHEMA_CREATE_P95_SECONDS` across both dialects — SQLite in process, Postgres
+through `psql` against the ephemeral `postgres:16` service).

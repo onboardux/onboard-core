@@ -248,6 +248,12 @@ def manifest_at_ref(
         [git, "show", f"{ref}:{path}"],
         capture_output=True,
         text=True,
+        # Pinned, not left to the platform: `text=True` alone decodes with the
+        # active code page, which is cp1252 on a default Windows shell and fails
+        # on the manifest's own comments. The file is written UTF-8, so it is
+        # read UTF-8 everywhere rather than correctly on the maintainer's machine
+        # and by accident on the runner.
+        encoding="utf-8",
         cwd=repo or canonical_path().parent.parent,
         check=False,
     )

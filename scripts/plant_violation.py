@@ -24,28 +24,35 @@ MANIFEST: Final[Path] = REPO_ROOT / "schema" / "canonical.yaml"
 BACKUP_SUFFIX: Final[str] = ".planted-backup"
 
 #: The column `drop-column` removes. A nullable leaf column nothing references,
-#: so the planted violation is unambiguously "a column was removed" and not a
-#: cascade of consequential errors that could mask the rule under test.
-DROPPED_TABLE: Final[str] = "knowledge_item"
-DROPPED_COLUMN: Final[str] = "data_residency_region"
+#: whose name appears **exactly once** in the manifest -- so the planted
+#: violation is unambiguously "this one column was removed" rather than a
+#: coincidental match across several tables, which would make the gate proof
+#: report a different table from the one this script claims to have edited.
+DROPPED_TABLE: Final[str] = "engagement"
+DROPPED_COLUMN: Final[str] = "client_label"
 
 
 def _backup(path: Path) -> None:
-    Path(str(path) + BACKUP_SUFFIX).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    """Byte-for-byte, so `--revert` restores the file and not an approximation.
+
+    Text-mode round-tripping would silently rewrite line endings, which leaves
+    the tree dirty after a gate proof and teaches people to ignore that dirtiness.
+    """
+    Path(str(path) + BACKUP_SUFFIX).write_bytes(path.read_bytes())
 
 
 def plant_drop_column() -> str:
     """Remove a shipped column from the manifest -- PRD F2.2's `column-removed`."""
-    text = MANIFEST.read_text(encoding="utf-8")
-    needle = f"{{ name: {DROPPED_COLUMN},"
-    kept = [line for line in text.splitlines(keepends=True) if needle not in line]
-    if len(kept) == len(text.splitlines(keepends=True)):
+    original = MANIFEST.read_bytes()
+    needle = f"{{ name: {DROPPED_COLUMN},".encode()
+    kept = [line for line in original.splitlines(keepends=True) if needle not in line]
+    if len(kept) == len(original.splitlines(keepends=True)):
         raise SystemExit(
             f"{DROPPED_TABLE}.{DROPPED_COLUMN} is not in the manifest in the expected form, "
             "so nothing was planted. Update this script rather than leaving the gate unproven."
         )
     _backup(MANIFEST)
-    MANIFEST.write_text("".join(kept), encoding="utf-8", newline="")
+    MANIFEST.write_bytes(b"".join(kept))
     return f"removed {DROPPED_TABLE}.{DROPPED_COLUMN} from {MANIFEST.name}"
 
 
@@ -58,7 +65,7 @@ def revert() -> list[str]:
     restored: list[str] = []
     for backup in sorted(REPO_ROOT.rglob(f"*{BACKUP_SUFFIX}")):
         original = Path(str(backup)[: -len(BACKUP_SUFFIX)])
-        original.write_text(backup.read_text(encoding="utf-8"), encoding="utf-8", newline="")
+        original.write_bytes(backup.read_bytes())
         backup.unlink()
         restored.append(str(original.relative_to(REPO_ROOT)))
     return restored

@@ -60,6 +60,11 @@ jobs:
         with:
           repository: ${{ vars.ADOPT_PACK_REPOSITORY }}
           path: pack
+          # `GITHUB_TOKEN` is scoped to this repository alone, so a private pack
+          # needs its own read-only credential. Without it this job fails at
+          # checkout, which reads like an infrastructure flake rather than the
+          # missing secret it is.
+          token: ${{ secrets.ADOPT_PACK_TOKEN }}
       - uses: astral-sh/setup-uv@v5
       - working-directory: adopt-core
         run: uv sync --all-packages
@@ -79,6 +84,7 @@ jobs:
         with:
           repository: ${{ vars.ADOPT_PACK_REPOSITORY }}
           path: pack
+          token: ${{ secrets.ADOPT_PACK_TOKEN }}
       - uses: astral-sh/setup-uv@v5
       - working-directory: adopt-core
         run: uv sync --all-packages

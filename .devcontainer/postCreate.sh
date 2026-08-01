@@ -27,11 +27,17 @@ clone_sibling() {
     return 0
   fi
   echo "==> cloning ${slug} -> ${WORKSPACES}/${target}"
-  if ! gh repo clone "${slug}" "${WORKSPACES}/${target}" -- --depth=1; then
-    echo "!! could not clone ${slug}."
-    echo "!! Codespaces only issues a token for another repository when it is listed under"
-    echo "!! customizations.codespaces.repositories in .devcontainer/devcontainer.json."
+  # `gh` is present and authenticated inside a Codespace, but this script should
+  # not require it: plain git plus the credential helper works everywhere, and a
+  # setup script that only runs in one environment is a setup script that rots.
+  if command -v gh > /dev/null 2>&1; then
+    gh repo clone "${slug}" "${WORKSPACES}/${target}" -- --depth=1 && return 0
+  else
+    git clone --depth=1 "https://github.com/${slug}.git" "${WORKSPACES}/${target}" && return 0
   fi
+  echo "!! could not clone ${slug}."
+  echo "!! Codespaces only issues a token for another repository when it is listed under"
+  echo "!! customizations.codespaces.repositories in .devcontainer/devcontainer.json."
 }
 
 echo "==> git: full history, so the schema linter can read a base ref"

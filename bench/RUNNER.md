@@ -1,7 +1,10 @@
 # Reference runner — the hardware every NFR number means
 
-**Status: pinned, provisional.** Ratified at S1 exit (PRD Q6), together with the
-twelve NFR gate constants at S9 exit (PRD Q4).
+**Status: measured and ratified (PRD Q6, 2026-08-02).** The figures below are no
+longer a published specification copied from documentation — they are what the
+runner reported about itself, captured by `.github/workflows/bench.yml` and
+recorded in `bench/RATIFICATION.md`. The twelve NFR gate constants themselves
+remain **provisional** until S9 exit (PRD Q4).
 
 A performance number without a machine attached is not a requirement, it is an
 anecdote. Every constant in implementation spec §2.3 — `SCHEMA_CREATE_P95_SECONDS`,
@@ -14,12 +17,34 @@ anecdote. Every constant in implementation spec §2.3 — `SCHEMA_CREATE_P95_SEC
 | Property | Value |
 |---|---|
 | Runner label | `ubuntu-24.04` (GitHub-hosted, standard class) |
-| Architecture | x86-64 |
-| vCPU | 4 |
-| Memory | 16 GB |
+| Runner image | `ubuntu24` `20260720.247.2` |
+| Architecture | x86-64 (`INTEL(R) XEON(R) PLATINUM 8573C`) |
+| vCPU | **2** |
+| Memory | **7.8 GiB** |
 | Storage | SSD-backed ephemeral workspace |
-| Python | 3.12, from `.python-version`, provisioned by `uv` |
+| Python | 3.12.3, from `.python-version`, provisioned by `uv` |
 | Concurrency | The benchmark job runs alone. No other job shares the runner. |
+
+**The first capture corrected this table.** It previously read 4 vCPU and 16 GB,
+taken from the published description of the standard runner class. The machine
+reports 2 vCPU and 7.8 GiB. That is the entire reason PRD Q6 existed, and it is
+why "confirm against the actual runner" was a gate rather than a formality: every
+constant would otherwise have been ratified against a machine twice the size of
+the one that runs them.
+
+> ### ⚠ The runner class is a function of repository visibility
+>
+> GitHub gives a **private** repository a 2-core / 7 GB standard runner and a
+> **public** one a 4-core / 16 GB standard runner. `adopt-core` is private today
+> and is planned to go public at the `0.3.0` tag (`01` §9).
+>
+> **Publishing therefore doubles the reference machine**, and rule 3 below says
+> that invalidates every ratified constant at once. This is not a reason to stay
+> private; it is a reason that the S9 ratification must happen on whichever
+> visibility the release ships with, and that flipping visibility after S9 is a
+> re-ratification rather than a settings change. Recorded here because the
+> connection between a repository setting and a performance gate is invisible
+> from either end.
 
 Larger runners, self-hosted runners and ARM runners are **not** the reference.
 A benchmark green on a bigger machine tells us nothing about the constant.
@@ -40,16 +65,17 @@ A benchmark green on a bigger machine tells us nothing about the constant.
 
 ## What is still open
 
-The concrete vCPU, memory and storage figures above are the published
-specification for the standard GitHub-hosted Linux runner class. **They must be
-confirmed against the actual runner**, and that capture is now automated rather
-than asked of a person: `.github/workflows/bench.yml` records `lscpu`, `free -h`,
-`/etc/os-release` and the runner image identifiers alongside the N1 measurement
-and uploads them as the `runner-profile` artifact. Committing that artifact as
-`bench/RATIFICATION.md` closes PRD Q6.
+**Nothing about the machine.** PRD Q6 is closed: `bench/RATIFICATION.md` holds the
+capture, and the table above was corrected to match it.
 
-Until that workflow has run, this file records an intent, not a measurement —
-which is why the status line above still says provisional.
+What remains open is PRD Q4 — the twelve NFR gate constants are still provisional
+and are ratified at S9 exit against measurements on this machine. The first two
+readings, both far inside budget:
+
+| Measurement | p95 | Budget |
+|---|---|---|
+| N1 schema create, SQLite | 0.735 s | `SCHEMA_CREATE_P95_SECONDS` = 10 s |
+| N1 schema create, Postgres 16 | 0.932 s | same |
 
 **How a harness knows it is here.** The workflow sets `ADOPT_BENCH_REFERENCE=1`,
 and a harness asserts only when it sees it. That is an explicit signal rather

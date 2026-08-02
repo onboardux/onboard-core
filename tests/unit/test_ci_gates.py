@@ -12,6 +12,7 @@ other instrument catches it because* a passing gate and an absent gate produce
 identical CI output.
 """
 
+import os
 from datetime import date
 from pathlib import Path
 
@@ -154,8 +155,33 @@ class TestErrorRegistrySync:
         assert "NOT_A_CODE" not in parsed
 
     def test_the_live_registry_matches_the_live_contracts_document(self) -> None:
-        """The real bidirectional check, run against the real pair."""
-        report = error_registry_sync.run(error_registry_sync.DEFAULT_CONTRACTS_PATH)
+        """The real bidirectional check, when the pack is reachable.
+
+        **This is a convenience, not the instrument.** The authoritative check is
+        the `error-registry-sync` CI job, which checks the handoff pack out
+        deliberately and runs the same comparison. This test exists only so a
+        developer with the pack as a sibling directory gets the answer from
+        `pytest` instead of from CI ten minutes later.
+
+        It therefore **skips** rather than fails when the pack is absent. The
+        `unit` job runs without it on purpose: a unit suite that needs a second
+        private repository checked out is not a unit suite, and wiring that
+        dependency into the most frequently run job means a token expiry
+        presents itself as a unit-test failure.
+
+        The path is resolved exactly as `main()` resolves it, so the two cannot
+        drift into looking in different places.
+        """
+        contracts = Path(
+            os.environ.get("ADOPT_CONTRACTS_PATH", error_registry_sync.DEFAULT_CONTRACTS_PATH)
+        )
+        if not contracts.exists():
+            pytest.skip(
+                f"handoff pack not reachable at {contracts}; the `error-registry-sync` "
+                "CI job is the authoritative instrument for this comparison"
+            )
+
+        report = error_registry_sync.run(contracts)
 
         assert report.ok, report.violations
 

@@ -43,7 +43,10 @@ jobs:
           uv run ruff format --check .
       - name: mypy --strict
         working-directory: adopt-core
-        run: uv run mypy --strict packages/ scripts/ tools/
+        # `bench/` is included because it is real code that opens databases and
+        # drives subprocesses. A benchmark harness that is not type-checked is
+        # where a measurement quietly starts measuring the wrong thing.
+        run: uv run mypy --strict packages/ scripts/ tools/ bench/
       - name: Import contracts
         working-directory: adopt-core
         run: uv run lint-imports --config importlinter.ini

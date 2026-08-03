@@ -137,20 +137,6 @@ class Firm(BaseModel):
     created_at: AwareDatetime
 
 
-class Approval(BaseModel):
-    """A recorded human approval of a revision."""
-
-    model_config = _CONFIG
-
-    id: str
-    subject_type: ApprovalSubject
-    subject_id: str
-    actor_id: str
-    approved_at: AwareDatetime
-    scope_note: str | None = None
-    expires_at: AwareDatetime | None = None
-
-
 class Engagement(BaseModel):
     """A client engagement within a firm."""
 
@@ -180,6 +166,22 @@ class System(BaseModel):
     deployment_mode: DeploymentMode | None = None
     created_at: AwareDatetime
     updated_at: AwareDatetime
+
+
+class Approval(BaseModel):
+    """A recorded human approval of a revision."""
+
+    model_config = _CONFIG
+
+    id: str
+    firm_id: str
+    engagement_id: str
+    subject_type: ApprovalSubject
+    subject_id: str
+    actor_id: str
+    approved_at: AwareDatetime
+    scope_note: str | None = None
+    expires_at: AwareDatetime | None = None
 
 
 class Environment(BaseModel):

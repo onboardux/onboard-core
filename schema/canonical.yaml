@@ -761,26 +761,28 @@ tables:
   approval:
     since: 3
     purpose: A recorded human approval of a revision.
-    # OPEN DEFECT, not a design. Source spec §4 gives this table no scope column
-    # and no foreign key -- `subject_id` is polymorphic across three tables and
-    # keeps no FK (CR-17) -- so its RLS policy is not expressible from row scope,
-    # which PRD F4.2 requires of every scoped table. It approves knowledge,
-    # probe and binding revisions, every one of which is client-scoped, so this
-    # is unambiguously tenant data sitting outside tenant isolation.
+    # CR-28 resolves what source spec §4 left unexpressible. The declared table
+    # carried no scope column and no foreign key -- `subject_id` is polymorphic
+    # across three tables and keeps no FK (CR-17) -- so its row-level-security
+    # policy could not be derived, even though it approves knowledge, probe and
+    # binding revisions, every one of which is client-scoped. F4.2 requires a
+    # policy on every scoped table.
     #
-    # Declared `unscoped` rather than `global` so the gap is machine-readable and
-    # loud instead of a table that quietly received no policy. Resolving it means
-    # adding scope columns to the canonical DDL, which is an owner shape decision,
-    # not an implementer's -- so it is escalated rather than absorbed.
-    scope_level: unscoped
-    unscoped_reason: >-
-      Polymorphic subject with no scope column and no foreign key in source spec
-      §4; scope is not derivable from the row. Escalated as a shape decision.
+    # `firm_id` and `engagement_id` are therefore added, exactly as CR-09 added
+    # foreign keys to the scope columns of `identity` and `knowledge_item`, for
+    # the same reason: a table holding tenant data that scope cannot reach is a
+    # silent isolation hole. Taken before the 0.3.0 tag while the manifest is
+    # still free (`00` §5 rule 2) -- after it, this is an ALTER, which is the
+    # thing the rebuild exists to delete.
+    scope_level: engagement
+    scope_ref: { firm: firm_id, engagement: engagement_id }
     exportable: true
     primary_key: [id]
     columns:
-      - { name: id,           type: id, nullable: false }
-      - { name: subject_type, type: enum(approval_subject), nullable: false }
+      - { name: id,            type: id, nullable: false }
+      - { name: firm_id,       type: id, nullable: false, references: firm.id }
+      - { name: engagement_id, type: id, nullable: false, references: engagement.id }
+      - { name: subject_type,  type: enum(approval_subject), nullable: false }
       # Polymorphic: no FK, validated by the facade. A polymorphic FK is not
       # expressible, and pretending otherwise produces an emitter that cannot run.
       - { name: subject_id,   type: id,   nullable: false }

@@ -103,6 +103,33 @@ def test_every_scoped_table_gets_a_forced_policy(manifest: Manifest) -> None:
 
 
 @pytest.mark.unit
+def test_no_canonical_table_is_unscoped(manifest: Manifest) -> None:
+    """Every table is either `global` or has a derivable scope.
+
+    *Fails when* a table is added whose row-level-security policy cannot be
+    derived. *Matters because* such a table holds tenant data outside tenant
+    isolation while looking entirely normal in the DDL. *No other instrument
+    catches it because* the emitter emits an explanatory comment where the policy
+    would be and CI stays green -- the store simply has a hole in it.
+
+    `unscoped` remains expressible on purpose: if a future table genuinely cannot
+    be scoped, the loader forces a written reason rather than accepting silence,
+    and this test is the alarm that makes the decision reach a human. `approval`
+    was the one such table and CR-28 closed it.
+    """
+    unscoped = {
+        name: table.unscoped_reason
+        for name, table in manifest.tables.items()
+        if table.scope_level == "unscoped"
+    }
+
+    assert unscoped == {}, (
+        "these tables hold rows no scope can reach, so row-level security cannot "
+        f"protect them: {unscoped}"
+    )
+
+
+@pytest.mark.unit
 def test_the_runtime_annex_is_not_in_the_canonical_schema(manifest: Manifest) -> None:
     """CR-08/CR-11: `agent_run` lives in a separate store and workflow state in
     DBOS's own tables. Either appearing here would silently widen the export."""

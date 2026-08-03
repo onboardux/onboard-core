@@ -41,17 +41,6 @@ CREATE TABLE firm (
   created_at TEXT NOT NULL
 );
 
--- A recorded human approval of a revision.
-CREATE TABLE approval (
-  id TEXT PRIMARY KEY,
-  subject_type TEXT NOT NULL CHECK (subject_type IN ('knowledge_revision','probe_revision','binding_revision')),
-  subject_id TEXT NOT NULL,
-  actor_id TEXT NOT NULL,
-  approved_at TEXT NOT NULL,
-  scope_note TEXT,
-  expires_at TEXT
-);
-
 -- A client engagement within a firm.
 CREATE TABLE engagement (
   id TEXT PRIMARY KEY,
@@ -77,6 +66,19 @@ CREATE TABLE system (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (engagement_id, slug)
+);
+
+-- A recorded human approval of a revision.
+CREATE TABLE approval (
+  id TEXT PRIMARY KEY,
+  firm_id TEXT NOT NULL REFERENCES firm(id),
+  engagement_id TEXT NOT NULL REFERENCES engagement(id),
+  subject_type TEXT NOT NULL CHECK (subject_type IN ('knowledge_revision','probe_revision','binding_revision')),
+  subject_id TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  approved_at TEXT NOT NULL,
+  scope_note TEXT,
+  expires_at TEXT
 );
 
 -- A deployment environment of a system; mandatory in every identity URI.

@@ -35,17 +35,6 @@ CREATE TABLE firm (
   created_at timestamptz NOT NULL
 );
 
--- A recorded human approval of a revision.
-CREATE TABLE approval (
-  id text PRIMARY KEY,
-  subject_type text NOT NULL CHECK (subject_type IN ('knowledge_revision','probe_revision','binding_revision')),
-  subject_id text NOT NULL,
-  actor_id text NOT NULL,
-  approved_at timestamptz NOT NULL,
-  scope_note text,
-  expires_at timestamptz
-);
-
 -- A client engagement within a firm.
 CREATE TABLE engagement (
   id text PRIMARY KEY,
@@ -71,6 +60,19 @@ CREATE TABLE system (
   created_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL,
   UNIQUE (engagement_id, slug)
+);
+
+-- A recorded human approval of a revision.
+CREATE TABLE approval (
+  id text PRIMARY KEY,
+  firm_id text NOT NULL REFERENCES firm(id),
+  engagement_id text NOT NULL REFERENCES engagement(id),
+  subject_type text NOT NULL CHECK (subject_type IN ('knowledge_revision','probe_revision','binding_revision')),
+  subject_id text NOT NULL,
+  actor_id text NOT NULL,
+  approved_at timestamptz NOT NULL,
+  scope_note text,
+  expires_at timestamptz
 );
 
 -- A deployment environment of a system; mandatory in every identity URI.
@@ -517,11 +519,6 @@ CREATE POLICY scope_isolation ON firm
   USING      (firm.id = current_setting('adopt.firm_id', true))
   WITH CHECK (firm.id = current_setting('adopt.firm_id', true));
 
--- !! approval: NO ROW-LEVEL SECURITY POLICY IS EMITTED.
--- !! Polymorphic subject with no scope column and no foreign key in source spec §4; scope is not derivable from the row. Escalated as a shape decision.
--- !! This is a recorded gap, not a design. Until it is resolved, approval is
--- !! readable across every scope by anything that reaches the table.
-
 ALTER TABLE engagement ENABLE ROW LEVEL SECURITY;
 ALTER TABLE engagement FORCE  ROW LEVEL SECURITY;
 CREATE POLICY scope_isolation ON engagement
@@ -533,6 +530,12 @@ ALTER TABLE system FORCE  ROW LEVEL SECURITY;
 CREATE POLICY scope_isolation ON system
   USING      (EXISTS (SELECT 1 FROM engagement p0_0 WHERE p0_0.id = system.engagement_id AND p0_0.firm_id = current_setting('adopt.firm_id', true) AND p0_0.id = current_setting('adopt.engagement_id', true)))
   WITH CHECK (EXISTS (SELECT 1 FROM engagement p0_0 WHERE p0_0.id = system.engagement_id AND p0_0.firm_id = current_setting('adopt.firm_id', true) AND p0_0.id = current_setting('adopt.engagement_id', true)));
+
+ALTER TABLE approval ENABLE ROW LEVEL SECURITY;
+ALTER TABLE approval FORCE  ROW LEVEL SECURITY;
+CREATE POLICY scope_isolation ON approval
+  USING      (approval.firm_id = current_setting('adopt.firm_id', true) AND approval.engagement_id = current_setting('adopt.engagement_id', true))
+  WITH CHECK (approval.firm_id = current_setting('adopt.firm_id', true) AND approval.engagement_id = current_setting('adopt.engagement_id', true));
 
 ALTER TABLE environment ENABLE ROW LEVEL SECURITY;
 ALTER TABLE environment FORCE  ROW LEVEL SECURITY;

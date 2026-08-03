@@ -12,7 +12,14 @@ review:
 3. **Ids are generated nowhere else.** An unregistered prefix is rejected.
 """
 
-from adopt_obs.clock import Clock, ManualClock, SystemClock, format_timestamp, now
+from adopt_obs.clock import (
+    Clock,
+    ManualClock,
+    SystemClock,
+    format_timestamp,
+    now,
+    truncate_to_millisecond,
+)
 from adopt_obs.errors import (
     CATEGORY_EXIT_CODES,
     ERROR_CATEGORIES,
@@ -52,4 +59,5 @@ __all__ = [
     "redact",
     "set_sink",
     "split_id",
+    "truncate_to_millisecond",
 ]

@@ -111,6 +111,11 @@ jobs:
           set -euo pipefail
           uv run python -m bench.schema_bench --assert | tee bench-schema.txt
 
+      - name: N3 -- store open at 50k rows, including the schema_meta read
+        run: |
+          set -euo pipefail
+          uv run python -m bench.store_bench --assert | tee bench-store.txt
+
       - name: Append the measurement to the runner profile
         if: always()
         run: |
@@ -120,6 +125,12 @@ jobs:
             echo
             echo '```'
             cat bench-schema.txt
+            echo '```'
+            echo
+            echo '## N3 -- `bench.store_bench --assert`'
+            echo
+            echo '```'
+            cat bench-store.txt
             echo '```'
           } >> runner-profile.md
 
@@ -131,3 +142,4 @@ jobs:
           path: |
             runner-profile.md
             bench-schema.txt
+            bench-store.txt

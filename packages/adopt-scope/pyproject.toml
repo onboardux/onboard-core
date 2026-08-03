@@ -1,9 +1,16 @@
 [project]
 name = "adopt-scope"
 version = "0.3.0.dev0"
-description = "The firm-engagement-system-environment hierarchy, slugs, lifecycle events. Implemented in S2."
+description = "The firm-engagement-system-environment hierarchy, slugs, lifecycle events."
 requires-python = ">=3.12"
-dependencies = []
+# Storage is reached through the `ScopeRecords` port in `records.py`, never
+# through a driver: `adopt_store` and `plane_store` each implement it, which is
+# what lets one facade serve both realizations.
+dependencies = [
+    "adopt-const",
+    "adopt-model",
+    "adopt-obs",
+]
 
 [build-system]
 requires = ["hatchling"]

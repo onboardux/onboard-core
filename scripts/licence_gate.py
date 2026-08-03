@@ -117,8 +117,15 @@ REQUIRED_VERIFICATION_FIELDS: Final[tuple[str, ...]] = (
 USAGE_IN_BINARY: Final[str] = "in-binary"
 USAGE_SUBPROCESS: Final[str] = "subprocess"
 USAGE_DEV_ONLY: Final[str] = "dev-only"
+#: A runtime dependency of a service that is **never distributed** -- the closed
+#: control plane. Copyleft obligations attach to conveying a work; a hosted
+#: service conveys nothing, so `in-binary`'s permissive-only rule does not
+#: describe it and `dev-only` is a false claim about a production dependency.
+#: Recorded as its own mode so the distinction is a checked fact rather than a
+#: judgement someone makes again at each review *(CR-29)*.
+USAGE_SERVICE_SIDE: Final[str] = "service-side"
 VALID_USAGE_MODES: Final[frozenset[str]] = frozenset(
-    {USAGE_IN_BINARY, USAGE_SUBPROCESS, USAGE_DEV_ONLY}
+    {USAGE_IN_BINARY, USAGE_SUBPROCESS, USAGE_DEV_ONLY, USAGE_SERVICE_SIDE}
 )
 
 PENDING_STATUS: Final[str] = "pending-audit"
@@ -234,6 +241,19 @@ def _is_copyleft(licence: str) -> bool:
     return any(marker in upper for marker in COPYLEFT_MARKERS)
 
 
+def _is_network_copyleft(licence: str) -> bool:
+    """Licences whose obligations are triggered by *use over a network*.
+
+    This is the line `service-side` stops at. GPL and LGPL attach on conveying a
+    work, and a hosted service conveys nothing; AGPL and SSPL were written
+    precisely to close that gap, so "we never ship it" is not an answer to them.
+    `LGPL` is excluded by the prefix check below because "AGPL" contains "GPL"
+    and a substring match would otherwise catch every copyleft licence there is.
+    """
+    upper = licence.upper()
+    return any(marker in upper for marker in ("AGPL", "AFFERO", "SSPL"))
+
+
 def _is_permissive(licence: str) -> bool:
     upper = licence.upper()
     parts = [p.strip(" ()") for p in re.split(r"\bOR\b|\bAND\b|,|/", upper) if p.strip()]
@@ -342,6 +362,25 @@ def check(
                     f"{dep.name} ({dep.licence}) is copyleft but dev-only: it is not linked "
                     "into the wheel or the binary. Moving it to a runtime dependency would "
                     "make it a policy violation."
+                )
+            continue
+
+        if usage == USAGE_SERVICE_SIDE:
+            # Strong copyleft still bites a hosted service under AGPL's network
+            # clause, so the exemption stops short of it. GPL and LGPL do not
+            # reach a work that is never conveyed.
+            if _is_network_copyleft(dep.licence):
+                report.violations.append(
+                    f"LICENCE_POLICY_VIOLATION: {dep.name} {dep.version} is "
+                    f"{dep.licence}, whose obligations are triggered by network use, "
+                    "so `service-side` does not exempt it. Deploy it as a separate "
+                    "service or remove it."
+                )
+            elif _is_copyleft(dep.licence):
+                report.notes.append(
+                    f"{dep.name} ({dep.licence}) is copyleft and service-side: it runs in a "
+                    "service that is never distributed, so no conveying occurs. Linking it "
+                    "into a shipped wheel or binary would make it a policy violation."
                 )
             continue
 
@@ -479,6 +518,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strict-verify", action="store_true", help="release-gate strictness")
     parser.add_argument("--self-test", action="store_true", help="prove the gate rejects")
     parser.add_argument("--emit-rows", action="store_true", help="seed the verification table")
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        help=(
+            "Repository whose licence-verifications.md and subprocess-deps.toml govern. "
+            "Defaults to this script's own repository; the closed repository points here "
+            "so one implementation of the policy serves both rather than a copy that drifts."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.self_test:
@@ -486,19 +535,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.emit_rows:
         return emit_rows()
 
-    verifications = (
-        parse_verifications(VERIFICATIONS_PATH.read_text(encoding="utf-8"))
-        if VERIFICATIONS_PATH.exists()
-        else {}
-    )
-    if not VERIFICATIONS_PATH.exists():
-        print(f"VIOLATION: {VERIFICATIONS_PATH.name} is absent; every dependency is unverified.")
+    root = args.root.resolve() if args.root is not None else REPO_ROOT
+    verifications_path = root / VERIFICATIONS_PATH.name
+
+    if not verifications_path.exists():
+        print(f"VIOLATION: {verifications_path} is absent; every dependency is unverified.")
         return 1
+    verifications = parse_verifications(verifications_path.read_text(encoding="utf-8"))
 
     report = check(
         installed_dependencies(),
         verifications,
-        load_subprocess_deps(SUBPROCESS_DEPS_PATH),
+        load_subprocess_deps(root / SUBPROCESS_DEPS_PATH.name),
         strict_verify=args.strict_verify,
     )
     for note in report.notes:

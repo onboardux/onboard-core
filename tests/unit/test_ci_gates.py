@@ -1,6 +1,6 @@
 """Each CI gate rejects what it exists to reject.
 
-A gate is only worth having if it is known to fail. These four tests plant the
+A gate is only worth having if it is known to fail. These tests plant the
 violation each gate was built for and assert the gate catches it -- the gates
 themselves are the instruments for the invariants, and this file is the
 instrument for the gates.
@@ -17,7 +17,13 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from scripts import ci_ratchet, constants_sync, error_registry_sync, licence_gate
+from scripts import (
+    ci_ratchet,
+    constants_sync,
+    error_registry_sync,
+    licence_gate,
+    no_destructive_sql,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -295,3 +301,61 @@ class TestCiRatchet:
         """Defaulting would silently apply the wrong budget to a whole suite."""
         with pytest.raises(KeyError):
             ci_ratchet.evaluate("nightly", 1.0, 0)
+
+
+@pytest.mark.unit
+class TestNoDestructiveSql:
+    def test_self_test_detects_the_planted_statements(self) -> None:
+        """`--self-test` is what the sprint's Final Output Validation runs."""
+        assert no_destructive_sql.main(["--self-test"]) == 0
+
+    @pytest.mark.parametrize(
+        ("statement", "rule", "why"),
+        [
+            ("DROP TABLE knowledge_item", "drop-object", "the plain case"),
+            ("ALTER TABLE binding DROP COLUMN is_load_bearing", "alter-drop", "column removal"),
+            ("DELETE FROM identity", "unpredicated-delete", "no predicate, every row"),
+            ("TRUNCATE TABLE audit_event", "truncate", "empties without an audit trail"),
+            ("drop table firm", "drop-object", "SQL keywords are case-insensitive"),
+            (
+                "DROP\n  TABLE\n  firm",
+                "drop-object",
+                "whitespace is collapsed, so a wrapped statement is caught too",
+            ),
+        ],
+    )
+    def test_destructive_statements_are_detected(
+        self, tmp_path: Path, statement: str, rule: str, why: str
+    ) -> None:
+        (tmp_path / "planted.py").write_text(
+            f'SQL = """{statement}"""\n', encoding="utf-8", newline="\n"
+        )
+
+        findings, _ = no_destructive_sql.scan([tmp_path])
+
+        assert [finding.rule for finding in findings] == [rule], why
+
+    @pytest.mark.parametrize(
+        ("source", "why"),
+        [
+            ('"""A docstring saying DROP TABLE is forbidden."""\nX = 1\n', "prose is not code"),
+            ('SQL = "DELETE FROM review_item WHERE id = ?"', "a predicated delete is legitimate"),
+            ('SQL = "UPDATE system SET lifecycle_state = ?"', "an update is not destructive"),
+            (
+                'SQL = "DROP TABLE t"  # no-destructive-sql: ok -- planted fixture\n',
+                "an inline waiver is honoured and reported",
+            ),
+        ],
+    )
+    def test_legitimate_source_is_not_flagged(self, tmp_path: Path, source: str, why: str) -> None:
+        (tmp_path / "clean.py").write_text(source, encoding="utf-8", newline="\n")
+
+        findings, _ = no_destructive_sql.scan([tmp_path])
+
+        assert findings == [], why
+
+    def test_the_store_package_is_clean(self) -> None:
+        """The invariant itself, not just the instrument: implementation spec §4.7."""
+        findings, _ = no_destructive_sql.scan([REPO_ROOT / "packages"])
+
+        assert findings == [], [finding.render(REPO_ROOT) for finding in findings]

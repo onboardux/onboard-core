@@ -144,11 +144,41 @@ requires-dist = [
 name = "adopt-scope"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-scope" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-model" },
+    { name = "adopt-obs" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+]
 
 [[package]]
 name = "adopt-store"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-store" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-model" },
+    { name = "adopt-obs" },
+    { name = "adopt-schema" },
+    { name = "adopt-scope" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "adopt-schema", editable = "packages/adopt-schema" },
+    { name = "adopt-scope", editable = "packages/adopt-scope" },
+    { name = "pydantic", specifier = ">=2.7,<3" },
+]
 
 [[package]]
 name = "adopt-workflow"

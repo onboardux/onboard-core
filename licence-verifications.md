@@ -25,6 +25,7 @@ column so that a silent relicense shows up as a hash change.
 | `in-binary` | Linked into the wheel or the single-file binary | **Permissive only.** No copyleft, ever. |
 | `subprocess` | Invoked across a process boundary; never linked | Copyleft permitted, and the invocation site must be declared in `subprocess-deps.toml` |
 | `dev-only` | Development or test dependency; never shipped to a user | Copyleft permitted. Promoting one of these to a runtime dependency is a policy violation, not a refactor. |
+| `service-side` | Runtime dependency of a service that is **never distributed** | Copyleft permitted **except AGPL and SSPL**, whose obligations are triggered by network use. Used only in `adopt-plane`; no row in this file carries it, because everything here ships. *(CR-29)* |
 
 A dependency with **no row** is treated as `in-binary` — the strictest rule.
 Failing closed is the point: an undeclared dependency must never be the lenient

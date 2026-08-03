@@ -10,7 +10,9 @@ path is transactional.
 
 `sqlite3` is imported here and not in `adopt_schema`: the `no-raw-sqlite`
 contract names that package as a source module, so migrations drive an injected
-`MigrationTarget` and the test supplies the SQLite one.
+`MigrationTarget`. Until S2 that target was a copy in this file; it is now
+`adopt_store.sqlite.SqliteStore`, the one the product actually ships. Testing a
+copy would have meant asserting rollback behaviour of code no user runs.
 """
 
 import sqlite3
@@ -29,78 +31,7 @@ from adopt_schema.migrate import (
     new_migration,
     pending,
 )
-
-
-class SqliteTarget:
-    """The `MigrationTarget` the store package will provide in the store sprint.
-
-    Atomicity lives here because the dialect's rules do. Two SQLite facts shape
-    it, and neither is optional:
-
-    * `executescript` **implicitly commits** any open transaction before running,
-      so the script cannot simply be run inside a `BEGIN` the caller opened.
-    * `PRAGMA journal_mode = WAL` cannot run inside a transaction at all.
-
-    So PRAGMAs are applied first, in autocommit, and the remaining statements plus
-    the `schema_meta` row go in one explicit transaction.
-    """
-
-    def __init__(self, path: Path) -> None:
-        self._connection = sqlite3.connect(path, isolation_level=None)
-
-    def current_version(self) -> int:
-        row = self._connection.execute("PRAGMA user_version;").fetchone()
-        return int(row[0])
-
-    def apply_migration(
-        self, sql: str, schema_version: int, export_version: int, written_by: str
-    ) -> None:
-        pragmas, statements = _split_statements(sql)
-        for statement in pragmas:
-            self._connection.execute(statement)
-
-        self._connection.execute("BEGIN;")
-        try:
-            for statement in statements:
-                self._connection.execute(statement)
-            self._connection.execute(
-                "INSERT INTO schema_meta (schema_version, export_version, written_by, written_at) "
-                "VALUES (?, ?, ?, ?)",
-                (schema_version, export_version, written_by, "2026-07-31T00:00:00.000Z"),
-            )
-        except Exception:
-            self._connection.execute("ROLLBACK;")
-            raise
-        self._connection.execute("COMMIT;")
-
-    def query(self, sql: str) -> list[tuple[object, ...]]:
-        return list(self._connection.execute(sql))
-
-    def close(self) -> None:
-        self._connection.close()
-
-
-def _split_statements(sql: str) -> tuple[list[str], list[str]]:
-    """`(pragmas, everything else)`, comments stripped.
-
-    Split by `sqlite3.complete_statement` rather than on `;`, because a table
-    purpose in a comment legitimately contains a semicolon.
-    """
-    pragmas: list[str] = []
-    statements: list[str] = []
-    buffer = ""
-    for line in sql.splitlines(keepends=True):
-        if line.lstrip().startswith("--"):
-            continue
-        buffer += line
-        if sqlite3.complete_statement(buffer):
-            statement = buffer.strip()
-            if statement:
-                (pragmas if statement.upper().startswith("PRAGMA") else statements).append(
-                    statement
-                )
-            buffer = ""
-    return pragmas, statements
+from adopt_store.sqlite.store import SqliteStore as SqliteTarget
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -121,9 +52,8 @@ def test_the_initial_migration_creates_version_3(tmp_path: Path) -> None:
 
     assert [path.name for path in applied] == ["0001__init_v3.sql"]
     assert target.current_version() == SCHEMA_VERSION
-    assert target.query("SELECT schema_version, export_version FROM schema_meta;") == [
-        (SCHEMA_VERSION, EXPORT_VERSION)
-    ]
+    rows = target.query("SELECT schema_version, export_version FROM schema_meta;")
+    assert [tuple(row) for row in rows] == [(SCHEMA_VERSION, EXPORT_VERSION)]
     target.close()
 
 

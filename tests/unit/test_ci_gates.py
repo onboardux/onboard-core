@@ -359,3 +359,72 @@ class TestNoDestructiveSql:
         findings, _ = no_destructive_sql.scan([REPO_ROOT / "packages"])
 
         assert findings == [], [finding.render(REPO_ROOT) for finding in findings]
+
+
+@pytest.mark.unit
+class TestWorkflowsAreRunnable:
+    """The gates above are only enforced if the workflow declaring them starts.
+
+    *Fails when* a workflow file stops being valid YAML, or a required job
+    disappears from it. *Matters because* GitHub does not run an unparseable
+    workflow at all -- it records a `startup_failure`, produces **no job output**,
+    and offers **no re-run button**, so a required gate silently stops running and
+    the run looks like an infrastructure hiccup. *No other instrument catches it
+    because* every check in this repository runs inside a workflow, and none of
+    them run when the workflow itself will not start.
+
+    Added after exactly that reached `main`: a shell edit injected a control
+    character into a workflow, and it was noticed only because a human went
+    looking for a button that was not there.
+    """
+
+    WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+
+    #: Gates the pack requires to exist (implementation spec §7). A gate deleted
+    #: from CI is a gate that stops running, and nothing else would notice.
+    REQUIRED_JOBS = frozenset(
+        {
+            "lint",
+            "constants-sync",
+            "error-registry-sync",
+            "licence-gate",
+            "no-destructive-sql",
+            "unit",
+            "property",
+            "schema-check",
+            "schema-lint",
+            "schema-realize",
+        }
+    )
+
+    def _files(self) -> list[Path]:
+        return sorted(self.WORKFLOWS.glob("*.yml")) + sorted(self.WORKFLOWS.glob("*.yaml"))
+
+    def test_there_is_at_least_one_workflow(self) -> None:
+        """Without this, every assertion below passes over an empty list."""
+        assert self._files(), f"no workflow files found under {self.WORKFLOWS}"
+
+    def test_every_workflow_parses_and_declares_jobs(self) -> None:
+        import yaml
+
+        for path in self._files():
+            text = path.read_text(encoding="utf-8")
+            control = {c for c in text if ord(c) < 32 and c not in "\n\r\t"}
+            assert not control, (
+                f"{path.name} contains control characters {[hex(ord(c)) for c in control]}. "
+                "GitHub will not start this workflow, and reports no job output at all."
+            )
+            document = yaml.safe_load(text)
+            assert isinstance(document, dict), f"{path.name} did not parse to a mapping"
+            assert document.get("jobs"), f"{path.name} declares no jobs"
+
+    def test_every_required_gate_is_still_declared(self) -> None:
+        import yaml
+
+        declared: set[str] = set()
+        for path in self._files():
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            declared.update(document.get("jobs", {}))
+
+        missing = self.REQUIRED_JOBS - declared
+        assert not missing, f"these gates are no longer declared in any workflow: {sorted(missing)}"

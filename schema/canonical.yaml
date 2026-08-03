@@ -290,7 +290,7 @@ tables:
     primary_key: [id]
     columns:
       - { name: id,  type: id,  nullable: false }
-      # adopt://{firm}/{eng}/{sys}/{env}/{kind}/{ns}/{key}
+      # onboard-v1://{firm}/{eng}/{sys}/{env}/{kind}/{ns}/{key}
       - { name: uri, type: uri, nullable: false, unique: true }
       # CR-09: FKs added -- these columns are what RLS is expressed from, and an
       # unreferenced scope column is a silent integrity hole.

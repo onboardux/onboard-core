@@ -51,6 +51,22 @@ MAX_SUPPORTED_EXPORT_VERSION: Final[int] = 3
 #: truncation would silently merge two distinct referents.
 URI_MAX_BYTES: Final[int] = 1_024
 
+#: The URI scheme label, and the whole of the URI format's version (CR-06,
+#: owner-ratified 2026-08-03). It appears in every identity URI ever emitted, so
+#: it is here rather than at the builder, the parser and the validator -- three
+#: literals nobody could reliably grep for on the day `onboard-v2` arrives.
+#:
+#: `v1` versions **the URI grammar and identity interpretation only**. It is
+#: independent of SCHEMA_VERSION, EXPORT_VERSION, the package version and the
+#: release version; those four already move for unrelated reasons, and coupling
+#: this to any of them would change the URI format every time a column was added.
+#:
+#: A future `onboard-v2` is permitted **only** for an incompatible grammar or
+#: identity-semantics change. A compatible addition -- a new identity kind --
+#: stays on `onboard-v1`, because bumping the label for an additive change
+#: invalidates every URI already emitted and buys nothing.
+URI_SCHEME: Final[str] = "onboard-v1"
+
 #: Scope slug grammar. Slugs are what URIs are built from, so this pattern is
 #: load-bearing for identity stability, not cosmetic.
 SLUG_PATTERN: Final[str] = r"^[a-z0-9]([a-z0-9-]{0,46}[a-z0-9])?$"

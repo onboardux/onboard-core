@@ -87,6 +87,13 @@ enums:
   diff_method:
     since: 3
     values: [exact, embedding_sim, llm_judge, contract_delta]
+  # The probe family's terminal status (CR-33). The other three revision
+  # families each had one and this one did not, which left `retire` -- an
+  # obligation binding on all four (contracts §5 obligation 4) -- inexpressible
+  # for probes. Two values, because a revision chain is either current or ended.
+  probe_definition_status:
+    since: 3
+    values: [active, retired]
   probe_outcome:
     since: 3
     values: [success, diff, failure, blocked_by_manifest]
@@ -589,6 +596,11 @@ tables:
       # safe path impossible. That is a design property, never a relaxable check.
       - { name: safe_path,   type: enum(safe_path),   nullable: false }
       - { name: diff_method, type: enum(diff_method), nullable: false }
+      # CR-33: the family's terminal status, so `retire` is expressible here as
+      # it already is for identity (`dead`) and binding (`retired`). Taken
+      # before the 0.3.0 tag while the manifest is still free (§5 rule 2);
+      # afterwards the same fix would have been an ALTER.
+      - { name: status, type: enum(probe_definition_status), nullable: false }
       # Schema in §7.
       - { name: capability_manifest, type: text, nullable: false }
       - { name: artifact_signature,  type: text }

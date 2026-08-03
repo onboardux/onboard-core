@@ -116,6 +116,11 @@ jobs:
           set -euo pipefail
           uv run python -m bench.store_bench --assert | tee bench-store.txt
 
+      - name: N5 -- build_uri throughput
+        run: |
+          set -euo pipefail
+          uv run python -m bench.uri_bench --assert | tee bench-uri.txt
+
       - name: Append the measurement to the runner profile
         if: always()
         run: |
@@ -132,6 +137,12 @@ jobs:
             echo '```'
             cat bench-store.txt
             echo '```'
+            echo
+            echo '## N5 -- `bench.uri_bench --assert`'
+            echo
+            echo '```'
+            cat bench-uri.txt
+            echo '```'
           } >> runner-profile.md
 
       - name: Upload the ratification evidence
@@ -143,3 +154,4 @@ jobs:
             runner-profile.md
             bench-schema.txt
             bench-store.txt
+            bench-uri.txt

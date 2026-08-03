@@ -381,6 +381,7 @@ CREATE TABLE probe_definition_revision (
   interaction TEXT NOT NULL,
   safe_path TEXT NOT NULL CHECK (safe_path IN ('mock','sandbox','shadow')),
   diff_method TEXT NOT NULL CHECK (diff_method IN ('exact','embedding_sim','llm_judge','contract_delta')),
+  status TEXT NOT NULL CHECK (status IN ('active','retired')),
   capability_manifest TEXT NOT NULL,
   artifact_signature TEXT,
   approved_by TEXT,

@@ -20,16 +20,17 @@ otherwise would mean a reader silently mutating a store it was asked not to
 touch.
 
 **Facades arrive with their tables.** §10.3 declares eleven accessors. `scope()`
-is the one whose tables exist at this sprint; the rest land in the sprints that
-create the tables they front (identities, items, bindings and revisions in S3,
-coverage in S4, and so on). An accessor that raises is not a seam, it is a
-placeholder wearing one.
+came with S2's tables; `identities()`, `items()`, `bindings()`, `probes()` and
+`revisions()` arrive here with the identity and revision families. The rest land
+in the sprints that create the tables they front (coverage in S4, and so on). An
+accessor that raises is not a seam, it is a placeholder wearing one.
 """
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
-from typing import Final, Protocol
+from typing import Final, Protocol, cast
 
 from adopt_const import (
     EXPORT_VERSION,
@@ -40,7 +41,18 @@ from adopt_const import (
 from adopt_obs import AdoptError, Clock, ErrorCode
 from adopt_schema.migrate import apply as apply_migrations
 from adopt_scope import ScopeFacade
-from adopt_store.sqlite.records import SqliteScopeRecords
+from adopt_store.facades.identity import IdentityFacade
+from adopt_store.facades.knowledge import BindingFacade, KnowledgeFacade, ProbeFacade
+from adopt_store.facades.records import RevisionRecords
+from adopt_store.revisions import RevisionWriter
+from adopt_store.sqlite.records import (
+    SqliteBindingRecords,
+    SqliteIdentityRecords,
+    SqliteKnowledgeRecords,
+    SqliteProbeRecords,
+    SqliteRevisionRecords,
+    SqliteScopeRecords,
+)
 from adopt_store.sqlite.store import SqliteStore
 
 __all__ = ["OpenRestriction", "Store", "open_store", "scope_facade", "writer_identity"]
@@ -83,31 +95,100 @@ class OpenRestriction:
 
 
 class Store(Protocol):
-    """The store seam (contracts §10.3), at the accessors this sprint provides."""
+    """The store seam, **exactly** the contracts §10.3 accessors this sprint provides.
+
+    `revision_records()` is deliberately absent even though the handle has one:
+    §10.3 declares the accessors a caller gets, and the append-only port is not
+    one of them. `doctor` needs it, so `doctor` declares its own one-method
+    protocol and takes the handle structurally -- which keeps the need visible
+    without widening the seam every future caller programs against.
+    """
 
     read_only: bool
     restriction: OpenRestriction | None
     schema_version: int
 
     def scope(self) -> ScopeFacade: ...
+    def identities(self) -> IdentityFacade: ...
+    def items(self) -> KnowledgeFacade: ...
+    def bindings(self) -> BindingFacade: ...
+    def probes(self) -> ProbeFacade: ...
+    def revisions(self) -> RevisionWriter: ...
     def close(self) -> None: ...
 
 
 @dataclass(slots=True)
 class SqliteStoreHandle:
-    """A `Store` over SQLite. Returned by `open_store`; never constructed directly."""
+    """A `Store` over SQLite. Returned by `open_store`; never constructed directly.
+
+    Facades are built once and cached, because each holds a records object over
+    the one connection this handle owns. Two `RevisionWriter`s over one store
+    would be two clocks and two transaction depths, and the second is how a
+    nested transaction silently commits half of someone else's work.
+    """
 
     backend: SqliteStore
     read_only: bool
     restriction: OpenRestriction | None
     schema_version: int
     clock: Clock | None = None
-    _scope: ScopeFacade | None = None
+    _facades: dict[str, object] = field(default_factory=dict)
+
+    def _cached[TFacade](self, name: str, build: Callable[[], TFacade]) -> TFacade:
+        cached = self._facades.get(name)
+        if cached is None:
+            cached = build()
+            self._facades[name] = cached
+        return cast("TFacade", cached)
 
     def scope(self) -> ScopeFacade:
-        if self._scope is None:
-            self._scope = scope_facade(self.backend, clock=self.clock)
-        return self._scope
+        return self._cached(
+            "scope", lambda: ScopeFacade(SqliteScopeRecords(self.backend), clock=self.clock)
+        )
+
+    def revision_records(self) -> RevisionRecords:
+        """The append-only port, for `doctor` and for the revision writer."""
+        return self._cached("revision_records", lambda: SqliteRevisionRecords(self.backend))
+
+    def revisions(self) -> RevisionWriter:
+        return self._cached(
+            "revisions",
+            lambda: RevisionWriter(
+                self.revision_records(),
+                SqliteKnowledgeRecords(self.backend),
+                clock=self.clock,
+            ),
+        )
+
+    def identities(self) -> IdentityFacade:
+        return self._cached(
+            "identities",
+            lambda: IdentityFacade(
+                SqliteIdentityRecords(self.backend), self.revisions(), clock=self.clock
+            ),
+        )
+
+    def items(self) -> KnowledgeFacade:
+        return self._cached(
+            "items",
+            lambda: KnowledgeFacade(SqliteKnowledgeRecords(self.backend), self.revisions()),
+        )
+
+    def bindings(self) -> BindingFacade:
+        return self._cached(
+            "bindings",
+            lambda: BindingFacade(
+                SqliteBindingRecords(self.backend), self.revisions(), clock=self.clock
+            ),
+        )
+
+    def probes(self) -> ProbeFacade:
+        return self._cached(
+            "probes",
+            lambda: ProbeFacade(
+                SqliteProbeRecords(self.backend), self.revisions(), clock=self.clock
+            ),
+        )
 
     def transaction(self) -> object:
         """The shared transaction boundary (contracts §10.3)."""

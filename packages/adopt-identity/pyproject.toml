@@ -1,9 +1,18 @@
 [project]
 name = "adopt-identity"
 version = "0.3.0.dev0"
-description = "The identity URI: build, parse, validate. Implemented in S3."
+description = "The identity URI: build, parse, validate."
 requires-python = ">=3.12"
-dependencies = []
+# `adopt-scope` is a dependency because a URI is built from resolved scope
+# slugs (CR-05), and `adopt-model` because `identity_kind` is a declared
+# vocabulary rather than free text. Neither is storage: this package opens no
+# file, no socket and no database.
+dependencies = [
+    "adopt-const",
+    "adopt-model",
+    "adopt-obs",
+    "adopt-scope",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -5,7 +5,9 @@ description = "The adopt command surface: config resolution, JSON mode, exit cod
 requires-python = ">=3.12"
 dependencies = [
     "adopt-const",
+    "adopt-identity",
     "adopt-obs",
+    "adopt-scope",
     "typer>=0.12,<1",
     "rich>=13,<15",
     "click>=8,<9",

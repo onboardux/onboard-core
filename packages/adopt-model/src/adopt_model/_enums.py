@@ -36,6 +36,7 @@ __all__ = [
     "LifecycleState",
     "LocatorRung",
     "OwnershipScope",
+    "ProbeDefinitionStatus",
     "ProbeOutcome",
     "ReviewResolution",
     "SafePath",
@@ -221,6 +222,10 @@ OwnershipScope = Literal[
     "engagement",
     "practice",
     "pooled",
+]
+ProbeDefinitionStatus = Literal[
+    "active",
+    "retired",
 ]
 ProbeOutcome = Literal[
     "success",

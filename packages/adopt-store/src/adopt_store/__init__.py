@@ -11,19 +11,49 @@ review:
   `scripts/no_destructive_sql.py`.
 * **Ids are generated inside the facade and scope is injected by it**; neither
   is accepted from a caller.
+* **`append_revision` is the only mutation on a revision family**, and no update
+  or delete method exists on any facade for a `*_revision` table
+  (`no-revision-update`, in both repositories).
 
-The revision writer, `doctor`, and the remaining contracts §10.3 facades arrive
-with the tables they front, in S3 and S4.
+The coverage facade and the remaining contracts §10.3 accessors arrive with the
+tables they front, in S4 and later.
 """
 
 from adopt_store.api import OpenRestriction, Store, open_store, scope_facade, writer_identity
+from adopt_store.doctor import Finding, doctor
+from adopt_store.facades import (
+    BindingFacade,
+    IdentityFacade,
+    KnowledgeFacade,
+    ProbeFacade,
+)
+from adopt_store.revisions import (
+    BindingRevisionDraft,
+    IdentityRevisionDraft,
+    KnowledgeRevisionDraft,
+    ProbeDefinitionRevisionDraft,
+    RevisionWriter,
+    UnknownFamilyError,
+)
 from adopt_store.vector.api import VECTOR_FEATURE_FLAG, VectorIndex
 
 __all__ = [
     "VECTOR_FEATURE_FLAG",
+    "BindingFacade",
+    "BindingRevisionDraft",
+    "Finding",
+    "IdentityFacade",
+    "IdentityRevisionDraft",
+    "KnowledgeFacade",
+    "KnowledgeRevisionDraft",
     "OpenRestriction",
+    "ProbeDefinitionRevisionDraft",
+    "ProbeFacade",
+    "RevisionWriter",
     "Store",
+    "UnknownFamilyError",
     "VectorIndex",
+    "doctor",
     "open_store",
     "scope_facade",
     "writer_identity",

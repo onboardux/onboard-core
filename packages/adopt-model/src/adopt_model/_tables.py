@@ -38,6 +38,7 @@ from adopt_model._enums import (
     LifecycleState,
     LocatorRung,
     OwnershipScope,
+    ProbeDefinitionStatus,
     ProbeOutcome,
     ReviewResolution,
     SafePath,
@@ -533,6 +534,7 @@ class ProbeDefinitionRevision(BaseModel):
     interaction: str
     safe_path: SafePath
     diff_method: DiffMethod
+    status: ProbeDefinitionStatus
     capability_manifest: str
     artifact_signature: str | None = None
     approved_by: str | None = None

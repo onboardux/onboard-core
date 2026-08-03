@@ -31,6 +31,22 @@ BACKUP_SUFFIX: Final[str] = ".planted-backup"
 DROPPED_TABLE: Final[str] = "engagement"
 DROPPED_COLUMN: Final[str] = "client_label"
 
+#: Where `revision-update` plants its statement: the module that legitimately
+#: writes every revision family. Planting it here rather than in a scratch file
+#: is the point -- the gate has to catch the mutation in the one place a
+#: well-meaning contributor would actually add it, reaching for a one-line "fix"
+#: to a revision that came out wrong.
+REVISION_WRITER: Final[Path] = (
+    REPO_ROOT / "packages" / "adopt-store" / "src" / "adopt_store" / "revisions.py"
+)
+
+#: The statement itself lives in a fixture, not in this file. `no-revision-update`
+#: scans `scripts/`, so a script carrying the literal would fail the gate on a
+#: clean tree -- which reads like a broken build rather than a working gate.
+#: `tests/fixtures/planted` is the directory the contract already allows for
+#: exactly this, so this is the pack's own mechanism rather than a new exemption.
+PLANTED_SQL_DIR: Final[Path] = REPO_ROOT / "tests" / "fixtures" / "planted"
+
 
 def _backup(path: Path) -> None:
     """Byte-for-byte, so `--revert` restores the file and not an approximation.
@@ -56,8 +72,45 @@ def plant_drop_column() -> str:
     return f"removed {DROPPED_TABLE}.{DROPPED_COLUMN} from {MANIFEST.name}"
 
 
+def _planted_statement(name: str) -> str:
+    """The one non-comment line of a planted-SQL fixture."""
+    path = PLANTED_SQL_DIR / name
+    if not path.exists():  # pragma: no cover -- layout change
+        raise SystemExit(
+            f"{path.relative_to(REPO_ROOT)} is missing, so nothing was planted. The gate "
+            "proof depends on it."
+        )
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("--"):
+            return stripped.rstrip(";")
+    raise SystemExit(f"{path.name} contains no statement to plant.")  # pragma: no cover
+
+
+def plant_revision_update() -> str:
+    """Add an `UPDATE` against a `*_revision` table -- PRD F6.2's grep gate.
+
+    The four revision families are append-only, and the chain is the audit
+    record: the moment a revision row is updated in place, "what did it say
+    then" becomes permanently unanswerable and no later repair recovers the
+    answer. `no-revision-update` is the only instrument that catches it before
+    merge, so it is the one that most needs to be seen failing.
+    """
+    if not REVISION_WRITER.exists():  # pragma: no cover -- layout change
+        raise SystemExit(
+            f"{REVISION_WRITER.relative_to(REPO_ROOT)} does not exist, so nothing was "
+            "planted. Update this script rather than leaving the gate unproven."
+        )
+    statement = _planted_statement("revision_update.sql")
+    _backup(REVISION_WRITER)
+    with REVISION_WRITER.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(f'\n\n_PLANTED_VIOLATION = "{statement}"\n')
+    return f"added an UPDATE against knowledge_revision to {REVISION_WRITER.name}"
+
+
 KINDS: Final[dict[str, Callable[[], str]]] = {
     "drop-column": plant_drop_column,
+    "revision-update": plant_revision_update,
 }
 
 

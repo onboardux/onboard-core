@@ -23,7 +23,9 @@ from scripts import (
     error_registry_sync,
     licence_gate,
     no_destructive_sql,
+    plant_violation,
 )
+from tools.contracts import source_rules
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -197,6 +199,99 @@ class TestLicenceGate:
     def test_self_test_detects_all_three_planted_violations(self) -> None:
         """`--self-test` is what the sprint's Final Output Validation runs."""
         assert licence_gate.self_test() == 0
+
+
+@pytest.mark.unit
+class TestNoRevisionUpdate:
+    """The append-only gate rejects the mutation it exists for.
+
+    PRD F6's acceptance signal is *"the grep gate rejects a planted `UPDATE
+    knowledge_revision`"*. The CI job proves it end to end by planting into the
+    real tree; this proves the contract itself, without touching the working
+    tree, so a developer finds out in `pytest` rather than in a red pipeline.
+    """
+
+    def test_an_update_against_a_revision_table_is_reported(self, tmp_path: Path) -> None:
+        source = tmp_path / "pkg" / "writer.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            'SQL = "UPDATE knowledge_revision SET body_md = ? WHERE id = ?"\n',
+            encoding="utf-8",
+        )
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoRevisionUpdateContract, paths=[str(tmp_path)], allowed_paths=[]
+        )
+
+        assert len(findings) == 1
+        assert "knowledge_revision" in findings[0]
+
+    @pytest.mark.parametrize(
+        "table",
+        [
+            "identity_revision",
+            "knowledge_revision",
+            "binding_revision",
+            "probe_definition_revision",
+        ],
+    )
+    def test_every_family_is_covered_by_the_suffix_rule(self, tmp_path: Path, table: str) -> None:
+        """The rule is the `_revision` suffix, not a list -- so a family added
+        later is covered on the day it is added, by nobody."""
+        source = tmp_path / "pkg" / f"{table}.py"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        # S608: this writes a *fixture file* for the gate to read. Nothing here
+        # reaches a database -- the string being built is the violation the gate
+        # must catch, which is the one thing this test cannot avoid containing.
+        source.write_text(f'SQL = "UPDATE {table} SET x = 1"\n', encoding="utf-8")  # noqa: S608
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoRevisionUpdateContract, paths=[str(tmp_path)], allowed_paths=[]
+        )
+
+        assert findings, f"{table} was not caught"
+
+    def test_an_update_against_a_parent_row_is_not_a_violation(self, tmp_path: Path) -> None:
+        """Parents are mutable in their head pointer, denormalized status and
+        `last_seen` (contracts §5 obligation 6). A gate that flagged those would
+        be switched off within a week, and the revision rule with it."""
+        source = tmp_path / "pkg" / "parents.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            'HEAD = "UPDATE knowledge_item SET current_revision_id = ? WHERE id = ?"\n'
+            'SEEN = "UPDATE identity SET last_seen = ? WHERE id = ?"\n',
+            encoding="utf-8",
+        )
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoRevisionUpdateContract, paths=[str(tmp_path)], allowed_paths=[]
+        )
+
+        assert findings == []
+
+    def test_prose_describing_the_rule_is_not_a_violation(self, tmp_path: Path) -> None:
+        """A gate that fires on its own documentation is a gate people work
+        around instead of with (the CR-24 lesson, applied here)."""
+        source = tmp_path / "pkg" / "documented.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            '"""Never write UPDATE knowledge_revision -- append instead."""\n',
+            encoding="utf-8",
+        )
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoRevisionUpdateContract, paths=[str(tmp_path)], allowed_paths=[]
+        )
+
+        assert findings == []
+
+    def test_the_planted_fixture_still_carries_a_statement_the_gate_catches(self) -> None:
+        """The CI job's proof depends on this fixture; if it were emptied or
+        reworded, the job would go green while proving nothing."""
+        statement = plant_violation._planted_statement("revision_update.sql")
+
+        assert statement.upper().startswith("UPDATE ")
+        assert "_revision" in statement
 
     @pytest.mark.parametrize(
         ("dependency", "usage_mode", "rejected", "why"),

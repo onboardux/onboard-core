@@ -19,6 +19,7 @@ import click
 import typer
 
 from adopt_cli.commands import doctor as doctor_command
+from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import version as version_command
 from adopt_cli.json_out import emit, emit_error
 from adopt_obs import AdoptError, ExitCode, get_logger
@@ -31,6 +32,8 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+app.add_typer(identity_commands.app)
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 NetworkOption = Annotated[

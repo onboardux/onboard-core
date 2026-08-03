@@ -47,7 +47,9 @@ version = "0.3.0.dev0"
 source = { editable = "packages/adopt-cli" }
 dependencies = [
     { name = "adopt-const" },
+    { name = "adopt-identity" },
     { name = "adopt-obs" },
+    { name = "adopt-scope" },
     { name = "click" },
     { name = "rich" },
     { name = "typer" },
@@ -56,7 +58,9 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-identity", editable = "packages/adopt-identity" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "adopt-scope", editable = "packages/adopt-scope" },
     { name = "click", specifier = ">=8,<9" },
     { name = "rich", specifier = ">=13,<15" },
     { name = "typer", specifier = ">=0.12,<1" },
@@ -91,6 +95,20 @@ source = { editable = "packages/adopt-freshness" }
 name = "adopt-identity"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-identity" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-model" },
+    { name = "adopt-obs" },
+    { name = "adopt-scope" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "adopt-scope", editable = "packages/adopt-scope" },
+]
 
 [[package]]
 name = "adopt-model"

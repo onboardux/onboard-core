@@ -14,10 +14,30 @@ assembly of the two happens in `adopt_store.api` (SQLite) and in
 `plane_store` (Postgres). `ScopeFacade` is the first of them and lives in
 `adopt_scope`, beside the slug and lifecycle rules it enforces.
 
-Facades arrive with the tables they front: identities, items, bindings and the
-revision writer in S3, coverage in S4, and so on.
+Facades arrive with the tables they front: scope in S2, identities, items,
+bindings and probes here in S3, coverage in S4, and so on.
 """
 
 from adopt_scope import ScopeFacade
+from adopt_store.facades.identity import IdentityFacade
+from adopt_store.facades.knowledge import BindingFacade, KnowledgeFacade, ProbeFacade
+from adopt_store.facades.records import (
+    BindingRecords,
+    IdentityRecords,
+    KnowledgeRecords,
+    ProbeRecords,
+    RevisionRecords,
+)
 
-__all__ = ["ScopeFacade"]
+__all__ = [
+    "BindingFacade",
+    "BindingRecords",
+    "IdentityFacade",
+    "IdentityRecords",
+    "KnowledgeFacade",
+    "KnowledgeRecords",
+    "ProbeFacade",
+    "ProbeRecords",
+    "RevisionRecords",
+    "ScopeFacade",
+]

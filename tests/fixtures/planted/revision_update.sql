@@ -1,0 +1,14 @@
+-- The statement `scripts/plant_violation.py --kind revision-update` plants.
+--
+-- It lives here rather than as a literal in the script because
+-- `no-revision-update` scans `scripts/`, and a script carrying the statement
+-- would fail the gate every run -- including on a clean tree, which reads like
+-- a broken build rather than a working gate. `tests/fixtures/planted` is the
+-- directory the contract already names for exactly this, so this is the
+-- mechanism the pack provided rather than an exemption argued for after the
+-- fact (contrast CR-24, where the emitter genuinely had to contain the string
+-- it generates).
+--
+-- Nothing executes this file. It is the shape of the mistake, kept where the
+-- gate can be shown catching it.
+UPDATE knowledge_revision SET body_md = ? WHERE id = ?;

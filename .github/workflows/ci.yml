@@ -147,6 +147,49 @@ jobs:
       - name: Property suite
         run: uv run pytest -m property --hypothesis-seed=0
 
+  append-only:
+    name: append-only (no UPDATE on a revision, no covered_cache write outside adopt_coverage)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      # The `lint` job runs all twelve contracts; this job exists to run the two
+      # that guard an invariant with no other enforcement, and to prove one of
+      # them still rejects. A gate nobody has seen fail is a gate nobody should
+      # trust, and these two are the ones a well-meaning contributor is most
+      # likely to break with a one-line "fix".
+      - name: The two invariants a one-line fix breaks
+        run: uv run lint-imports --config importlinter.ini
+      - name: Prove the gate still rejects a planted revision UPDATE
+        run: |
+          set -euo pipefail
+          uv run python scripts/plant_violation.py --kind revision-update
+          if uv run lint-imports --config importlinter.ini; then
+            echo "::error::a planted UPDATE against a *_revision table was NOT detected"
+            uv run python scripts/plant_violation.py --revert
+            exit 1
+          fi
+          uv run python scripts/plant_violation.py --revert
+          echo "planted revision UPDATE detected -- gate is live"
+      - name: The tree is exactly as it was found
+        run: git diff --exit-code
+      # The sprint plan's Final Output Validation greps both repositories.
+      # **This job scans only this one, deliberately.** `adopt-core` is
+      # Apache-2.0 and goes public at 0.3.0; giving a public repository's
+      # workflow a credential that can read the closed one would put the licence
+      # boundary behind a secret-rotation policy. The closed half of the scan
+      # runs in `adopt-plane`'s own CI, which already checks out this repository
+      # as a sibling and already declares `no-revision-update`.
+      - name: No UPDATE against a revision table (open repository)
+        run: |
+          set -euo pipefail
+          if grep -rEn "UPDATE[[:space:]]+[a-z_]*_revision" packages/; then
+            echo "::error::an UPDATE targets a *_revision table"
+            exit 1
+          fi
+          echo "no revision mutation under packages/"
+
   schema-check:
     name: schema-check (generated artifacts match the manifest)
     runs-on: ubuntu-24.04

@@ -28,6 +28,7 @@ __all__ = [
     "configured_store_path",
     "open_configured_store",
     "open_named_store",
+    "open_or_create_store",
     "writer_identity",
 ]
 
@@ -61,6 +62,20 @@ def open_configured_store(
 ) -> SqliteStoreHandle:
     """Open the configured store. The caller closes it."""
     return open_store(configured_store_path(override), read_only=read_only)
+
+
+def open_or_create_store(override: Path | None = None) -> SqliteStoreHandle:
+    """The configured store, created at the current schema version if absent.
+
+    `adopt init`'s door, and the only one that creates. Every other command opens
+    what is already there -- which is why the parent directory is created here
+    and nowhere else: `.adopt/` not existing is the normal state before `init`
+    runs, and any later command finding it absent is reporting a real problem
+    rather than one it should quietly fix.
+    """
+    target = configured_store_path(override)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return open_store(target, migrate=True)
 
 
 def open_named_store(path: Path, *, migrate: bool = False) -> SqliteStoreHandle:

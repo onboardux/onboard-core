@@ -45,6 +45,7 @@ from adopt_store.sqlite.store import SqliteStore
 
 __all__ = [
     "SqliteBindingRecords",
+    "SqliteBoundaryRecords",
     "SqliteCoverageRecords",
     "SqliteExportRecords",
     "SqliteFreshnessRecords",
@@ -529,6 +530,45 @@ class SqliteRevisionRecords:
             )
             for row in rows
         ]
+
+
+class SqliteBoundaryRecords:
+    """The SQLite implementation of `ObservabilityBoundaryRecords`.
+
+    Note there is no `UPDATE` here and no method that could grow into one. A
+    boundary is appended; `latest_boundary` is how the current one is read.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_boundary(self, row: ObservabilityBoundary) -> None:
+        _insert(self._store, "observability_boundary", row)
+
+    def latest_boundary(
+        self, *, system_id: str, environment_id: str | None
+    ) -> ObservabilityBoundary | None:
+        # `environment_id IS NULL` is written as its own branch rather than as a
+        # parameter, because `= ?` with a NULL parameter matches nothing in SQL
+        # and would silently report "no boundary" for every system-wide one.
+        if environment_id is None:
+            return _one(
+                self._store,
+                ObservabilityBoundary,
+                "SELECT * FROM observability_boundary WHERE system_id = ? "
+                "AND environment_id IS NULL ORDER BY declared_at DESC, id DESC LIMIT 1",
+                (system_id,),
+            )
+        return _one(
+            self._store,
+            ObservabilityBoundary,
+            "SELECT * FROM observability_boundary WHERE system_id = ? AND environment_id = ? "
+            "ORDER BY declared_at DESC, id DESC LIMIT 1",
+            (system_id, environment_id),
+        )
 
 
 class SqliteSensorRecords:

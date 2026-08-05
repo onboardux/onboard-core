@@ -1,0 +1,45 @@
+# lowcode -- a system assembled in a visual builder and exported as a solution
+# package. There is no hand-written source to parse; the artefacts are the
+# builder's own serialization of flows, screens and connections.
+archetype: lowcode
+rules:
+  - id: lowcode.powerplatform.solution
+    weight: 3
+    path: "**/customizations.xml"
+    why: The Power Platform solution export's customization document.
+
+  - id: lowcode.powerplatform.flow
+    weight: 3
+    path: "**/Workflows/**/*.json"
+    contains: "\"$connections\""
+    why: A Power Automate flow definition, identified by its connection binding block.
+
+  - id: lowcode.powerapps.msapp
+    weight: 3
+    path: "**/*.msapp"
+    why: A canvas app package. Binary, and only Power Apps produces one.
+
+  - id: lowcode.mendix.mpr
+    weight: 3
+    path: "**/*.mpr"
+    why: A Mendix project file.
+
+  - id: lowcode.outsystems.oap
+    weight: 3
+    path: "**/*.oap"
+    why: An OutSystems application package.
+
+  - id: lowcode.appian
+    weight: 2
+    path: "**/application*.zip.properties"
+    why: An Appian application export descriptor.
+
+  - id: lowcode.retool
+    weight: 2
+    path: "**/*.retool.json"
+    why: A Retool app export.
+
+  - id: lowcode.zapier
+    weight: 2
+    path: "**/zaps/**/*.json"
+    why: An exported Zapier automation set.

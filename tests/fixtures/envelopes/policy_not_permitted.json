@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "firm_id": "firm_01J8",
+  "engagement_id": "eng_01J8",
+  "system_id": "sys_01J8",
+  "environment_id": "env_01J8",
+  "event_type": "question.received",
+  "occurred_at": "2026-08-05T10:15:00.000Z",
+  "content_policy": "full_content",
+  "payload": {}
+}

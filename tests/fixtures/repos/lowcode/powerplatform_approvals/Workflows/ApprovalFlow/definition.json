@@ -1,0 +1,6 @@
+{
+  "properties": {
+    "definition": {},
+    "$connections": { "shared_office365": {} }
+  }
+}

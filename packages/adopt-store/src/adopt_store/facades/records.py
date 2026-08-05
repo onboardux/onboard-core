@@ -29,6 +29,7 @@ from adopt_model import (
     IdentityRevision,
     KnowledgeItem,
     KnowledgeRevision,
+    ObservabilityBoundary,
     ProbeDefinition,
     ProbeDefinitionRevision,
     Sensor,
@@ -40,6 +41,7 @@ __all__ = [
     "BindingRecords",
     "IdentityRecords",
     "KnowledgeRecords",
+    "ObservabilityBoundaryRecords",
     "ProbeRecords",
     "RevisionRecords",
     "SensorRecords",
@@ -97,6 +99,34 @@ class ProbeRecords(Protocol):
     def transaction(self) -> AbstractContextManager[None]: ...
     def insert_probe_definition(self, row: ProbeDefinition) -> None: ...
     def get_probe_definition(self, probe_definition_id: str) -> ProbeDefinition | None: ...
+
+
+class ObservabilityBoundaryRecords(Protocol):
+    """`observability_boundary`.
+
+    **There is no update on this port.** A boundary is declared, not amended:
+    re-negotiation appends a row and `latest_boundary` reads the newest. The
+    table is not a `*_revision` family, so `no-revision-update` would not have
+    caught an `UPDATE` here -- which is exactly why the absence is stated rather
+    than assumed. What may leave a client environment is not a field to be
+    quietly corrected.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+    def insert_boundary(self, row: ObservabilityBoundary) -> None: ...
+
+    def latest_boundary(
+        self, *, system_id: str, environment_id: str | None
+    ) -> ObservabilityBoundary | None:
+        """The newest boundary for the scope, by `declared_at` then `id`.
+
+        `id` breaks the tie because ULIDs are monotonic within a millisecond and
+        `declared_at` is millisecond-truncated (contracts §1.2) -- two boundaries
+        declared in the same millisecond would otherwise be ordered arbitrarily,
+        and "arbitrarily" for this table means a client's permitted egress list
+        depends on a sort nobody specified.
+        """
+        ...
 
 
 class SensorRecords(Protocol):

@@ -1,0 +1,16 @@
+# No cost block at all: MANIFEST_INVALID.
+probe_id: probe_01J8ZK3QW7X9Y2N4M6P8R0T2V4
+definition_version: 3
+environment: sandbox
+safe_path: sandbox
+network:
+  allow: [api.sandbox.customer.example]
+  deny_by_default: true
+request_targets: [api.sandbox.customer.example]
+http_methods: { allow: [GET, POST] }
+side_effect_policy: prohibited
+secret_refs: [vault://engagement/probe-token]
+filesystem: { mode: read_only }
+runtime: { max_seconds: 60, max_memory_mb: 512, max_requests: 20 }
+output: { retain_raw: false, redaction_policy: pii-default }
+cleanup: { required: true }

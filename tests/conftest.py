@@ -12,11 +12,16 @@ builder is six places for the fixture to drift from the contract it encodes.
 Every earlier file keeps its own local `store`/`scope`, which pytest lets
 shadow these, so nothing already written changes behaviour.
 
-**Three tables are written here through the backend rather than a facade.**
-`observability_boundary` is S6's, and `audience_tag` belongs to whichever sprint
-gives the item writer its full surface -- but `recompute_coverage` reads both, so
-a coverage test has to be able to put a row there. A facade written to satisfy a
-test is a facade the sprint that owns it then has to argue with.
+**`audience_tag` is written here through the backend rather than a facade.** It
+belongs to whichever sprint gives the item writer its full surface -- but
+`recompute_coverage` reads it, so a coverage test has to be able to put a row
+there. A facade written to satisfy a test is a facade the sprint that owns it
+then has to argue with.
+
+**`add_boundary` went through raw SQL until S6 and now goes through
+`Store.boundary()`**, which is the facade that sprint was waiting for. Six S4
+tests get the real write path for free, and the raw `INSERT` that stood in for it
+is gone rather than left beside its replacement.
 """
 
 import datetime as _dt
@@ -31,8 +36,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from adopt_obs import ManualClock, format_timestamp, new_id  # noqa: E402
-from adopt_scope import Scope  # noqa: E402
+from adopt_obs import ManualClock  # noqa: E402
+from adopt_scope import Scope, ScopeNode  # noqa: E402
 from adopt_store import open_store  # noqa: E402
 from adopt_store.api import SqliteStoreHandle  # noqa: E402
 from adopt_store.sqlite.records import SqliteKnowledgeRecords  # noqa: E402
@@ -66,36 +71,38 @@ def s4_scope(s4_store: SqliteStoreHandle) -> Scope:
 
 
 @pytest.fixture
-def add_boundary(s4_store: SqliteStoreHandle, s4_clock: ManualClock) -> Callable[..., str]:
-    """Write one `observability_boundary`. Input 5 of contracts §6.
+def add_boundary(s4_store: SqliteStoreHandle) -> Callable[..., str]:
+    """Declare one `observability_boundary` through the facade. Input 5 of contracts §6.
 
     `environment_id=None` is the system-wide declaration and governs every
     environment; naming one governs only that environment. The distinction is
     what `recompute_coverage` turns on, so the helper exposes it rather than
     picking one.
+
+    The `Scope` is built from ids alone because that is all `declare` reads --
+    the slug is set to the id rather than to an empty string so that anything
+    which did misuse one fails visibly instead of joining to a row with an empty
+    slug, the same reasoning `adopt_cli.commands.identity` records.
     """
 
     def _add(*, system_id: str, environment_id: str | None = None, tier: str = "T2") -> str:
-        boundary_id = new_id("ob")
-        with s4_store.backend.transaction():
-            s4_store.backend.execute(
-                "INSERT INTO observability_boundary "
-                "(id, system_id, environment_id, tier, knowledge_plane_location, "
-                " control_plane_location, permitted_outbound_categories, declared_at, "
-                " contractual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    boundary_id,
-                    system_id,
-                    environment_id,
-                    tier,
-                    "customer",
-                    "customer",
-                    '["metadata_only"]',
-                    format_timestamp(s4_clock.now()),
-                    0,
-                ),
-            )
-        return boundary_id
+        scope = Scope(
+            firm=ScopeNode(id=system_id, slug=system_id),
+            system=ScopeNode(id=system_id, slug=system_id),
+            environment=(
+                None
+                if environment_id is None
+                else ScopeNode(id=environment_id, slug=environment_id)
+            ),
+        )
+        row = s4_store.boundary().declare(
+            scope=scope,
+            tier=tier,  # type: ignore[arg-type]
+            knowledge_plane_location="customer",
+            control_plane_location="customer",
+            permitted_outbound_categories=["metadata_only"],
+        )
+        return row.id
 
     return _add
 

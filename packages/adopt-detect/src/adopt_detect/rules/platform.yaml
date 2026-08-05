@@ -1,0 +1,55 @@
+# platform -- a customization layer on a packaged ERP/CRM product, where the
+# vendor owns the base and the client owns the configuration on top of it.
+#
+# The distinguishing signal is that the artefacts are *metadata describing
+# customizations*, not application source: an SAP transport, a Salesforce
+# metadata package, a Dynamics solution.
+archetype: platform
+rules:
+  - id: platform.salesforce.sfdx
+    weight: 3
+    path: sfdx-project.json
+    why: The Salesforce DX project descriptor -- the root of a metadata package.
+
+  - id: platform.salesforce.package-xml
+    weight: 3
+    path: "**/package.xml"
+    contains: "http://soap.sforce.com/2006/04/metadata"
+    why: A Salesforce metadata manifest, identified by the vendor's own namespace.
+
+  - id: platform.salesforce.apex
+    weight: 2
+    path: "**/*.cls"
+    why: Apex classes execute inside the vendor's runtime, not ours.
+
+  - id: platform.salesforce.objects
+    weight: 2
+    path: "**/objects/**/*.object-meta.xml"
+    why: Custom object metadata is configuration of a packaged product.
+
+  - id: platform.sap.abap
+    weight: 3
+    path: "**/*.abap"
+    why: ABAP is only written against an SAP base system.
+
+  - id: platform.sap.transport
+    weight: 2
+    path: "**/transport*.xml"
+    why: An SAP transport request describes a customization being moved between systems.
+
+  - id: platform.dynamics.solution
+    weight: 3
+    path: "**/solution.xml"
+    contains: "SolutionManifest"
+    why: A Dynamics 365 solution manifest -- the packaged-product customization unit.
+
+  - id: platform.servicenow.update-set
+    weight: 3
+    path: "**/sys_update_set*.xml"
+    why: A ServiceNow update set is the platform's own customization export.
+
+  - id: platform.netsuite.suitescript
+    weight: 2
+    path: "**/*.js"
+    contains: "@NApiVersion"
+    why: The SuiteScript annotation, which only NetSuite reads.

@@ -1,0 +1,67 @@
+# web -- an application or service whose source is under version control and
+# whose behaviour changes when someone edits that source (AI spec §5.1).
+#
+# Every rule is a path glob, optionally narrowed by a literal substring. Adding
+# a signal is an edit to this file and nothing else.
+archetype: web
+rules:
+  - id: web.python.django-settings
+    weight: 3
+    path: "**/settings.py"
+    contains: "INSTALLED_APPS"
+    why: A Django settings module is the framework's own entry point and appears in no other archetype.
+
+  - id: web.python.manage
+    weight: 2
+    path: manage.py
+    contains: "django"
+    why: Django's management entry point at the checkout root.
+
+  - id: web.python.fastapi
+    weight: 3
+    path: "**/*.py"
+    contains: "from fastapi import"
+    why: A FastAPI import is a service whose routes are defined in source.
+
+  - id: web.python.flask
+    weight: 3
+    path: "**/*.py"
+    contains: "from flask import"
+    why: A Flask import is a service whose routes are defined in source.
+
+  - id: web.node.package-json
+    weight: 2
+    path: package.json
+    why: A Node package manifest at the root of a checkout.
+
+  - id: web.node.express
+    weight: 3
+    path: package.json
+    contains: "\"express\""
+    why: Express is declared as a dependency, so HTTP routing lives in this source.
+
+  - id: web.ruby.gemfile
+    weight: 2
+    path: Gemfile
+    contains: "rails"
+    why: A Rails application's dependency manifest.
+
+  - id: web.ruby.routes
+    weight: 3
+    path: config/routes.rb
+    why: Rails' routing table, which exists only in a Rails application.
+
+  - id: web.go.mod
+    weight: 2
+    path: go.mod
+    why: A Go module at the checkout root.
+
+  - id: web.openapi
+    weight: 2
+    path: "**/openapi.yaml"
+    why: An OpenAPI description alongside source is a service's own contract.
+
+  - id: web.dockerfile
+    weight: 1
+    path: Dockerfile
+    why: A service that builds its own image. Weak on its own -- every archetype has some.

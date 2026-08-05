@@ -8,6 +8,15 @@ target-version = "py312"
 line-length = 100
 src = ["packages", "scripts", "tools", "tests", "bench"]
 
+# The S6 detection corpus is **not our code**. Each tree is a synthetic stand-in
+# for a client system, and every file in it exists to carry a framework signal --
+# `from django.db import models` in an otherwise empty module is not an unused
+# import, it is the evidence detection reads. Linting them would mean either
+# ignoring a growing wall of warnings or "fixing" the fixtures until they no
+# longer resemble the systems they stand for, and the second is how a corpus
+# stops testing anything.
+exclude = ["tests/fixtures/repos"]
+
 [lint]
 select = [
     "E",    # pycodestyle errors

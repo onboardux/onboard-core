@@ -1,0 +1,51 @@
+# data -- an analytics estate: models, columns, metrics and the jobs that build
+# them. The referents are datasets and transformations rather than endpoints.
+archetype: data
+rules:
+  - id: data.dbt.project
+    weight: 3
+    path: dbt_project.yml
+    why: A dbt project descriptor at the checkout root.
+
+  - id: data.dbt.models
+    weight: 2
+    path: "**/models/**/*.sql"
+    why: dbt model SQL, which is a transformation rather than application source.
+
+  - id: data.dbt.schema
+    weight: 2
+    path: "**/models/**/schema.yml"
+    why: dbt's model and column documentation, which is the semantic layer we bind to.
+
+  - id: data.dbt.manifest
+    weight: 3
+    path: "**/target/manifest.json"
+    contains: "\"dbt_schema_version\""
+    why: A compiled dbt manifest -- the authoritative lineage artefact.
+
+  - id: data.airflow.dag
+    weight: 3
+    path: "**/dags/**/*.py"
+    contains: "from airflow"
+    why: An Airflow DAG defines the jobs that build the estate.
+
+  - id: data.dagster
+    weight: 3
+    path: "**/*.py"
+    contains: "from dagster import"
+    why: A Dagster asset definition.
+
+  - id: data.looker
+    weight: 3
+    path: "**/*.lkml"
+    why: LookML is a semantic model and exists in no other archetype.
+
+  - id: data.cube
+    weight: 2
+    path: "**/cube.js"
+    why: A Cube semantic layer definition.
+
+  - id: data.great-expectations
+    weight: 1
+    path: "**/great_expectations.yml"
+    why: Data quality expectations. Weak on its own -- a service estate may also carry them.

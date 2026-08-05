@@ -1,0 +1,5 @@
+{
+  "artifact_access": "yes",
+  "deploy_signal": true,
+  "safe_interaction": true
+}

@@ -18,11 +18,15 @@ from typing import Annotated
 import click
 import typer
 
+from adopt_cli.commands import boundary as boundary_command
 from adopt_cli.commands import coverage as coverage_commands
+from adopt_cli.commands import detect as detect_command
 from adopt_cli.commands import doctor as doctor_command
 from adopt_cli.commands import freshness as freshness_commands
 from adopt_cli.commands import identity as identity_commands
+from adopt_cli.commands import init as init_command
 from adopt_cli.commands import interchange as interchange_commands
+from adopt_cli.commands import policy as policy_commands
 from adopt_cli.commands import version as version_command
 from adopt_cli.json_out import emit, emit_error
 from adopt_obs import AdoptError, ExitCode, get_logger
@@ -39,6 +43,14 @@ app = typer.Typer(
 app.add_typer(identity_commands.app)
 app.add_typer(coverage_commands.app)
 app.add_typer(freshness_commands.app)
+app.add_typer(policy_commands.probe_app)
+app.add_typer(policy_commands.envelope_app)
+
+# `init`, `detect` and `boundary` are bare commands, not groups: contracts §14
+# names them `adopt init [path]`, `adopt detect [path]` and `adopt boundary`.
+app.command("init")(init_command.init)
+app.command("detect")(detect_command.detect)
+app.command("boundary")(boundary_command.boundary)
 
 # Registered as bare commands rather than a group: contracts §14 names them
 # `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the

@@ -21,10 +21,12 @@ touch.
 
 **Facades arrive with their tables.** §10.3 declares eleven accessors. `scope()`
 came with S2's tables; `identities()`, `items()`, `bindings()`, `probes()` and
-`revisions()` arrived at S3 with the identity and revision families, and
-`sensors()` arrives here with the channel whose health gates freshness. The rest
-land in the sprints that create the tables they front. An accessor that raises is
-not a seam, it is a placeholder wearing one.
+`revisions()` arrived at S3 with the identity and revision families; `sensors()`
+came with the channel whose health gates freshness; and `boundary()` arrives with
+the tier negotiation that first has something to declare. The remaining three --
+`changes()`, `governance()` and `value()` -- land in the sprints that write the
+tables they front. An accessor that raises is not a seam, it is a placeholder
+wearing one.
 
 **Two ports are exposed that §10.3 does not declare**, and deliberately so:
 `coverage_records()` and `freshness_records()` are the storage halves of
@@ -48,6 +50,7 @@ from adopt_const import (
 from adopt_obs import AdoptError, Clock, ErrorCode
 from adopt_schema.migrate import apply as apply_migrations
 from adopt_scope import ScopeFacade
+from adopt_store.facades.boundary import BoundaryFacade
 from adopt_store.facades.identity import IdentityFacade
 from adopt_store.facades.knowledge import BindingFacade, KnowledgeFacade, ProbeFacade
 from adopt_store.facades.records import RevisionRecords
@@ -55,6 +58,7 @@ from adopt_store.facades.sensors import SensorFacade
 from adopt_store.revisions import RevisionWriter
 from adopt_store.sqlite.records import (
     SqliteBindingRecords,
+    SqliteBoundaryRecords,
     SqliteCoverageRecords,
     SqliteExportRecords,
     SqliteFreshnessRecords,
@@ -127,6 +131,7 @@ class Store(Protocol):
     def bindings(self) -> BindingFacade: ...
     def probes(self) -> ProbeFacade: ...
     def sensors(self) -> SensorFacade: ...
+    def boundary(self) -> BoundaryFacade: ...
     def revisions(self) -> RevisionWriter: ...
     def close(self) -> None: ...
 
@@ -207,6 +212,12 @@ class SqliteStoreHandle:
     def sensors(self) -> SensorFacade:
         return self._cached(
             "sensors", lambda: SensorFacade(SqliteSensorRecords(self.backend), clock=self.clock)
+        )
+
+    def boundary(self) -> BoundaryFacade:
+        return self._cached(
+            "boundary",
+            lambda: BoundaryFacade(SqliteBoundaryRecords(self.backend), clock=self.clock),
         )
 
     def coverage_records(self) -> SqliteCoverageRecords:

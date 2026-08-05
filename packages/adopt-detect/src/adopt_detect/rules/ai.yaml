@@ -1,0 +1,64 @@
+# ai -- a deployed LLM system: prompts, model pins, tool schemas, retrieval
+# configuration and eval sets. The referents whose change matters most are not
+# in the code path at all -- a prompt file and a model version are.
+#
+# This archetype is the one the tier gate bites on: PRD F10.7 records an `ai`
+# system below T3 as a boundary violation, because without a safe interaction
+# path its behaviour cannot be observed at all.
+archetype: ai
+rules:
+  - id: ai.sdk.anthropic
+    weight: 3
+    path: "**/*.py"
+    contains: "from anthropic import"
+    why: An Anthropic SDK import is a live model call in this system's source.
+
+  - id: ai.sdk.openai
+    weight: 3
+    path: "**/*.py"
+    contains: "from openai import"
+    why: An OpenAI SDK import is a live model call in this system's source.
+
+  - id: ai.framework.langchain
+    weight: 3
+    path: "**/*.py"
+    contains: "from langchain"
+    why: A LangChain import, so chains, tools and retrievers are the referents.
+
+  - id: ai.framework.langgraph
+    weight: 3
+    path: "**/*.py"
+    contains: "from langgraph"
+    why: A LangGraph agent graph.
+
+  - id: ai.framework.llamaindex
+    weight: 2
+    path: "**/*.py"
+    contains: "from llama_index"
+    why: A LlamaIndex retrieval pipeline.
+
+  - id: ai.prompts.directory
+    weight: 3
+    path: "**/prompts/**/*.txt"
+    why: A versioned prompt file is the identity kind this archetype exists for.
+
+  - id: ai.prompts.markdown
+    weight: 2
+    path: "**/prompts/**/*.md"
+    why: Prompts kept as markdown alongside the system that sends them.
+
+  - id: ai.evals
+    weight: 2
+    path: "**/evals/**/*.jsonl"
+    why: An eval set is the behavioural baseline an AI system is judged against.
+
+  - id: ai.model-pin
+    weight: 2
+    path: "**/*.yaml"
+    contains: "model:"
+    why: A pinned model in configuration -- the referent whose silent change breaks answers.
+
+  - id: ai.mcp
+    weight: 2
+    path: "**/mcp.json"
+    why: An MCP server manifest declares the tools an agent may call.

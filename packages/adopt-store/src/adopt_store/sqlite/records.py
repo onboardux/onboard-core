@@ -21,6 +21,7 @@ from typing import Any, Final, get_args, get_origin
 from pydantic import BaseModel
 
 from adopt_model import (
+    MODEL_FOR_TABLE,
     Binding,
     BindingRevision,
     Engagement,
@@ -45,8 +46,10 @@ from adopt_store.sqlite.store import SqliteStore
 __all__ = [
     "SqliteBindingRecords",
     "SqliteCoverageRecords",
+    "SqliteExportRecords",
     "SqliteFreshnessRecords",
     "SqliteIdentityRecords",
+    "SqliteImportRecords",
     "SqliteKnowledgeRecords",
     "SqliteProbeRecords",
     "SqliteRevisionRecords",
@@ -72,6 +75,22 @@ _REVISION_PARENT_COLUMNS: Final[dict[str, str]] = {
 }
 
 
+def _require_canonical(table: str) -> str:
+    """``table`` if the manifest declares it, else a refusal naming the set.
+
+    The export and import ports are the only code here that takes a table name
+    from outside -- every other statement in this module names its table in
+    source. `MODEL_FOR_TABLE` is generated from the manifest, so the allowlist
+    cannot fall behind the schema the way a hand-kept tuple would.
+    """
+    if table not in MODEL_FOR_TABLE:
+        raise ValueError(
+            f"{table!r} is not a canonical table. Table names reaching a statement are "
+            "checked against the generated set first; the manifest is the allowlist."
+        )
+    return table
+
+
 def _require_known(table: str, allowed: Mapping[str, str]) -> str:
     """The allowed column for ``table``, or a refusal naming the closed set."""
     column = allowed.get(table)
@@ -87,7 +106,7 @@ _JSON_COLUMN_CACHE: dict[type[BaseModel], frozenset[str]] = {}
 
 
 def _json_columns(model_type: type[BaseModel]) -> frozenset[str]:
-    """Which of a model's fields are manifest `json` columns.
+    """Which of a model's **columns** are manifest `json` columns.
 
     SQLite has no JSON type, so such a column is TEXT on the way in and TEXT on
     the way out, and translating it is the realization's job -- exactly as it
@@ -96,6 +115,12 @@ def _json_columns(model_type: type[BaseModel]) -> frozenset[str]:
     correct until the next `json` column is added by someone with no reason to
     look here.
 
+    Keyed by **alias where one exists**, because the alias is the column name and
+    a column name is what both callers hold: `_to_row` dumps by alias and
+    `_from_row` is handed a database row. `classification.class` is the one
+    column where the two differ today, and keying by field name would silently
+    stop matching the moment a `json` column collides with a Python keyword.
+
     Cached per model type: annotations cannot change at runtime, and re-deriving
     them per row would put reflection on the recompute's hot path.
     """
@@ -103,7 +128,7 @@ def _json_columns(model_type: type[BaseModel]) -> frozenset[str]:
     if cached is not None:
         return cached
     resolved = frozenset(
-        name
+        field.alias or name
         for name, field in model_type.model_fields.items()
         if any(
             get_origin(candidate) in (dict, list)
@@ -120,10 +145,16 @@ def _to_row(model: BaseModel) -> dict[str, Any]:
     The generated model is the authority on what a row contains: it is closed
     with ``extra="forbid"``, so a column invented here would fail construction
     long before it could reach the file.
+
+    **Dumped by alias**, because the alias *is* the canonical column name: one
+    column is called `class`, which is a Python keyword, so its field is
+    `class_`. Dumping by field name would build `INSERT INTO classification
+    (class_, ...)` against a table that has no such column -- a statement that
+    fails only for the one table nothing had yet written to.
     """
     json_columns = _json_columns(type(model))
     values: dict[str, Any] = {}
-    for name, value in model.model_dump().items():
+    for name, value in model.model_dump(by_alias=True).items():
         if name in json_columns and value is not None:
             # Sorted keys and no spaces: the export round-trip compares table
             # files byte for byte, so a JSON column that re-serialised in a
@@ -767,6 +798,65 @@ class SqliteFreshnessRecords:
             for row in rows
             if row["observed_at"] is not None
         }
+
+
+class SqliteExportRecords:
+    """The SQLite implementation of `adopt_export.ExportRecords`.
+
+    Read-only in the strong sense: no write method exists on the class, so the
+    bundle writer could not write even if it tried (implementation spec §4.10 --
+    "writes confined to the target directory").
+
+    Rows come back **unordered**. Adding `ORDER BY` here would move the ordering
+    authority into this dialect, and the byte-identical round-trip would then be
+    a property of SQLite's collation rather than of the writer -- which the
+    Postgres realization would have to reproduce exactly, unwritten and untested.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def firm_slugs(self) -> Sequence[str]:
+        return [str(row["slug"]) for row in self._store.query("SELECT slug FROM firm")]
+
+    def engagement_slugs(self) -> Sequence[str]:
+        return [str(row["slug"]) for row in self._store.query("SELECT slug FROM engagement")]
+
+    def table_rows[TModel: BaseModel](
+        self, table: str, model_type: type[TModel]
+    ) -> Sequence[TModel]:
+        # S608: `table` is checked against the generated table set first, so no
+        # caller-supplied text ever reaches the statement.
+        rows = self._store.query(f"SELECT * FROM {_require_canonical(table)}")  # noqa: S608
+        return [_from_row(model_type, dict(row)) for row in rows]
+
+
+class SqliteImportRecords:
+    """The SQLite implementation of `adopt_export.ImportRecords`.
+
+    **Whole rows only.** `insert_rows` derives its column list from `_to_row`,
+    which derives it from the generated model, so there is no argument through
+    which a caller could name a subset -- and therefore no way to use this class
+    as the per-column setter `no-covered-cache-write` forbids. `covered_cache`
+    arrives here as one field of a full `identity` row that a bundle recorded,
+    never as a value anything computed.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def row_count(self, table: str) -> int:
+        # S608: `table` is checked against the generated table set first.
+        rows = self._store.query(f"SELECT COUNT(*) AS n FROM {_require_canonical(table)}")  # noqa: S608
+        return int(rows[0]["n"])
+
+    def insert_rows(self, table: str, models: Sequence[BaseModel]) -> None:
+        canonical = _require_canonical(table)
+        for model in models:
+            _insert(self._store, canonical, model)
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
 
 
 def _placeholders(values: Sequence[str]) -> str:

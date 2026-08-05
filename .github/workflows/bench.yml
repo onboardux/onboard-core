@@ -136,6 +136,14 @@ jobs:
           set -euo pipefail
           uv run python -m bench.freshness_bench --assert | tee bench-freshness.txt
 
+      # N4's other half -- the byte-identical re-export -- is not timed. It is a
+      # correctness property with no number attached, asserted by `golden-g0` on
+      # every pull request, and timing it here would suggest it were a budget.
+      - name: N4 -- full export at 50k items, including the per-file digest
+        run: |
+          set -euo pipefail
+          uv run python -m bench.export_bench --assert | tee bench-export.txt
+
       - name: Append the measurement to the runner profile
         if: always()
         run: |
@@ -169,6 +177,12 @@ jobs:
             echo
             echo '```'
             cat bench-freshness.txt
+            echo '```'
+            echo
+            echo '## N4 -- `bench.export_bench --assert`'
+            echo
+            echo '```'
+            cat bench-export.txt
             echo '```'
           } >> runner-profile.md
 

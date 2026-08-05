@@ -13,6 +13,10 @@ because it is needed before this package is first generated (CR-21).
 # and CI fails on it, because a hand-edited realization means the manifest has
 # silently stopped being the single source of truth.
 
+from typing import Final
+
+from pydantic import BaseModel
+
 from adopt_model._enums import (
     ApprovalSubject,
     Archetype,
@@ -95,6 +99,7 @@ from adopt_model._tables import (
 )
 
 __all__ = [
+    "MODEL_FOR_TABLE",
     "Approval",
     "ApprovalSubject",
     "Archetype",
@@ -172,3 +177,48 @@ __all__ = [
     "ValueEventType",
     "Verification",
 ]
+
+#: Canonical table name -> the model that validates one of its rows.
+#: Generated because the correspondence is the manifest's, not a
+#: convention a caller should re-derive from a class name: the export
+#: writer, the importer and the store all need it, and three
+#: reconstructions of one mapping are three places for it to drift.
+MODEL_FOR_TABLE: Final[dict[str, type[BaseModel]]] = {
+    "approval": Approval,
+    "audience_tag": AudienceTag,
+    "audit_event": AuditEvent,
+    "baseline_version": BaselineVersion,
+    "binding": Binding,
+    "binding_revision": BindingRevision,
+    "change_event": ChangeEvent,
+    "classification": Classification,
+    "classifier_version": ClassifierVersion,
+    "conflict": Conflict,
+    "connector": Connector,
+    "death_condition": DeathCondition,
+    "engagement": Engagement,
+    "environment": Environment,
+    "escalation": Escalation,
+    "firm": Firm,
+    "identity": Identity,
+    "identity_revision": IdentityRevision,
+    "knowledge_item": KnowledgeItem,
+    "knowledge_revision": KnowledgeRevision,
+    "observability_boundary": ObservabilityBoundary,
+    "ownership_assignment": OwnershipAssignment,
+    "probe_definition": ProbeDefinition,
+    "probe_definition_revision": ProbeDefinitionRevision,
+    "probe_observation": ProbeObservation,
+    "probe_run": ProbeRun,
+    "provenance": Provenance,
+    "review_batch": ReviewBatch,
+    "review_item": ReviewItem,
+    "schema_meta": SchemaMeta,
+    "sensor": Sensor,
+    "sensor_heartbeat": SensorHeartbeat,
+    "silent_repair_eligibility": SilentRepairEligibility,
+    "system": System,
+    "system_lifecycle_event": SystemLifecycleEvent,
+    "value_baseline": ValueBaseline,
+    "value_event": ValueEvent,
+}

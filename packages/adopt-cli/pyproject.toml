@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "adopt-const",
     "adopt-coverage",
+    "adopt-export",
     "adopt-freshness",
     "adopt-identity",
     "adopt-obs",

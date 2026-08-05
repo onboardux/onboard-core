@@ -45,6 +45,11 @@ known-first-party = [
     "adopt_identity", "adopt_store", "adopt_coverage", "adopt_freshness",
     "adopt_export", "adopt_detect", "adopt_policy", "adopt_agent",
     "adopt_workflow", "adopt_cli",
+    # `tests` is a namespace package rooted at the repository, and shared test
+    # support is imported through it (`tests.golden.fixture`). Without this it
+    # sorts as third-party, which puts the repository's own fixture builder in
+    # the same block as `pytest`.
+    "tests",
 ]
 
 [format]

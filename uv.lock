@@ -48,6 +48,7 @@ source = { editable = "packages/adopt-cli" }
 dependencies = [
     { name = "adopt-const" },
     { name = "adopt-coverage" },
+    { name = "adopt-export" },
     { name = "adopt-freshness" },
     { name = "adopt-identity" },
     { name = "adopt-obs" },
@@ -62,6 +63,7 @@ dependencies = [
 requires-dist = [
     { name = "adopt-const", editable = "packages/adopt-const" },
     { name = "adopt-coverage", editable = "packages/adopt-coverage" },
+    { name = "adopt-export", editable = "packages/adopt-export" },
     { name = "adopt-freshness", editable = "packages/adopt-freshness" },
     { name = "adopt-identity", editable = "packages/adopt-identity" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },
@@ -103,6 +105,20 @@ source = { editable = "packages/adopt-detect" }
 name = "adopt-export"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-export" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-model" },
+    { name = "adopt-obs" },
+    { name = "adopt-schema" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "adopt-schema", editable = "packages/adopt-schema" },
+]
 
 [[package]]
 name = "adopt-freshness"

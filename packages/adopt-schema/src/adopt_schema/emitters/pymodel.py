@@ -209,6 +209,9 @@ def emit_tables(manifest: Manifest) -> str:
     return "\n".join(lines) + "\n"
 
 
+_TABLE_MAP_NAME: Final[str] = "MODEL_FOR_TABLE"
+
+
 def emit_package(manifest: Manifest) -> str:
     names = sorted(_enum_alias(n) for n in manifest.enums)
     models = sorted(class_name(n) for n in manifest.tables)
@@ -225,6 +228,10 @@ def emit_package(manifest: Manifest) -> str:
         "",
         _HEADER,
         "",
+        "from typing import Final",
+        "",
+        "from pydantic import BaseModel",
+        "",
         "from adopt_model._enums import (",
     ]
     lines.extend(f"    {name}," for name in names)
@@ -232,6 +239,21 @@ def emit_package(manifest: Manifest) -> str:
     lines.append("from adopt_model._tables import (")
     lines.extend(f"    {name}," for name in models)
     lines.extend([")", "", "__all__ = ["])
-    lines.extend(f'    "{name}",' for name in sorted(names + models))
-    lines.append("]")
+    # Isort order, which ruff's RUF022 enforces on a generated file as readily
+    # as on a hand-written one: SCREAMING_SNAKE names sort before CamelCase.
+    lines.extend(f'    "{name}",' for name in [_TABLE_MAP_NAME, *sorted([*names, *models])])
+    lines.extend(
+        [
+            "]",
+            "",
+            "#: Canonical table name -> the model that validates one of its rows.",
+            "#: Generated because the correspondence is the manifest's, not a",
+            "#: convention a caller should re-derive from a class name: the export",
+            "#: writer, the importer and the store all need it, and three",
+            "#: reconstructions of one mapping are three places for it to drift.",
+            f"{_TABLE_MAP_NAME}: Final[dict[str, type[BaseModel]]] = {{",
+        ]
+    )
+    lines.extend(f'    "{name}": {class_name(name)},' for name in sorted(manifest.tables))
+    lines.append("}")
     return "\n".join(lines) + "\n"

@@ -56,8 +56,10 @@ from adopt_store.revisions import RevisionWriter
 from adopt_store.sqlite.records import (
     SqliteBindingRecords,
     SqliteCoverageRecords,
+    SqliteExportRecords,
     SqliteFreshnessRecords,
     SqliteIdentityRecords,
+    SqliteImportRecords,
     SqliteKnowledgeRecords,
     SqliteProbeRecords,
     SqliteRevisionRecords,
@@ -218,6 +220,14 @@ class SqliteStoreHandle:
     def sensor_records(self) -> SqliteSensorRecords:
         """The sensor port, for `doctor`'s NULL-cadence finding."""
         return self._cached("sensor_records", lambda: SqliteSensorRecords(self.backend))
+
+    def export_records(self) -> SqliteExportRecords:
+        """The read port `adopt_export.write_bundle` runs on."""
+        return self._cached("export_records", lambda: SqliteExportRecords(self.backend))
+
+    def import_records(self) -> SqliteImportRecords:
+        """The write port `adopt_export.apply_bundle` runs on."""
+        return self._cached("import_records", lambda: SqliteImportRecords(self.backend))
 
     def transaction(self) -> object:
         """The shared transaction boundary (contracts §10.3)."""

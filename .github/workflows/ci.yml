@@ -147,6 +147,46 @@ jobs:
       - name: Property suite
         run: uv run pytest -m property --hypothesis-seed=0
 
+  golden-g0:
+    name: golden-g0 (export -> import -> export is byte-identical)
+    runs-on: ubuntu-24.04
+    # **No soft-fail, no continue-on-error, ever.** G0 is the executable form of
+    # the commercial promise -- stop paying and you keep the knowledge -- and
+    # that promise has no degraded mode either. PRD D1 measures this job's pass
+    # rate at 1.0 over the trailing 30 CI days, which is a ratio a soft-failing
+    # job would silently satisfy while proving nothing.
+    #
+    # It is a job of its own rather than a step in `unit` because the three
+    # assertions are the build's definition of done, condition 2: a reviewer
+    # looking at a pull request should see whether portability holds without
+    # opening a log.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      - name: The three G0 assertions over a fixture covering every exportable table
+        run: uv run pytest tests/golden -m golden
+      # The round trip through the CLI, exactly as `05` S5 states it and exactly
+      # as a client would run it. Asserted here as well as in `tests/golden`
+      # because the library round trip would pass with the commands wired to the
+      # wrong store, and the commands are what §14 makes a contract.
+      - name: The documented command sequence, run literally
+        run: |
+          set -euo pipefail
+          uv run python scripts/s5_validation_walkthrough.py --store /tmp/g0.db
+          export ADOPT_STORE_PATH=/tmp/g0.db
+          uv run adopt export /tmp/b1 --json
+          uv run adopt import /tmp/b1 --into /tmp/s2.db --json
+          uv run adopt export /tmp/b2 --store /tmp/s2.db --json
+          diff -r /tmp/b1/tables /tmp/b2/tables
+          echo "tables/ are byte-identical"
+      - name: No runtime-annex table reaches the bundle
+        run: |
+          set -euo pipefail
+          count="$(grep -c "runtime" /tmp/b1/manifest.json || true)"
+          echo "occurrences of 'runtime' in manifest.json: ${count}"
+          test "${count}" = "0"
+
   append-only:
     name: append-only (no UPDATE on a revision, no covered_cache write outside adopt_coverage)
     runs-on: ubuntu-24.04

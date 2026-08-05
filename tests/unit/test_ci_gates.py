@@ -594,6 +594,12 @@ class TestWorkflowsAreRunnable:
             "schema-check",
             "schema-lint",
             "schema-realize",
+            # `append-only` landed at S4 and `golden-g0` at S5; both are named as
+            # gates in implementation spec §7 and neither was on this list, so
+            # deleting either would have gone unnoticed by the one instrument
+            # that exists to notice exactly that.
+            "append-only",
+            "golden-g0",
         }
     )
 
@@ -628,3 +634,27 @@ class TestWorkflowsAreRunnable:
 
         missing = self.REQUIRED_JOBS - declared
         assert not missing, f"these gates are no longer declared in any workflow: {sorted(missing)}"
+
+    def test_golden_g0_has_no_soft_fail(self) -> None:
+        """`golden-g0` must never acquire `continue-on-error`.
+
+        *Fails when* someone makes the portability gate advisory. *Matters
+        because* PRD D1 measures its pass rate at `1.0` over the trailing 30 CI
+        days, and a soft-failing job satisfies that ratio while proving nothing
+        -- it reports success whatever the round trip did. *No other instrument
+        catches it because* every other check here asserts that a gate *runs*,
+        and a soft-failed job does run. It just stops meaning anything.
+        """
+        import yaml
+
+        for path in self._files():
+            job = yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {}).get("golden-g0")
+            if job is None:
+                continue
+            assert "continue-on-error" not in job, "golden-g0 has no soft-fail mode, ever"
+            for step in job.get("steps", []):
+                assert "continue-on-error" not in step, (
+                    f"a golden-g0 step is soft-failing: {step.get('name', step)}"
+                )
+            return
+        raise AssertionError("golden-g0 is not declared in any workflow")

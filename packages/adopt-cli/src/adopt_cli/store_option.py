@@ -10,6 +10,11 @@ reads a healthy store while a different one is on fire.
 writes nothing by contract and `adopt coverage recompute` writes only under
 `--rebuild`, so the default open is read-only and a write attempt raises
 `STORE_READ_ONLY` rather than succeeding somewhere unexpected.
+
+**This is the only `adopt_cli` module permitted to reach `adopt_store`** (CR-36),
+so every other way a command needs a store arrives here rather than growing a
+second exemption -- including `adopt import`'s explicitly-named target store and
+the `written_by` provenance string an export bundle records.
 """
 
 from pathlib import Path
@@ -17,9 +22,14 @@ from pathlib import Path
 from adopt_cli.config import resolve_all
 from adopt_obs import AdoptError, ErrorCode
 from adopt_store import open_store
-from adopt_store.api import SqliteStoreHandle
+from adopt_store.api import SqliteStoreHandle, writer_identity
 
-__all__ = ["configured_store_path", "open_configured_store"]
+__all__ = [
+    "configured_store_path",
+    "open_configured_store",
+    "open_named_store",
+    "writer_identity",
+]
 
 _STORE_KEY = "ADOPT_STORE_PATH"
 
@@ -51,3 +61,13 @@ def open_configured_store(
 ) -> SqliteStoreHandle:
     """Open the configured store. The caller closes it."""
     return open_store(configured_store_path(override), read_only=read_only)
+
+
+def open_named_store(path: Path, *, migrate: bool = False) -> SqliteStoreHandle:
+    """Open a store the caller named outright, bypassing the resolution order.
+
+    For `adopt import --into`, where the path is an argument rather than
+    configuration: an import target resolved from `ADOPT_STORE_PATH` would
+    restore a bundle over whichever store the shell happened to be pointing at.
+    """
+    return open_store(path, migrate=migrate)

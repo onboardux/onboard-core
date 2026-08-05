@@ -22,6 +22,7 @@ from adopt_cli.commands import coverage as coverage_commands
 from adopt_cli.commands import doctor as doctor_command
 from adopt_cli.commands import freshness as freshness_commands
 from adopt_cli.commands import identity as identity_commands
+from adopt_cli.commands import interchange as interchange_commands
 from adopt_cli.commands import version as version_command
 from adopt_cli.json_out import emit, emit_error
 from adopt_obs import AdoptError, ExitCode, get_logger
@@ -38,6 +39,13 @@ app = typer.Typer(
 app.add_typer(identity_commands.app)
 app.add_typer(coverage_commands.app)
 app.add_typer(freshness_commands.app)
+
+# Registered as bare commands rather than a group: contracts §14 names them
+# `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the
+# function is `import_` and the command name is given explicitly -- the CLI
+# surface is the contract, not the identifier that happens to implement it.
+app.command("export")(interchange_commands.export)
+app.command("import")(interchange_commands.import_)
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 NetworkOption = Annotated[

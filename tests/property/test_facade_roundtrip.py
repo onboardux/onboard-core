@@ -139,3 +139,72 @@ def test_resolve_returns_ids_and_slugs_for_every_level(
     assert resolved.engagement is not None and resolved.engagement.id == engagement.id
     assert resolved.system is not None and resolved.system.id == system.id
     assert resolved.environment is not None and resolved.environment.id == environment.id
+
+
+@pytest.mark.property
+@settings(
+    max_examples=50,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(
+    engagement_slug=_SLUGS,
+    system_slug=_SLUGS,
+    environment_slug=_SLUGS,
+    kind=st.sampled_from(("webhook", "ci", "audit_trail", "probe", "trace", "contract")),
+    cadence=st.one_of(st.none(), st.integers(min_value=1, max_value=86_400)),
+    owner=_OPTIONAL_TEXT,
+    outcome=st.sampled_from(("success", "empty", "failure", "skipped")),
+    detail=_OPTIONAL_TEXT,
+)
+def test_every_sensor_write_round_trips(
+    store: SqliteStoreHandle,
+    engagement_slug: str,
+    system_slug: str,
+    environment_slug: str,
+    kind: str,
+    cadence: int | None,
+    owner: str | None,
+    outcome: str,
+    detail: str | None,
+) -> None:
+    """S4's new facade, in the same property as the rest.
+
+    `expected_cadence_seconds` is generated as **`None` or an integer** because
+    the nullable case is the one that silently disables the missed-heartbeat
+    check, and a round-trip that turned `None` into `0` would turn "no cadence
+    declared" into "a cadence of zero seconds" -- a sensor permanently past its
+    deadline rather than one never checked against it.
+    """
+    scope_facade = store.scope()
+    tag = f"{next(_TAGS):x}"
+    firm = scope_facade.create_firm(slug=f"firm-{tag}", name="Northwind LLP")
+    engagement = scope_facade.create_engagement(firm_id=firm.id, slug=engagement_slug, name="ACME")
+    system = scope_facade.create_system(
+        engagement_id=engagement.id, slug=system_slug, name="Orders"
+    )
+    scope_facade.create_environment(system_id=system.id, slug=environment_slug, name="prod")
+    scope = scope_facade.resolve(f"{firm.slug}/{engagement.slug}/{system.slug}/{environment_slug}")
+
+    sensors = store.sensors()
+    registered = sensors.register(
+        scope=scope,
+        kind=kind,  # type: ignore[arg-type]
+        expected_cadence_seconds=cadence,
+        owner_actor_id=owner,
+    )
+    assert sensors.get(registered.id) == registered
+
+    sensors.heartbeat(sensor_id=registered.id, outcome=outcome, detail=detail)  # type: ignore[arg-type]
+
+    after = sensors.get(registered.id)
+    assert after is not None
+    # The heartbeat moved health and the observation timestamps, and **nothing
+    # else**: the cadence a sensor is measured against is not the reporting
+    # path's to rewrite.
+    assert after.expected_cadence_seconds == cadence
+    assert after.owner_actor_id == owner
+    assert after.kind == registered.kind
+    assert after.last_attempted_at is not None
+    assert (after.health == "HEALTHY") is (outcome in {"success", "empty"})
+    assert sensors.for_scope(system_id=system.id, environment_id=scope.environment.id) == (after,)  # type: ignore[union-attr]

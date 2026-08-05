@@ -3,7 +3,18 @@ name = "adopt-freshness"
 version = "0.3.0.dev0"
 description = "resolve_freshness: multi-level, load-bearing propagation, sensor override. Implemented in S4."
 requires-python = ">=3.12"
-dependencies = []
+# `adopt-const` for `SENSOR_MISSED_CADENCE_MULTIPLIER`, which is the one number
+# this package uses and which lives in exactly one place.
+#
+# `adopt-store` is deliberately **absent**, for the reason given in
+# `adopt-coverage/pyproject.toml`: this package declares its own storage port and
+# is handed a realization that satisfies it structurally, so no chain reaches
+# `sqlite3`.
+dependencies = [
+    "adopt-const",
+    "adopt-model",
+    "adopt-obs",
+]
 
 [build-system]
 requires = ["hatchling"]

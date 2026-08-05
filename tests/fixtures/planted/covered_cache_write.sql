@@ -1,0 +1,17 @@
+-- The statement `scripts/plant_violation.py --kind covered-cache-write` plants.
+--
+-- It lives here rather than as a literal in the script for the reason
+-- `revision_update.sql` gives: `no-covered-cache-write` scans `scripts/`, so a
+-- script carrying the statement would fail the gate on a clean tree, which
+-- reads like a broken build rather than a working gate.
+--
+-- Why this is the mistake worth catching: `identity.covered_cache` is a cache
+-- and `recompute_coverage` is the authority. A well-meaning contributor fixing
+-- a "wrong" coverage flag reaches for exactly this line, in exactly the module
+-- that already updates `identity.last_seen` -- and the moment it lands, the
+-- cache has a second writer and the disagreement alarm has something to be
+-- wrong about that nobody will ever trace back.
+--
+-- Nothing executes this file. It is the shape of the mistake, kept where the
+-- gate can be shown catching it.
+UPDATE identity SET covered_cache = ?, covered_cache_at = ? WHERE id = ?;

@@ -13,9 +13,10 @@ invented would fail construction rather than reaching the file.
 """
 
 import datetime as _dt
+import json as _json
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
-from typing import Any, Final
+from typing import Any, Final, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -29,22 +30,28 @@ from adopt_model import (
     IdentityRevision,
     KnowledgeItem,
     KnowledgeRevision,
+    ObservabilityBoundary,
     ProbeDefinition,
     ProbeDefinitionRevision,
+    Sensor,
+    SensorHeartbeat,
     System,
     SystemLifecycleEvent,
 )
-from adopt_model._enums import FreshnessState, LifecycleState
+from adopt_model._enums import FreshnessState, LifecycleState, SensorHealth
 from adopt_obs import format_timestamp
 from adopt_store.sqlite.store import SqliteStore
 
 __all__ = [
     "SqliteBindingRecords",
+    "SqliteCoverageRecords",
+    "SqliteFreshnessRecords",
     "SqliteIdentityRecords",
     "SqliteKnowledgeRecords",
     "SqliteProbeRecords",
     "SqliteRevisionRecords",
     "SqliteScopeRecords",
+    "SqliteSensorRecords",
 ]
 
 #: Table names are interpolated into a handful of statements below, so each is
@@ -76,6 +83,37 @@ def _require_known(table: str, allowed: Mapping[str, str]) -> str:
     return column
 
 
+_JSON_COLUMN_CACHE: dict[type[BaseModel], frozenset[str]] = {}
+
+
+def _json_columns(model_type: type[BaseModel]) -> frozenset[str]:
+    """Which of a model's fields are manifest `json` columns.
+
+    SQLite has no JSON type, so such a column is TEXT on the way in and TEXT on
+    the way out, and translating it is the realization's job -- exactly as it
+    already is for datetimes and booleans. The set is derived from the generated
+    model's own annotations rather than from a hand-kept list, which would be
+    correct until the next `json` column is added by someone with no reason to
+    look here.
+
+    Cached per model type: annotations cannot change at runtime, and re-deriving
+    them per row would put reflection on the recompute's hot path.
+    """
+    cached = _JSON_COLUMN_CACHE.get(model_type)
+    if cached is not None:
+        return cached
+    resolved = frozenset(
+        name
+        for name, field in model_type.model_fields.items()
+        if any(
+            get_origin(candidate) in (dict, list)
+            for candidate in (get_args(field.annotation) or (field.annotation,))
+        )
+    )
+    _JSON_COLUMN_CACHE[model_type] = resolved
+    return resolved
+
+
 def _to_row(model: BaseModel) -> dict[str, Any]:
     """Model -> column values, timestamps rendered and booleans stored as 0/1.
 
@@ -83,9 +121,15 @@ def _to_row(model: BaseModel) -> dict[str, Any]:
     with ``extra="forbid"``, so a column invented here would fail construction
     long before it could reach the file.
     """
+    json_columns = _json_columns(type(model))
     values: dict[str, Any] = {}
     for name, value in model.model_dump().items():
-        if isinstance(value, _dt.datetime):
+        if name in json_columns and value is not None:
+            # Sorted keys and no spaces: the export round-trip compares table
+            # files byte for byte, so a JSON column that re-serialised in a
+            # different key order would break G0 on a store nothing had changed.
+            values[name] = _json.dumps(value, sort_keys=True, separators=(",", ":"))
+        elif isinstance(value, _dt.datetime):
             values[name] = format_timestamp(value)
         elif isinstance(value, bool):
             values[name] = int(value)
@@ -103,8 +147,17 @@ def _from_row[TModel: BaseModel](model_type: type[TModel], row: Mapping[str, Any
     *write then read* return the value that was written rather than one that is
     merely equivalent — and equality on the generated models is what the export
     round-trip and every caller comparison rest on.
+
+    `json` columns are decoded first, in the same place and for the same reason:
+    a column the store rendered has to be un-rendered by the store, or the model
+    rejects the very row it wrote.
     """
-    model = model_type.model_validate(dict(row))
+    values = dict(row)
+    for name in _json_columns(model_type):
+        candidate = values.get(name)
+        if isinstance(candidate, str):
+            values[name] = _json.loads(candidate)
+    model = model_type.model_validate(values)
     shifted = {
         name: value.astimezone(_dt.UTC)
         for name, value in model.__dict__.items()
@@ -445,3 +498,281 @@ class SqliteRevisionRecords:
             )
             for row in rows
         ]
+
+
+class SqliteSensorRecords:
+    """The SQLite implementation of `SensorRecords`."""
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_sensor(self, row: Sensor) -> None:
+        _insert(self._store, "sensor", row)
+
+    def get_sensor(self, sensor_id: str) -> Sensor | None:
+        return _one(self._store, Sensor, "SELECT * FROM sensor WHERE id = ?", (sensor_id,))
+
+    def list_sensors(self, *, system_id: str, environment_id: str | None) -> Sequence[Sensor]:
+        if environment_id is None:
+            rows = self._store.query(
+                "SELECT * FROM sensor WHERE system_id = ? ORDER BY id", (system_id,)
+            )
+        else:
+            rows = self._store.query(
+                "SELECT * FROM sensor WHERE system_id = ? AND environment_id = ? ORDER BY id",
+                (system_id, environment_id),
+            )
+        return [_from_row(Sensor, dict(row)) for row in rows]
+
+    def insert_heartbeat(self, row: SensorHeartbeat) -> None:
+        _insert(self._store, "sensor_heartbeat", row)
+
+    def update_sensor_health(
+        self,
+        sensor_id: str,
+        *,
+        health: SensorHealth,
+        degradation_reason: str | None,
+        last_attempted_at: _dt.datetime,
+        last_success_at: _dt.datetime | None,
+        last_event_at: _dt.datetime | None,
+    ) -> None:
+        """Move a sensor's health and its observation timestamps.
+
+        `sensor` is a parent row, not a `*_revision` table, so this `UPDATE` is
+        legitimate. The column list is exhaustive on purpose: nothing here can
+        reach `expected_cadence_seconds`, because the reporting path rewriting
+        the cadence it is measured against would make the missed-heartbeat check
+        unfalsifiable.
+        """
+        self._store.execute(
+            "UPDATE sensor SET health = ?, degradation_reason = ?, last_attempted_at = ?, "
+            "last_success_at = ?, last_event_at = ? WHERE id = ?",
+            (
+                health,
+                degradation_reason,
+                format_timestamp(last_attempted_at),
+                None if last_success_at is None else format_timestamp(last_success_at),
+                None if last_event_at is None else format_timestamp(last_event_at),
+                sensor_id,
+            ),
+        )
+
+    def sensors_without_cadence(self) -> Sequence[Sensor]:
+        rows = self._store.query(
+            "SELECT * FROM sensor WHERE expected_cadence_seconds IS NULL ORDER BY id"
+        )
+        return [_from_row(Sensor, dict(row)) for row in rows]
+
+
+#: The head of an identity's chain is *derived* -- the revision no other
+#: revision supersedes (contracts §5 obligation 3) -- so both readers of it
+#: share one subquery rather than two spellings that could drift.
+_UNSUPERSEDED_IDENTITY_REVISION: Final[str] = (
+    "id NOT IN (SELECT supersedes_revision_id FROM identity_revision "
+    "WHERE supersedes_revision_id IS NOT NULL)"
+)
+
+
+class SqliteCoverageRecords:
+    """The SQLite implementation of `adopt_coverage.CoverageRecords`.
+
+    Satisfied **structurally**: nothing here imports `adopt_coverage`, and
+    `adopt_coverage` imports nothing here. That is what keeps `no-raw-sqlite`
+    kept while the recompute still runs against a real store.
+
+    Every method is a bulk fetch scoped by system, because N6 budgets the whole
+    recompute at 50k identities: a per-identity round trip would spend the budget
+    on round trips rather than on the six inputs it is supposed to evaluate.
+
+    **No statement in this class names the coverage cache.** Reading `identity`
+    with `SELECT *` carries `covered_cache` along without mentioning it, and the
+    write lives in `adopt_coverage.cache`, which is the only place
+    `no-covered-cache-write` permits it.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def _scoped(self, sql: str, system_id: str, environment_id: str | None, alias: str) -> Any:
+        """Run `sql` with the environment predicate spliced in from a closed set."""
+        if environment_id is None:
+            return self._store.query(sql.format(scope=""), (system_id,))
+        return self._store.query(
+            sql.format(scope=f" AND {alias}.environment_id = ?"), (system_id, environment_id)
+        )
+
+    def identities_in_scope(
+        self, *, system_id: str, environment_id: str | None
+    ) -> Sequence[Identity]:
+        rows = self._scoped(
+            "SELECT * FROM identity i WHERE i.system_id = ?{scope} ORDER BY i.id",
+            system_id,
+            environment_id,
+            "i",
+        )
+        return [_from_row(Identity, dict(row)) for row in rows]
+
+    def systems_with_identities(self) -> Sequence[str]:
+        rows = self._store.query("SELECT DISTINCT system_id FROM identity ORDER BY system_id")
+        return [str(row["system_id"]) for row in rows]
+
+    def head_identity_statuses(
+        self, *, system_id: str, environment_id: str | None
+    ) -> Mapping[str, str]:
+        rows = self._scoped(
+            # S608: the only interpolations are `_UNSUPERSEDED_IDENTITY_REVISION`, a
+            # module constant, and the environment predicate `_scoped` splices from a
+            # closed pair. No caller text reaches the statement.
+            "SELECT r.identity_id AS identity_id, r.status AS status "  # noqa: S608
+            "FROM identity_revision r JOIN identity i ON i.id = r.identity_id "
+            f"WHERE i.system_id = ?{{scope}} AND r.{_UNSUPERSEDED_IDENTITY_REVISION} "
+            "ORDER BY r.created_at, r.id",
+            system_id,
+            environment_id,
+            "i",
+        )
+        return {str(row["identity_id"]): str(row["status"]) for row in rows}
+
+    def bindings_in_scope(self, *, system_id: str, environment_id: str | None) -> Sequence[Binding]:
+        rows = self._scoped(
+            "SELECT b.* FROM binding b JOIN identity i ON i.id = b.identity_id "
+            "WHERE i.system_id = ?{scope} ORDER BY b.id",
+            system_id,
+            environment_id,
+            "i",
+        )
+        return [_from_row(Binding, dict(row)) for row in rows]
+
+    def head_binding_statuses(
+        self, *, system_id: str, environment_id: str | None
+    ) -> Mapping[str, str]:
+        rows = self._scoped(
+            "SELECT b.id AS binding_id, rev.status AS status FROM binding b "
+            "JOIN binding_revision rev ON rev.id = b.current_revision_id "
+            "JOIN identity i ON i.id = b.identity_id "
+            "WHERE i.system_id = ?{scope} ORDER BY b.id",
+            system_id,
+            environment_id,
+            "i",
+        )
+        return {str(row["binding_id"]): str(row["status"]) for row in rows}
+
+    def items_in_scope(self, *, system_id: str) -> Sequence[KnowledgeItem]:
+        rows = self._store.query(
+            "SELECT * FROM knowledge_item WHERE system_id = ? ORDER BY id", (system_id,)
+        )
+        return [_from_row(KnowledgeItem, dict(row)) for row in rows]
+
+    def head_item_verifications(self, *, system_id: str) -> Mapping[str, str | None]:
+        rows = self._store.query(
+            "SELECT k.id AS item_id, rev.verification AS verification FROM knowledge_item k "
+            "JOIN knowledge_revision rev ON rev.id = k.current_revision_id "
+            "WHERE k.system_id = ? ORDER BY k.id",
+            (system_id,),
+        )
+        return {
+            str(row["item_id"]): None if row["verification"] is None else str(row["verification"])
+            for row in rows
+        }
+
+    def audience_counts(self, *, system_id: str) -> Mapping[str, int]:
+        rows = self._store.query(
+            "SELECT a.item_id AS item_id, COUNT(*) AS tally FROM audience_tag a "
+            "JOIN knowledge_item k ON k.id = a.item_id "
+            "WHERE k.system_id = ? GROUP BY a.item_id ORDER BY a.item_id",
+            (system_id,),
+        )
+        return {str(row["item_id"]): int(row["tally"]) for row in rows}
+
+    def boundaries_for_system(self, *, system_id: str) -> Sequence[ObservabilityBoundary]:
+        rows = self._store.query(
+            "SELECT * FROM observability_boundary WHERE system_id = ? ORDER BY id", (system_id,)
+        )
+        return [_from_row(ObservabilityBoundary, dict(row)) for row in rows]
+
+
+class SqliteFreshnessRecords:
+    """The SQLite implementation of `adopt_freshness.FreshnessRecords`.
+
+    Structurally satisfied, like `SqliteCoverageRecords`, and read-only in the
+    strong sense: there is no write method on the class at all, so
+    `resolve_freshness` could not write even if it tried.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def get_item(self, item_id: str) -> KnowledgeItem | None:
+        return _one(
+            self._store, KnowledgeItem, "SELECT * FROM knowledge_item WHERE id = ?", (item_id,)
+        )
+
+    def bindings_for_item(self, item_id: str) -> Sequence[Binding]:
+        rows = self._store.query("SELECT * FROM binding WHERE item_id = ? ORDER BY id", (item_id,))
+        return [_from_row(Binding, dict(row)) for row in rows]
+
+    def head_binding_statuses(self, binding_ids: Sequence[str]) -> Mapping[str, str]:
+        if not binding_ids:
+            return {}
+        rows = self._store.query(
+            # S608: `_placeholders` emits only `?` characters, one per id.
+            "SELECT b.id AS binding_id, rev.status AS status FROM binding b "  # noqa: S608
+            "JOIN binding_revision rev ON rev.id = b.current_revision_id "
+            f"WHERE b.id IN ({_placeholders(binding_ids)})",
+            tuple(binding_ids),
+        )
+        return {str(row["binding_id"]): str(row["status"]) for row in rows}
+
+    def head_identity_statuses(self, identity_ids: Sequence[str]) -> Mapping[str, str]:
+        if not identity_ids:
+            return {}
+        rows = self._store.query(
+            # S608: `_placeholders` emits only `?`; the rest is a module constant.
+            "SELECT identity_id, status FROM identity_revision "  # noqa: S608
+            f"WHERE identity_id IN ({_placeholders(identity_ids)}) "
+            f"AND {_UNSUPERSEDED_IDENTITY_REVISION} ORDER BY created_at, id",
+            tuple(identity_ids),
+        )
+        return {str(row["identity_id"]): str(row["status"]) for row in rows}
+
+    def sensors_in_scope(self, *, system_id: str, environment_id: str | None) -> Sequence[Sensor]:
+        if environment_id is None:
+            rows = self._store.query(
+                "SELECT * FROM sensor WHERE system_id = ? ORDER BY id", (system_id,)
+            )
+        else:
+            rows = self._store.query(
+                "SELECT * FROM sensor WHERE system_id = ? AND environment_id = ? ORDER BY id",
+                (system_id, environment_id),
+            )
+        return [_from_row(Sensor, dict(row)) for row in rows]
+
+    def latest_heartbeat_at(self, sensor_ids: Sequence[str]) -> Mapping[str, _dt.datetime]:
+        if not sensor_ids:
+            return {}
+        rows = self._store.query(
+            # S608: `_placeholders` emits only `?` characters, one per id.
+            "SELECT sensor_id, MAX(observed_at) AS observed_at FROM sensor_heartbeat "  # noqa: S608
+            f"WHERE sensor_id IN ({_placeholders(sensor_ids)}) GROUP BY sensor_id",
+            tuple(sensor_ids),
+        )
+        return {
+            str(row["sensor_id"]): _dt.datetime.fromisoformat(str(row["observed_at"])).astimezone(
+                _dt.UTC
+            )
+            for row in rows
+            if row["observed_at"] is not None
+        }
+
+
+def _placeholders(values: Sequence[str]) -> str:
+    """`?, ?, ?` for an `IN` list.
+
+    The count comes from the sequence length and never from caller text, so the
+    interpolation carries no user-supplied characters at all.
+    """
+    return ", ".join("?" for _ in values)

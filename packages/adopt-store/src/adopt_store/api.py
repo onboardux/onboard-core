@@ -21,9 +21,16 @@ touch.
 
 **Facades arrive with their tables.** §10.3 declares eleven accessors. `scope()`
 came with S2's tables; `identities()`, `items()`, `bindings()`, `probes()` and
-`revisions()` arrive here with the identity and revision families. The rest land
-in the sprints that create the tables they front (coverage in S4, and so on). An
-accessor that raises is not a seam, it is a placeholder wearing one.
+`revisions()` arrived at S3 with the identity and revision families, and
+`sensors()` arrives here with the channel whose health gates freshness. The rest
+land in the sprints that create the tables they front. An accessor that raises is
+not a seam, it is a placeholder wearing one.
+
+**Two ports are exposed that §10.3 does not declare**, and deliberately so:
+`coverage_records()` and `freshness_records()` are the storage halves of
+`adopt_coverage` and `adopt_freshness`, which declare their own protocols and
+import nothing from here. They are not facades and are not on the `Store` seam --
+a caller reaching for coverage calls `recompute_coverage`, not a records object.
 """
 
 from collections.abc import Callable
@@ -44,14 +51,18 @@ from adopt_scope import ScopeFacade
 from adopt_store.facades.identity import IdentityFacade
 from adopt_store.facades.knowledge import BindingFacade, KnowledgeFacade, ProbeFacade
 from adopt_store.facades.records import RevisionRecords
+from adopt_store.facades.sensors import SensorFacade
 from adopt_store.revisions import RevisionWriter
 from adopt_store.sqlite.records import (
     SqliteBindingRecords,
+    SqliteCoverageRecords,
+    SqliteFreshnessRecords,
     SqliteIdentityRecords,
     SqliteKnowledgeRecords,
     SqliteProbeRecords,
     SqliteRevisionRecords,
     SqliteScopeRecords,
+    SqliteSensorRecords,
 )
 from adopt_store.sqlite.store import SqliteStore
 
@@ -113,6 +124,7 @@ class Store(Protocol):
     def items(self) -> KnowledgeFacade: ...
     def bindings(self) -> BindingFacade: ...
     def probes(self) -> ProbeFacade: ...
+    def sensors(self) -> SensorFacade: ...
     def revisions(self) -> RevisionWriter: ...
     def close(self) -> None: ...
 
@@ -189,6 +201,23 @@ class SqliteStoreHandle:
                 SqliteProbeRecords(self.backend), self.revisions(), clock=self.clock
             ),
         )
+
+    def sensors(self) -> SensorFacade:
+        return self._cached(
+            "sensors", lambda: SensorFacade(SqliteSensorRecords(self.backend), clock=self.clock)
+        )
+
+    def coverage_records(self) -> SqliteCoverageRecords:
+        """The read port `adopt_coverage.recompute_coverage` runs on."""
+        return self._cached("coverage_records", lambda: SqliteCoverageRecords(self.backend))
+
+    def freshness_records(self) -> SqliteFreshnessRecords:
+        """The read port `adopt_freshness.resolve_freshness` runs on."""
+        return self._cached("freshness_records", lambda: SqliteFreshnessRecords(self.backend))
+
+    def sensor_records(self) -> SqliteSensorRecords:
+        """The sensor port, for `doctor`'s NULL-cadence finding."""
+        return self._cached("sensor_records", lambda: SqliteSensorRecords(self.backend))
 
     def transaction(self) -> object:
         """The shared transaction boundary (contracts §10.3)."""

@@ -104,6 +104,15 @@ DETECT_MAX_DEPTH: Final[int] = 24
 #: resolve STALE. Connector silence is never read as stability.
 SENSOR_MISSED_CADENCE_MULTIPLIER: Final[int] = 3
 
+#: How many identity ids the coverage-cache alarm carries. The event always
+#: reports the full `disagreement_count`; the ids are a **sample**, because a
+#: cold cache over a 50k-identity store disagrees on every row and an uncapped
+#: field would put a megabyte of ULIDs on one log line -- which is how an alarm
+#: takes down the sink that was meant to carry it. `store doctor` enumerates
+#: every affected identity, so nothing is lost: the alarm says how bad, the
+#: doctor says which.
+COVERAGE_ALARM_SAMPLE_MAX: Final[int] = 20
+
 #: Probe diff-ladder similarity threshold. Declared now; item 8 consumes it, so
 #: that the value has one home from the day the first caller appears.
 PROBE_DIFF_SIM_THRESHOLD: Final[float] = 0.92

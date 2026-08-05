@@ -18,7 +18,9 @@ from typing import Annotated
 import click
 import typer
 
+from adopt_cli.commands import coverage as coverage_commands
 from adopt_cli.commands import doctor as doctor_command
+from adopt_cli.commands import freshness as freshness_commands
 from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import version as version_command
 from adopt_cli.json_out import emit, emit_error
@@ -34,6 +36,8 @@ app = typer.Typer(
 )
 
 app.add_typer(identity_commands.app)
+app.add_typer(coverage_commands.app)
+app.add_typer(freshness_commands.app)
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 NetworkOption = Annotated[
@@ -92,10 +96,18 @@ def main(argv: list[str] | None = None) -> int:
     envelope and mapped to its category's exit code here, so no command has to
     remember to do it. Click's own control-flow exceptions are translated in the
     same place for the same reason.
+
+    **`app(...)` is invoked with `standalone_mode=False`, and in that mode Click
+    *returns* the exit code of a `typer.Exit` rather than raising it.** Discarding
+    the return value therefore silently turned every deliberate non-zero exit
+    into `0` -- including the `4` that contracts §14 gives `adopt doctor` and
+    `adopt coverage recompute` when there are findings. The `except` clause below
+    still catches an `Exit` raised from outside a command, so both paths are
+    covered; neither on its own is.
     """
     log = get_logger("adopt_cli")
     try:
-        app(args=argv, standalone_mode=False)
+        result = app(args=argv, standalone_mode=False)
     except AdoptError as error:
         emit_error(error.to_envelope(), as_json=_wants_json(argv))
         log.error("cli.failed", code=str(error.code), category=str(error.category))
@@ -105,4 +117,6 @@ def main(argv: list[str] | None = None) -> int:
         return ExitCode.OPERATIONAL_FAILURE
     except (click.ClickException, click.exceptions.Exit) as error:
         return _exit_code_of(error)
-    return ExitCode.SUCCESS
+    # A command returning an `int` returned it through `typer.Exit`; commands
+    # return `None` otherwise, so there is no value here to confuse with a code.
+    return result if isinstance(result, int) else ExitCode.SUCCESS

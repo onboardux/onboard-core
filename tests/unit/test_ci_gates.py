@@ -373,6 +373,111 @@ class TestNoRevisionUpdate:
 
 
 @pytest.mark.unit
+class TestNoCoveredCacheWrite:
+    """The coverage-cache gate rejects the write it exists for.
+
+    **Declared at S0 and passing vacuously until S4**, because nothing wrote the
+    cache. A gate that has only ever been green on an empty tree is not evidence,
+    so its first real code and its first watched failure land together.
+
+    PRD F7.4: *"No facade exposes a setter for `covered_cache`. It is written
+    only by the recompute path."*
+    """
+
+    def test_a_cache_write_outside_adopt_coverage_is_reported(self, tmp_path: Path) -> None:
+        source = tmp_path / "pkg" / "records.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            'SQL = "UPDATE identity SET covered_cache = ? WHERE id = ?"\n',
+            encoding="utf-8",
+        )
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoCoveredCacheWriteContract, paths=[str(tmp_path)], allowed_paths=[]
+        )
+
+        assert len(findings) == 1
+        assert "covered_cache" in findings[0]
+
+    def test_the_timestamp_column_is_covered_too(self, tmp_path: Path) -> None:
+        """`covered_cache_at` is half the cache. Writing it alone would leave the
+        store claiming a confirmation time for a value nobody confirmed."""
+        source = tmp_path / "pkg" / "stamp.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            'SQL = "UPDATE identity SET covered_cache_at = ? WHERE id = ?"\n',
+            encoding="utf-8",
+        )
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoCoveredCacheWriteContract, paths=[str(tmp_path)], allowed_paths=[]
+        )
+
+        assert findings
+
+    def test_the_same_write_inside_adopt_coverage_is_allowed(self, tmp_path: Path) -> None:
+        """The gate is about *where* the write lives, not whether one exists --
+        `adopt_coverage` has to be able to do its job."""
+        source = tmp_path / "packages" / "adopt-coverage" / "cache.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            'SQL = "UPDATE identity SET covered_cache = ? WHERE id = ?"\n',
+            encoding="utf-8",
+        )
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoCoveredCacheWriteContract,
+            paths=[str(tmp_path)],
+            # `as_posix()`, because `is_under` compares posix strings. A native
+            # Windows path here silently never matches, and the test would then
+            # pass for the wrong reason on one platform and fail on the other.
+            allowed_paths=[(tmp_path / "packages" / "adopt-coverage").as_posix()],
+        )
+
+        assert findings == []
+
+    def test_reading_the_cache_is_not_a_violation(self, tmp_path: Path) -> None:
+        """`store doctor` and the recompute both read it. A gate that flagged a
+        `SELECT` would make the disagreement check unwriteable."""
+        source = tmp_path / "pkg" / "reader.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            'SQL = "SELECT id, covered_cache, covered_cache_at FROM identity"\n',
+            encoding="utf-8",
+        )
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoCoveredCacheWriteContract, paths=[str(tmp_path)], allowed_paths=[]
+        )
+
+        assert findings == []
+
+    def test_prose_describing_the_rule_is_not_a_violation(self, tmp_path: Path) -> None:
+        """The CR-24 lesson again: a gate that fires on its own documentation
+        gets switched off, and takes the rule with it."""
+        source = tmp_path / "pkg" / "documented.py"
+        source.parent.mkdir(parents=True)
+        source.write_text(
+            '"""Never UPDATE identity SET covered_cache -- recompute owns it."""\n',
+            encoding="utf-8",
+        )
+
+        findings = source_rules.scan_paths_for_tests(
+            source_rules.NoCoveredCacheWriteContract, paths=[str(tmp_path)], allowed_paths=[]
+        )
+
+        assert findings == []
+
+    def test_the_planted_fixture_still_carries_a_statement_the_gate_catches(self) -> None:
+        """The CI job's proof depends on this fixture; if it were emptied or
+        reworded, the job would go green while proving nothing."""
+        statement = plant_violation._planted_statement("covered_cache_write.sql")
+
+        assert statement.upper().startswith("UPDATE ")
+        assert "covered_cache" in statement
+
+
+@pytest.mark.unit
 class TestCiRatchet:
     @pytest.mark.parametrize(
         ("budget", "elapsed", "command_exit", "expected_exit", "why"),

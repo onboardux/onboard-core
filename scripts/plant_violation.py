@@ -47,6 +47,15 @@ REVISION_WRITER: Final[Path] = (
 #: exactly this, so this is the pack's own mechanism rather than a new exemption.
 PLANTED_SQL_DIR: Final[Path] = REPO_ROOT / "tests" / "fixtures" / "planted"
 
+#: Where `covered-cache-write` plants its statement: the SQLite realization that
+#: already, legitimately, updates the `identity` parent row for `last_seen`. That
+#: adjacency is the whole point -- it is the file where the mistake is one line
+#: away from correct code, and where a reviewer scanning a diff full of `UPDATE
+#: identity SET ...` is least likely to notice one more.
+IDENTITY_RECORDS: Final[Path] = (
+    REPO_ROOT / "packages" / "adopt-store" / "src" / "adopt_store" / "sqlite" / "records.py"
+)
+
 
 def _backup(path: Path) -> None:
     """Byte-for-byte, so `--revert` restores the file and not an approximation.
@@ -108,7 +117,30 @@ def plant_revision_update() -> str:
     return f"added an UPDATE against knowledge_revision to {REVISION_WRITER.name}"
 
 
+def plant_covered_cache_write() -> str:
+    """Add a cache write outside `adopt_coverage` -- PRD F7.4's gate.
+
+    `identity.covered_cache` is a cache and `recompute_coverage` is the
+    authority. A second writer is how the withdrawn `0.1.x` line's invisible
+    coverage decay comes back: the cache drifts, the recompute disagrees, and
+    because some other path also writes it there is no way to say which value was
+    ever right. `no-covered-cache-write` is the only instrument that catches it
+    before merge, so it is the one that most needs to be seen failing.
+    """
+    if not IDENTITY_RECORDS.exists():  # pragma: no cover -- layout change
+        raise SystemExit(
+            f"{IDENTITY_RECORDS.relative_to(REPO_ROOT)} does not exist, so nothing was "
+            "planted. Update this script rather than leaving the gate unproven."
+        )
+    statement = _planted_statement("covered_cache_write.sql")
+    _backup(IDENTITY_RECORDS)
+    with IDENTITY_RECORDS.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(f'\n\n_PLANTED_VIOLATION = "{statement}"\n')
+    return f"added a coverage-cache write to {IDENTITY_RECORDS.name}"
+
+
 KINDS: Final[dict[str, Callable[[], str]]] = {
+    "covered-cache-write": plant_covered_cache_write,
     "drop-column": plant_drop_column,
     "revision-update": plant_revision_update,
 }

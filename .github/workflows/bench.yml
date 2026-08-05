@@ -121,6 +121,21 @@ jobs:
           set -euo pipefail
           uv run python -m bench.uri_bench --assert | tee bench-uri.txt
 
+      # N6 populates 50k identities and N7 resolves 200 items with real
+      # fan-out, so both are minutes rather than seconds. They belong here and
+      # not on the PR path: `bench/RUNNER.md` rule 4 puts benchmarks on the
+      # nightly job precisely so a slow, honest measurement is never traded for
+      # a fast, meaningless one.
+      - name: N6 -- coverage recompute at 50k identities
+        run: |
+          set -euo pipefail
+          uv run python -m bench.coverage_bench --assert | tee bench-coverage.txt
+
+      - name: N7 -- freshness resolve, per item
+        run: |
+          set -euo pipefail
+          uv run python -m bench.freshness_bench --assert | tee bench-freshness.txt
+
       - name: Append the measurement to the runner profile
         if: always()
         run: |
@@ -142,6 +157,18 @@ jobs:
             echo
             echo '```'
             cat bench-uri.txt
+            echo '```'
+            echo
+            echo '## N6 -- `bench.coverage_bench --assert`'
+            echo
+            echo '```'
+            cat bench-coverage.txt
+            echo '```'
+            echo
+            echo '## N7 -- `bench.freshness_bench --assert`'
+            echo
+            echo '```'
+            cat bench-freshness.txt
             echo '```'
           } >> runner-profile.md
 

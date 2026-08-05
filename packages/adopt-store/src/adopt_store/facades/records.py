@@ -31,8 +31,10 @@ from adopt_model import (
     KnowledgeRevision,
     ProbeDefinition,
     ProbeDefinitionRevision,
+    Sensor,
+    SensorHeartbeat,
 )
-from adopt_model._enums import FreshnessState
+from adopt_model._enums import FreshnessState, SensorHealth
 
 __all__ = [
     "BindingRecords",
@@ -40,6 +42,7 @@ __all__ = [
     "KnowledgeRecords",
     "ProbeRecords",
     "RevisionRecords",
+    "SensorRecords",
 ]
 
 
@@ -94,6 +97,46 @@ class ProbeRecords(Protocol):
     def transaction(self) -> AbstractContextManager[None]: ...
     def insert_probe_definition(self, row: ProbeDefinition) -> None: ...
     def get_probe_definition(self, probe_definition_id: str) -> ProbeDefinition | None: ...
+
+
+class SensorRecords(Protocol):
+    """`sensor` and `sensor_heartbeat`.
+
+    Neither table is a revision family, so `update_sensor_health` is an ordinary
+    parent-row `UPDATE` and leaves `no-revision-update` untouched. The column
+    list is closed on purpose: health, its reason and the three observation
+    timestamps are what a heartbeat moves, and nothing here can reach
+    `expected_cadence_seconds`, because a cadence that the reporting path could
+    rewrite is a cadence that would drift to fit whatever the sensor happened to
+    be doing.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+    def insert_sensor(self, row: Sensor) -> None: ...
+    def get_sensor(self, sensor_id: str) -> Sensor | None: ...
+    def list_sensors(self, *, system_id: str, environment_id: str | None) -> Sequence[Sensor]: ...
+    def insert_heartbeat(self, row: SensorHeartbeat) -> None: ...
+
+    def update_sensor_health(
+        self,
+        sensor_id: str,
+        *,
+        health: SensorHealth,
+        degradation_reason: str | None,
+        last_attempted_at: _dt.datetime,
+        last_success_at: _dt.datetime | None,
+        last_event_at: _dt.datetime | None,
+    ) -> None: ...
+
+    def sensors_without_cadence(self) -> Sequence[Sensor]:
+        """Every sensor whose `expected_cadence_seconds` is NULL.
+
+        A NULL cadence silently disables the missed-heartbeat check, so
+        `store doctor` reports it. The read lives here rather than in
+        `adopt_freshness` because `doctor` is the caller and `resolve_freshness`
+        writes and reports nothing.
+        """
+        ...
 
 
 class RevisionRecords(Protocol):

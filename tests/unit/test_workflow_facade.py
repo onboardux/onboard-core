@@ -302,3 +302,24 @@ def test_status_of_an_unknown_run_is_an_error_not_a_guess(
 ) -> None:
     with pytest.raises(AdoptError):
         client.status("run_does_not_exist")
+
+
+def test_close_is_idempotent_and_keeps_the_run_history(
+    client: InProcessWorkflowClient,
+) -> None:
+    """*Fails when* `close` raises on a second call or discards completed runs.
+    *Matters because* the runbook's drain-then-flip ends by closing every holder
+    of a client, and a rollback is exactly when a process is closed twice by two
+    people — a `close` that raises there turns a rollback into an incident. It
+    must also not lose history: an operator closes the client and then asks what
+    drained. *No other instrument catches it because* the durability drill closes
+    each client exactly once and never reads it afterwards, and the DBOS half of
+    that drill does not run without a Postgres.
+    """
+    flow = _counting_workflow([])
+    client.start(flow, {"value": "a"}, idempotency_key="k1")
+
+    client.close()
+    client.close()
+
+    assert [h.idempotency_key for h in client.list()] == ["k1"]

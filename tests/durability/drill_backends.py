@@ -22,7 +22,17 @@ from typing import Final
 
 from adopt_workflow import InProcessWorkflowClient, WorkflowClient
 
-__all__ = ["BACKENDS", "build_client"]
+__all__ = ["BACKENDS", "build_client", "close_built_clients"]
+
+#: Every client this process has built and not yet closed.
+#:
+#: **A durable backend's client is a worker, not a handle.** A launched DBOS
+#: instance polls the shared queue for the life of the process, so a client left
+#: open by test *N* is still competing for work in test *N+1* -- and it wins
+#: often enough to execute the child's run in the parent, where the drill's
+#: environment is not set. Tracking what was built is what lets the conftest
+#: guarantee no worker outlives the test that made it.
+_BUILT: list[WorkflowClient] = []
 
 #: `name -> "module:factory"`. `inproc` resolves in this repository; anything
 #: else is resolved at call time and is only importable where it belongs.
@@ -40,7 +50,9 @@ def build_client(backend: str, journal_dir: Path) -> WorkflowClient:
     durable engine green without ever starting it.
     """
     if backend == "inproc":
-        return InProcessWorkflowClient(journal_dir)
+        inproc = InProcessWorkflowClient(journal_dir)
+        _BUILT.append(inproc)
+        return inproc
     try:
         target = BACKENDS[backend]
     except KeyError:
@@ -51,4 +63,16 @@ def build_client(backend: str, journal_dir: Path) -> WorkflowClient:
     module = importlib.import_module(module_name)
     factory = getattr(module, factory_name)
     client: WorkflowClient = factory(journal_dir)
+    _BUILT.append(client)
     return client
+
+
+def close_built_clients() -> None:
+    """Close every client built since the last call, newest first.
+
+    Errors are **not** swallowed: a backend that cannot be shut down is exactly
+    the defect this exists to prevent, and a teardown that hides it would let
+    the next test inherit a live worker while reporting nothing.
+    """
+    while _BUILT:
+        _BUILT.pop().close()

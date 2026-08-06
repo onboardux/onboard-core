@@ -222,6 +222,28 @@ class WorkflowClient(Protocol):
 
     def cancel(self, run_id: str) -> None: ...
 
+    def close(self) -> None:
+        """Stop executing work and release what the client holds *(CR-43)*.
+
+        **A backend that can start workers must be able to stop them**, and
+        §10.2 declared no way to. That is not a test convenience: implementation
+        spec §7.4's rollback flips `ADOPT_FEATURE_DBOS_BACKEND` off after
+        in-flight runs drain, and "drained" followed by a process that is still
+        dequeuing is not drained.
+
+        The durability drill is where the omission became visible. Its parent
+        process holds a client across three tests while each test spawns a child
+        that is meant to be the *only* executor -- and a queue is shared by every
+        worker pointed at it, so the parent silently dequeued the child's run and
+        executed it in the wrong process. That is DBOS behaving correctly and the
+        seam giving the caller no way to say "I am no longer a worker".
+
+        Closing is **idempotent** and does not cancel or roll back running
+        work: durable runs outlive the client by design, and the next process to
+        recover them picks them up. A backend holding nothing may do nothing.
+        """
+        ...
+
     def recover(self) -> list[WorkflowHandle]:
         """Re-drive every non-terminal run; return what was resumed.
 

@@ -238,6 +238,19 @@ class InProcessWorkflowClient:
         if self.status(run_id) not in TERMINAL_STATUSES:
             self._finish(run_id, "cancelled", None)
 
+    def close(self) -> None:
+        """Nothing to stop, and that is a property of this backend *(CR-43)*.
+
+        This client executes a body **inline on the caller's thread** and appends
+        to the journal with one `write` + `fsync` per record, holding no pooled
+        connection and no worker between calls. So there is no window in which
+        closing could lose a record, and no thread to join.
+
+        It is still declared and still called by the drill: a no-op that is
+        exercised is what proves the *contract* is honoured by both backends
+        rather than by the one that happened to need it.
+        """
+
     # -- execution ----------------------------------------------------------
 
     @staticmethod

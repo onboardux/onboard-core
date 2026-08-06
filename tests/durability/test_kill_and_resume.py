@@ -22,6 +22,7 @@ import os
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -120,19 +121,34 @@ def _resume_and_settle(backend: str, journal_dir: Path, key: str) -> tuple[Any, 
     the contract's own blocking primitive (§10.2), which is why waiting here
     needs no sleep.
     """
-    client = build_client(backend, journal_dir)
-    client.recover()
-    handle = next(h for h in client.list() if h.idempotency_key == key)
-    client.result(handle.run_id, timeout_s=CHILD_TIMEOUT_S)
-    return client, next(h for h in client.list() if h.idempotency_key == key)
+    # **The recovering process is configured like the restarted worker it stands
+    # in for.** A correct backend never reads this: the resumed step is told the
+    # effect is already committed and takes the other branch. A broken one does
+    # read it -- and without this the drill died on `KeyError: ADOPT_DRILL_DIR`
+    # instead of on "the resume repeated a committed effect", reporting the
+    # scaffolding rather than the defect. An instrument that goes red for the
+    # wrong reason still costs a reader the whole investigation.
+    previous = os.environ.get(RUN_DIR_ENV)
+    os.environ[RUN_DIR_ENV] = str(journal_dir)
+    try:
+        client = build_client(backend, journal_dir)
+        client.recover()
+        handle = next(h for h in client.list() if h.idempotency_key == key)
+        client.result(handle.run_id, timeout_s=CHILD_TIMEOUT_S)
+        return client, next(h for h in client.list() if h.idempotency_key == key)
+    finally:
+        if previous is None:
+            os.environ.pop(RUN_DIR_ENV, None)
+        else:
+            os.environ[RUN_DIR_ENV] = previous
 
 
 def test_a_killed_run_resumes_with_its_effect_committed_exactly_once(
-    backend: str, tmp_path: Path
+    backend: str, tmp_path: Path, drill_key: Callable[[str], str]
 ) -> None:
     journal_dir = tmp_path / "runtime"
     journal_dir.mkdir()
-    key = "drill-1"
+    key = drill_key("1")
 
     _crash_after_effect(backend, journal_dir, key)
 
@@ -147,7 +163,7 @@ def test_a_killed_run_resumes_with_its_effect_committed_exactly_once(
 
 
 def test_the_resumed_run_replays_the_step_rather_than_repeating_the_effect(
-    backend: str, tmp_path: Path
+    backend: str, tmp_path: Path, drill_key: Callable[[str], str]
 ) -> None:
     """The resumed step *runs* -- it is the effect that does not repeat.
 
@@ -156,10 +172,11 @@ def test_the_resumed_run_replays_the_step_rather_than_repeating_the_effect(
     """
     journal_dir = tmp_path / "runtime"
     journal_dir.mkdir()
+    key = drill_key("2")
 
-    _crash_after_effect(backend, journal_dir, "drill-2")
+    _crash_after_effect(backend, journal_dir, key)
 
-    client, handle = _resume_and_settle(backend, journal_dir, "drill-2")
+    client, handle = _resume_and_settle(backend, journal_dir, key)
 
     # `already-charged` is what the step returns when `dedupe` says the effect
     # was already committed -- so the body ran, the step ran, and only the
@@ -167,16 +184,19 @@ def test_the_resumed_run_replays_the_step_rather_than_repeating_the_effect(
     assert client.result(handle.run_id, timeout_s=CHILD_TIMEOUT_S) == "already-charged"
 
 
-def test_a_completed_run_is_not_resumed_again(backend: str, tmp_path: Path) -> None:
+def test_a_completed_run_is_not_resumed_again(
+    backend: str, tmp_path: Path, drill_key: Callable[[str], str]
+) -> None:
     """Recovery is for non-terminal runs. Re-driving a completed one would repeat
     every effect it already committed, which is the failure this suite exists to
     prevent, arriving through the recovery path instead of the crash path."""
     journal_dir = tmp_path / "runtime"
     journal_dir.mkdir()
+    key = drill_key("3")
 
-    _crash_after_effect(backend, journal_dir, "drill-3")
+    _crash_after_effect(backend, journal_dir, key)
 
-    client, handle = _resume_and_settle(backend, journal_dir, "drill-3")
+    client, handle = _resume_and_settle(backend, journal_dir, key)
     assert handle.status in TERMINAL_STATUSES
 
     # Recovery over a settled run must be a no-op. Re-driving it would repeat

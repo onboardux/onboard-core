@@ -25,12 +25,12 @@ from adopt_workflow import RetryPolicy, step, workflow
 
 __all__ = [
     "EFFECTS_FILE",
-    "EFFECT_KEY",
     "HALT_ENV",
     "MARKER",
     "RUN_DIR_ENV",
     "charge_once",
     "committed_effects",
+    "effect_key_for",
     "effects_path",
     "paying_flow",
 ]
@@ -44,9 +44,17 @@ MARKER: str = "EFFECT_COMMITTED"
 #: Set by the child only.
 HALT_ENV: str = "ADOPT_DRILL_HALT"
 
-#: One dedupe key for the whole drill: the claim is that *this* effect happens
-#: once across a crash, so both the original run and the resumed one use it.
-EFFECT_KEY: str = "charge:invoice-1"
+
+#: The dedupe key is **per run**, and it travels in the run's arguments so the
+#: resumed execution replays the same one. A module constant worked against the
+#: in-process backend, where every test gets its own journal directory -- and
+#: collides immediately against DBOS, where one Postgres table is shared by every
+#: test in the job and `effect_key` is its primary key. The second test would
+#: have found the first test's claim already there, concluded the effect was a
+#: replay, and never committed anything.
+def effect_key_for(run_key: str) -> str:
+    return f"charge:{run_key}"
+
 
 #: Where the run directory is, so the step can find the effect log after a
 #: process death. Passed as an environment variable rather than as a workflow
@@ -73,18 +81,18 @@ def committed_effects(run_dir: Path) -> list[str]:
 
 
 @step(name="charge-once", retries=RetryPolicy(max_attempts=1))
-def charge_once(ctx: Any) -> str:
+def charge_once(ctx: Any, effect_key: str) -> str:
     """Commit one effect, then -- in the child only -- stop dead.
 
     The halt opens the window `05` S8 names: the effect has committed and the
     step record has not been written, which is the one interleaving where a naive
     backend either loses the effect or repeats it.
     """
-    first = ctx.dedupe(EFFECT_KEY)
+    first = ctx.dedupe(effect_key)
     if first:
         run_dir = Path(os.environ[RUN_DIR_ENV])
         with effects_path(run_dir).open("a", encoding="utf-8") as handle:
-            handle.write(f"{EFFECT_KEY}\n")
+            handle.write(f"{effect_key}\n")
             handle.flush()
             os.fsync(handle.fileno())
     if os.environ.get(HALT_ENV):
@@ -99,4 +107,4 @@ def charge_once(ctx: Any) -> str:
 
 @workflow(name="paying-flow")
 def paying_flow(ctx: Any, args: dict[str, Any]) -> str:
-    return str(ctx.step(charge_once))
+    return str(ctx.step(charge_once, args["effect_key"]))

@@ -9,10 +9,11 @@ own would let the drill pass without ever testing a crash.
 
 import os
 import sys
+import threading
 from pathlib import Path
 
 from drill_backends import build_client
-from drill_workflows import HALT_ENV, RUN_DIR_ENV, paying_flow
+from drill_workflows import HALT_ENV, RUN_DIR_ENV, effect_key_for, paying_flow
 
 
 def main(argv: list[str]) -> int:
@@ -20,7 +21,18 @@ def main(argv: list[str]) -> int:
     os.environ[HALT_ENV] = "1"
     os.environ[RUN_DIR_ENV] = str(journal_dir)
     client = build_client(backend, journal_dir)
-    client.start(paying_flow, {}, idempotency_key=idempotency_key)
+    client.start(
+        paying_flow,
+        {"effect_key": effect_key_for(idempotency_key)},
+        idempotency_key=idempotency_key,
+    )
+    # **Outlive `start()`.** The in-process backend runs the body inline, so
+    # it never returns from the call above -- the step is already blocked at its
+    # halt. DBOS enqueues instead, so `start()` returns as soon as the run is
+    # scheduled and this process would exit before a worker ever reached the
+    # step. Blocking here is what makes one child serve both backends; the
+    # parent kills us either way.
+    threading.Event().wait()
     return 0  # pragma: no cover -- unreachable: the parent kills us first
 
 

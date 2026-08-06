@@ -21,7 +21,9 @@ and a timing-based handshake would make this drill flaky rather than wrong.
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 from drill_backends import build_client
@@ -70,15 +72,59 @@ def _crash_after_effect(backend: str, journal_dir: Path, key: str) -> None:
         text=True,
     ) as child:
         assert child.stdout is not None
-        line = child.stdout.readline()
-        if MARKER not in line:
-            child.kill()
-            stderr = child.stderr.read() if child.stderr else ""
-            pytest.fail(f"child never committed its effect; stdout={line!r} stderr={stderr}")
+        # **A watchdog, because the alternative to a failing drill is a hanging
+        # one.** The read below blocks until the marker arrives; if the child
+        # never gets there, killing it closes the pipe, the loop ends at EOF and
+        # the test fails with the child's stderr attached. Without this a broken
+        # backend burns the job's entire time limit and reports nothing.
+        watchdog = threading.Timer(CHILD_TIMEOUT_S, child.kill)
+        watchdog.daemon = True
+        watchdog.start()
+        # **Read until the marker, not just the first line.** DBOS announces
+        # itself on stdout before any of our code runs, so a rendezvous that
+        # trusted line one read "DBOS system database URL:" and declared the
+        # effect uncommitted. A backend is entitled to be chatty; the drill is
+        # not entitled to assume otherwise.
+        seen: list[str] = []
+        while True:
+            line = child.stdout.readline()
+            if not line:  # EOF: the child died, or the watchdog killed it
+                watchdog.cancel()
+                child.kill()
+                stderr = child.stderr.read() if child.stderr else ""
+                pytest.fail(
+                    f"child never committed its effect; stdout={''.join(seen)!r} stderr={stderr}"
+                )
+            seen.append(line)
+            if MARKER in line:
+                break
         # `kill` is `SIGKILL` on POSIX and `TerminateProcess` on Windows: in both
         # cases unconditional, with no chance to flush, finalize or clean up.
         child.kill()
         child.wait(timeout=CHILD_TIMEOUT_S)
+        watchdog.cancel()
+
+
+def _resume_and_settle(backend: str, journal_dir: Path, key: str) -> tuple[Any, Any]:
+    """Bring the killed run to a terminal state, and return `(client, handle)`.
+
+    **Asserts the outcome, not the mechanism.** The in-process backend is told to
+    recover; DBOS has already done it inside `launch()`, so its `recover()` finds
+    nothing left to resume. An earlier version of this drill asserted
+    `list(status="running")` was non-empty *before* recovering, and that is a
+    statement about one backend's timing rather than about durability -- it
+    passed on `inproc` and failed on DBOS for a reason that is not a defect.
+
+    What both backends must agree on is what this returns: the run reaches a
+    terminal state and its result is readable. `result(..., timeout_s=...)` is
+    the contract's own blocking primitive (§10.2), which is why waiting here
+    needs no sleep.
+    """
+    client = build_client(backend, journal_dir)
+    client.recover()
+    handle = next(h for h in client.list() if h.idempotency_key == key)
+    client.result(handle.run_id, timeout_s=CHILD_TIMEOUT_S)
+    return client, next(h for h in client.list() if h.idempotency_key == key)
 
 
 def test_a_killed_run_resumes_with_its_effect_committed_exactly_once(
@@ -92,16 +138,8 @@ def test_a_killed_run_resumes_with_its_effect_committed_exactly_once(
 
     assert len(_effect_records(journal_dir)) == 1, "the effect did not commit before the kill"
 
-    client = build_client(backend, journal_dir)
-    running = client.list(status="running")
-    assert running, "the killed run should be non-terminal, and therefore resumable"
-
-    resumed = client.recover()
-    assert len(resumed) == 1
-
-    handle = resumed[0]
+    client, handle = _resume_and_settle(backend, journal_dir, key)
     assert handle.status == "completed"
-    assert client.status(handle.run_id) == "completed"
     assert client.status(handle.run_id) in TERMINAL_STATUSES
 
     # The claim the whole sprint is for.
@@ -121,8 +159,7 @@ def test_the_resumed_run_replays_the_step_rather_than_repeating_the_effect(
 
     _crash_after_effect(backend, journal_dir, "drill-2")
 
-    client = build_client(backend, journal_dir)
-    handle = client.recover()[0]
+    client, handle = _resume_and_settle(backend, journal_dir, "drill-2")
 
     # `already-charged` is what the step returns when `dedupe` says the effect
     # was already committed -- so the body ran, the step ran, and only the
@@ -139,7 +176,11 @@ def test_a_completed_run_is_not_resumed_again(backend: str, tmp_path: Path) -> N
 
     _crash_after_effect(backend, journal_dir, "drill-3")
 
-    client = build_client(backend, journal_dir)
-    assert len(client.recover()) == 1
+    client, handle = _resume_and_settle(backend, journal_dir, "drill-3")
+    assert handle.status in TERMINAL_STATUSES
+
+    # Recovery over a settled run must be a no-op. Re-driving it would repeat
+    # every effect it already committed -- the failure this suite exists to
+    # prevent, arriving through the recovery path instead of the crash path.
     assert client.recover() == []
     assert len(_effect_records(journal_dir)) == 1

@@ -600,6 +600,10 @@ class TestWorkflowsAreRunnable:
             # that exists to notice exactly that.
             "append-only",
             "golden-g0",
+            # `durability` landed at S8 and is named in implementation spec §7.
+            # Same reason as the two above: a gate absent from this list is a
+            # gate whose deletion nothing notices.
+            "durability",
         }
     )
 

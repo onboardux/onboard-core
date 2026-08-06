@@ -24,14 +24,19 @@ import sys
 from pathlib import Path
 
 import pytest
+from drill_backends import build_client
+from drill_workflows import MARKER, RUN_DIR_ENV, committed_effects
 
 from adopt_workflow import TERMINAL_STATUSES
-from tests.durability.backends import build_client
-from tests.durability.workflows import MARKER, RUN_DIR_ENV, committed_effects
 
 pytestmark = pytest.mark.durability
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+#: This directory. The suite is **self-contained on purpose** -- it is run from
+#: `adopt-core` against the in-process backend and from `adopt-plane` against
+#: DBOS, and the second only works if nothing here reaches for a package, a
+#: conftest or a `tests.` prefix that exists in one repository and not the
+#: other. That was untested when CR-40 first claimed it, and CI said so.
+HERE = Path(__file__).resolve().parent
 CHILD_TIMEOUT_S = 60
 
 
@@ -53,11 +58,11 @@ def _crash_after_effect(backend: str, journal_dir: Path, key: str) -> None:
     per run would fail for a reason that has nothing to do with durability.
     """
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(REPO_ROOT)
+    env["PYTHONPATH"] = str(HERE)
     env[RUN_DIR_ENV] = str(journal_dir)
     with subprocess.Popen(
-        [sys.executable, "-m", "tests.durability._child", backend, str(journal_dir), key],
-        cwd=REPO_ROOT,
+        [sys.executable, str(HERE / "drill_child.py"), backend, str(journal_dir), key],
+        cwd=HERE,
         env=env,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

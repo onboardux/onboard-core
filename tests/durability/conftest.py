@@ -39,7 +39,7 @@ def _drill_workflow_is_registered() -> Iterator[None]:
     registration stays missing. The reload is what makes this suite independent of
     what ran before it, which a full-suite run otherwise decides by file order.
     """
-    import tests.durability.workflows as declarations
+    import drill_workflows as declarations
 
     if ("workflow", "paying-flow", 1) not in REGISTRY:
         importlib.reload(declarations)

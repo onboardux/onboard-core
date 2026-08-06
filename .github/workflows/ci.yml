@@ -170,7 +170,12 @@ jobs:
       - name: Prove the drill actually ran
         run: |
           set -euo pipefail
-          count=$(uv run pytest tests/durability --backend=inproc --collect-only -q                   | grep -c "test_" || true)
+          # `--collect-only` with **no explicit `-q`**: `pyproject.toml`'s addopts
+          # already passes one, and a second switches pytest to a compact
+          # per-FILE summary (`path: 3`) instead of one node id per line. The
+          # first version of this step counted that single line and reported
+          # "collected 1" for a suite of three -- the check was counting files.
+          count=$(uv run pytest tests/durability --backend=inproc --collect-only                   | grep -c "::test_")
           if [ "$count" -lt 3 ]; then
             echo "::error::the durability suite collected $count tests; expected at least 3"
             exit 1

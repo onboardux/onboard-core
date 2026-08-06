@@ -1,138 +1,24 @@
 """`workflow-body-purity`: a `@workflow` body is deterministic.
 
-A workflow body is **replayed**. On resume the engine re-executes the body and
-expects it to make the same decisions it made the first time. A clock reading, a
-random draw, a network call or a model call inside the body makes the replay
-diverge from the original run -- and the failure does not appear in testing,
-because testing rarely crashes a workflow midway. It appears in production, once,
-as a workflow that takes a different branch after a restart.
+**The rules are not here.** They live in `adopt_workflow.purity`, which is also
+what `@workflow` calls at decoration time. Implementation spec §4.14 requires
+purity checked at import *and* by this contract, and two enforcement points
+reading two copies of a banned-call list is one copy drifting -- silently, in the
+permissive direction, the first time someone adds an alias to one of them. This
+module is the import-linter adapter and nothing else.
 
-Everything non-deterministic belongs in a `@step`, whose result is persisted and
-replayed rather than recomputed.
-
-The check is AST-based rather than textual so that `datetime.now()` is caught
-whether it is written as `datetime.now()`, `dt.now()` or `from datetime import
-now`.
+Both halves are load-bearing and neither subsumes the other: the import-time
+check catches a body whose module the lint paths do not cover, and this contract
+catches a body in a file the suite never imports.
 """
-
-import ast
-from typing import Final
 
 from grimp import ImportGraph
 from importlinter import Contract, ContractCheck, fields, output
 
+from adopt_workflow.purity import find_impure_workflow_bodies
 from tools.contracts._scan import Finding, as_str_list, iter_source_files
 
-#: Decorators that mark a workflow body. Both the bare and the qualified form.
-_WORKFLOW_DECORATORS: Final[frozenset[str]] = frozenset(
-    {"workflow", "adopt_workflow.workflow", "api.workflow"}
-)
-
-#: Attribute chains that are never deterministic on replay.
-_BANNED_CALLS: Final[dict[str, str]] = {
-    "datetime.now": "a clock reading",
-    "datetime.utcnow": "a clock reading",
-    "datetime.today": "a clock reading",
-    "time.time": "a clock reading",
-    "time.monotonic": "a clock reading",
-    "time.sleep": "a sleep",
-    "random.random": "a random draw",
-    "random.randint": "a random draw",
-    "random.choice": "a random draw",
-    "random.shuffle": "a random draw",
-    "uuid.uuid1": "a random draw",
-    "uuid.uuid4": "a random draw",
-    "os.urandom": "a random draw",
-    "os.getenv": "an environment read",
-    "secrets.token_hex": "a random draw",
-    "secrets.token_bytes": "a random draw",
-    "requests.get": "a network call",
-    "requests.post": "a network call",
-    "httpx.get": "a network call",
-    "httpx.post": "a network call",
-    "socket.socket": "a network call",
-    "subprocess.run": "a subprocess call",
-    "subprocess.Popen": "a subprocess call",
-    "AgentRunner.run": "a model call",
-}
-
-#: Bare names that are equally non-deterministic wherever they come from.
-_BANNED_NAMES: Final[dict[str, str]] = {
-    "open": "file I/O",
-    "input": "console I/O",
-    "urandom": "a random draw",
-    "uuid4": "a random draw",
-    "now": "a clock reading",
-    "utcnow": "a clock reading",
-}
-
-#: Modules whose mere use inside a body means I/O.
-_BANNED_ATTRIBUTE_ROOTS: Final[frozenset[str]] = frozenset({"os.environ"})
-
-
-def _decorator_name(node: ast.expr) -> str:
-    if isinstance(node, ast.Call):
-        return _decorator_name(node.func)
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return f"{_decorator_name(node.value)}.{node.attr}"
-    return ""
-
-
-def _dotted(node: ast.expr) -> str:
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        prefix = _dotted(node.value)
-        return f"{prefix}.{node.attr}" if prefix else node.attr
-    return ""
-
-
-def _matches(dotted: str, chain: str) -> bool:
-    """True when a dotted call matches a banned chain, however it was imported.
-
-    Matching on the tail means ``datetime.now()``, ``dt.datetime.now()`` and
-    ``mod.time.time()`` are all caught without enumerating every alias a file
-    might use.
-    """
-    return dotted == chain or dotted.endswith("." + chain)
-
-
-def _impurities(body: ast.AST) -> list[tuple[int, str]]:
-    found: list[tuple[int, str]] = []
-    for node in ast.walk(body):
-        if isinstance(node, ast.Attribute):
-            dotted = _dotted(node)
-            if dotted in _BANNED_ATTRIBUTE_ROOTS:
-                found.append((node.lineno, f"{dotted} is an environment read"))
-        if not isinstance(node, ast.Call):
-            continue
-        dotted = _dotted(node.func)
-        matched = next(
-            (reason for chain, reason in _BANNED_CALLS.items() if _matches(dotted, chain)),
-            None,
-        )
-        if matched is not None:
-            found.append((node.lineno, f"{dotted}() is {matched}"))
-        elif isinstance(node.func, ast.Name) and node.func.id in _BANNED_NAMES:
-            found.append((node.lineno, f"{node.func.id}() is {_BANNED_NAMES[node.func.id]}"))
-    return found
-
-
-def find_impure_workflow_bodies(source: str, filename: str) -> list[tuple[int, str]]:
-    """Return ``(line, reason)`` for every impurity in a `@workflow` body."""
-    tree = ast.parse(source, filename=filename)
-    results: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        names = {_decorator_name(d) for d in node.decorator_list}
-        if not (names & _WORKFLOW_DECORATORS):
-            continue
-        for statement in node.body:
-            results.extend(_impurities(statement))
-    return results
+__all__ = ["WorkflowBodyPurityContract", "find_impure_workflow_bodies"]
 
 
 class WorkflowBodyPurityContract(Contract):

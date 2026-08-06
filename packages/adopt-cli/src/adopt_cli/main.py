@@ -27,6 +27,7 @@ from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import init as init_command
 from adopt_cli.commands import interchange as interchange_commands
 from adopt_cli.commands import policy as policy_commands
+from adopt_cli.commands import store as store_commands
 from adopt_cli.commands import version as version_command
 from adopt_cli.json_out import emit, emit_error
 from adopt_obs import AdoptError, ExitCode, get_logger
@@ -43,6 +44,7 @@ app = typer.Typer(
 app.add_typer(identity_commands.app)
 app.add_typer(coverage_commands.app)
 app.add_typer(freshness_commands.app)
+app.add_typer(store_commands.app)
 app.add_typer(policy_commands.probe_app)
 app.add_typer(policy_commands.envelope_app)
 

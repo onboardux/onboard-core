@@ -143,6 +143,14 @@ _CLASSIFIER_RE: Final[re.Pattern[str]] = re.compile(
 _CLASSIFIER_TO_SPDX: Final[dict[str, str]] = {
     "MIT License": "MIT",
     "BSD License": "BSD-3-CLAUSE",
+    # Added at S8 *(CR-41)*: `protobuf` and `email-validator` declare these and
+    # neither was mapped, so both read as unknown licences under a policy that
+    # already permits BSD-3-Clause and Unlicense. Extending the map that exists
+    # rather than adding a second one -- two tables translating licence names is
+    # one of them drifting, silently, in whichever direction nobody is watching.
+    "3-Clause BSD License": "BSD-3-CLAUSE",
+    "2-Clause BSD License": "BSD-2-CLAUSE",
+    "The Unlicense (Unlicense)": "UNLICENSE",
     "Apache Software License": "APACHE-2.0",
     "ISC License (ISCL)": "ISC",
     "Python Software Foundation License": "PSF-2.0",
@@ -207,7 +215,20 @@ def _repository_of(dist: metadata.Distribution) -> str:
     meta = dist.metadata
     for entry in meta.get_all("Project-URL") or []:
         label, _, url = str(entry).partition(",")
-        if label.strip().lower() in {"source", "repository", "source code", "homepage", "github"}:
+        # `code` and `source-code` are as common as `source` in the wild --
+        # `urllib3` and `charset-normalizer` use the first, `grimp` and
+        # `import-linter` the second. Missing them made the gate report "no
+        # repository" for four packages that declare one, which reads as an
+        # unverifiable dependency rather than as an incomplete reader *(CR-41)*.
+        if label.strip().lower() in {
+            "source",
+            "source code",
+            "source-code",
+            "code",
+            "repository",
+            "homepage",
+            "github",
+        }:
             return url.strip()
     home = meta.get("Home-page")
     return str(home).strip() if home else ""
@@ -487,6 +508,25 @@ def self_test() -> int:
         print("self-test: denied-by-name dependency rejected with its reason ->")
         for violation in denied_report.violations:
             print(f"  {violation}")
+
+    # The alias map may rename a licence, never widen the policy *(CR-41)*. If
+    # a copyleft phrase ever reaches it -- as a key or as a target -- the map has
+    # become the route around the rule it sits beside.
+    # The classifier map translates a licence *name*; it must never translate a
+    # copyleft name into a permissive identifier. That is the one way a table of
+    # spellings could become the route around the rule it sits beside.
+    laundered = [
+        f"{key} -> {target}"
+        for key, target in _CLASSIFIER_TO_SPDX.items()
+        if _is_copyleft(key) and not _is_copyleft(target)
+    ]
+    if laundered:
+        failures.append(
+            f"_CLASSIFIER_TO_SPDX maps a copyleft name to a permissive one: {laundered}"
+        )
+    else:
+        print("self-test: no classifier mapping turns a copyleft licence permissive ->")
+        print(f"  {len(_CLASSIFIER_TO_SPDX)} mappings checked")
 
     if failures:
         for failure in failures:

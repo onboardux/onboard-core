@@ -25,8 +25,10 @@ from adopt_store import open_store
 from adopt_store.api import SqliteStoreHandle, writer_identity
 
 __all__ = [
+    "SqliteStoreHandle",
     "configured_store_path",
     "open_configured_store",
+    "open_for_migration",
     "open_named_store",
     "open_or_create_store",
     "writer_identity",
@@ -76,6 +78,16 @@ def open_or_create_store(override: Path | None = None) -> SqliteStoreHandle:
     target = configured_store_path(override)
     target.parent.mkdir(parents=True, exist_ok=True)
     return open_store(target, migrate=True)
+
+
+def open_for_migration(override: Path | None = None) -> SqliteStoreHandle:
+    """The configured store, opened writable with pending migrations applied.
+
+    `adopt store migrate`'s door. Forward-only, always: implementation spec §7.4
+    states the schema has no rollback and recovery is older code against a newer
+    store.
+    """
+    return open_store(configured_store_path(override), migrate=True)
 
 
 def open_named_store(path: Path, *, migrate: bool = False) -> SqliteStoreHandle:

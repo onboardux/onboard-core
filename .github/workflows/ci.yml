@@ -147,6 +147,36 @@ jobs:
       - name: Property suite
         run: uv run pytest -m property --hypothesis-seed=0
 
+  durability:
+    name: durability (kill and resume, in-process backend)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      # Implementation spec §6 budgets this suite at two minutes and runs it on
+      # every PR. It spawns a child process, kills it mid-step and asserts the
+      # resume -- so it is the one job here that tests what happens when the
+      # process does not survive.
+      #
+      # The DBOS half of the same suite runs in `adopt-plane`, which has the
+      # Postgres service and the closed backend. One suite, two backends, two
+      # repositories: `core-independent` forbids this one from importing
+      # `plane_workflow` at all.
+      - name: Kill-and-resume drill
+        run: uv run pytest tests/durability --backend=inproc -v
+      # A drill that silently collected nothing would report the durability
+      # guarantee green without ever killing a process.
+      - name: Prove the drill actually ran
+        run: |
+          set -euo pipefail
+          count=$(uv run pytest tests/durability --backend=inproc --collect-only -q                   | grep -c "test_" || true)
+          if [ "$count" -lt 3 ]; then
+            echo "::error::the durability suite collected $count tests; expected at least 3"
+            exit 1
+          fi
+          echo "durability suite collected $count tests"
+
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
     runs-on: ubuntu-24.04

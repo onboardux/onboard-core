@@ -290,6 +290,18 @@ requires-dist = [
 name = "adopt-workflow"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-workflow" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-obs" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "pydantic", specifier = ">=2.7,<3" },
+]
 
 [[package]]
 name = "annotated-doc"

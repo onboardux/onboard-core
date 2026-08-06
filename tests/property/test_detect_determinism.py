@@ -52,7 +52,21 @@ def test_two_runs_over_one_tree_are_byte_identical(tree: Path) -> None:
 
 
 @pytest.mark.property
-@settings(max_examples=25, suppress_health_check=[HealthCheck.function_scoped_fixture])
+# `deadline=None` **repairs a flake, and the deadline was the wrong instrument
+# from the start** (found at S8, when a busier machine made it fail). This
+# property builds two real directory trees per example and walks both; on a
+# loaded runner that crosses 200 ms, and Hypothesis then reports
+# `DeadlineExceeded` on a run whose *assertion* passed -- it even prints
+# "Unreliable test timings!" itself. The claim here is **determinism**, not
+# speed. Detection's timing budget belongs to `bench/`, which asserts only on the
+# reference runner (`bench/RUNNER.md` rule 1); a wall-clock deadline inside a
+# correctness property makes the suite fail for reasons that have nothing to do
+# with the invariant, which is how a real failure gets re-run until it is green.
+@settings(
+    max_examples=25,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
 @given(
     names=st.lists(
         st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789-_", min_size=1, max_size=12),

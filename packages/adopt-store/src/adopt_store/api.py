@@ -39,7 +39,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
-from typing import Final, Protocol, cast
+from typing import TYPE_CHECKING, Final, Protocol, cast
 
 from adopt_const import (
     EXPORT_VERSION,
@@ -74,7 +74,29 @@ from adopt_store.sqlite.store import SqliteStore
 
 __all__ = ["OpenRestriction", "Store", "open_store", "scope_facade", "writer_identity"]
 
+if TYPE_CHECKING:  # pragma: no cover -- import cycle: doctor reads this module
+    from adopt_store.doctor import Finding
+
 _DISTRIBUTION: Final[str] = "adopt-store"
+
+#: The tables `adopt store info` reports on, in a fixed order so two runs over
+#: one store produce one report.
+COUNTED_TABLES: Final[tuple[str, ...]] = (
+    "firm",
+    "engagement",
+    "system",
+    "environment",
+    "identity",
+    "identity_revision",
+    "knowledge_item",
+    "knowledge_revision",
+    "binding",
+    "binding_revision",
+    "probe_definition",
+    "probe_definition_revision",
+    "sensor",
+    "observability_boundary",
+)
 _SQLITE_DIALECT: Final[str] = "sqlite"
 
 
@@ -243,6 +265,35 @@ class SqliteStoreHandle:
     def transaction(self) -> object:
         """The shared transaction boundary (contracts §10.3)."""
         return self.backend.transaction()
+
+    def counts(self) -> dict[str, int]:
+        """Row counts for the tables Build 0 writes -- `adopt store info`'s payload.
+
+        Here rather than in the CLI because it is SQL, and CR-36's whole argument
+        for exempting one wiring module is that the CLI holds **no** dialect
+        knowledge. A second realization answers the same question its own way.
+
+        Deliberately not all 37 tables: a count of zero for a table no code
+        populates is noise that hides the row that matters, and items 8-12 extend
+        this tuple as they gain writers.
+        """
+        counted: dict[str, int] = {}
+        for table in COUNTED_TABLES:
+            # The names are this module's own constant, never caller input.
+            rows = self.backend.query(f"SELECT COUNT(*) AS n FROM {table}")  # noqa: S608
+            counted[table] = int(rows[0]["n"]) if rows else 0
+        return counted
+
+    def doctor(self) -> list["Finding"]:
+        """Every finding in this store, reported and never repaired.
+
+        On the handle so the CLI can ask without importing `adopt_store` -- the
+        composition root is `adopt_cli.store_option` and nothing else (CR-36),
+        and `store doctor` is one of the two commands that exemption exists for.
+        """
+        from adopt_store.doctor import doctor as run_doctor
+
+        return run_doctor(self)
 
     def close(self) -> None:
         self.backend.close()

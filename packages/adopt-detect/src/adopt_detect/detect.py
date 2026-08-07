@@ -11,11 +11,20 @@ is what lets an FDE point the tool at a client repository they do not own.
 **No network.** Detection is pure filesystem. `01` N10 makes that measurable
 rather than asserted; `tests/property/test_offline.py` is the instrument.
 
-**No model call.** `04` §4 is explicit: the deterministic path runs to
-completion, and below `DETECT_CONFIDENCE_MIN` the answer is *ambiguous with
-ranked scores*, never a guess. The model-backed disambiguation pass is
-`ADOPT_FEATURE_AGENT_DISAMBIGUATION` and belongs to a later sprint; **there is no
-call site for it here.**
+**No model call in this module.** `04` §4 is explicit: the deterministic path
+runs to completion, and below `DETECT_CONFIDENCE_MIN` the answer is *ambiguous
+with ranked scores*, never a guess. The model-backed disambiguation pass lives in
+`adopt_detect.disambiguate`, is reached only with `ADOPT_FEATURE_AGENT_DISAMBIGUATION`
+on **and** a runner handed in, and **there is still no call site for it here** --
+`detect()` cannot reach a model even transitively, which is what makes steps 1-3
+of `04` §4 model-free by construction rather than by intent.
+
+`bounded_listing` is the one thing this module lends that pass: the evidence a
+proposal is allowed to see includes a directory listing, and it must be *this*
+walk's listing -- same bounds, same `.gitignore` scope, same symlink refusal, same
+deterministic order. A second walk written next to the prompt would be a second
+answer to "what is in this tree", and the one that drifted would be the one that
+decided what left the environment.
 
 **Byte-identical across runs and machines** (`01` N2, N15). Every ordering in
 this module is explicit: entries are sorted before the walk, rules are scored in
@@ -43,7 +52,7 @@ from adopt_detect.rules import ARCHETYPES, ArchetypeRules, load_rule_sets, needs
 from adopt_model._enums import Archetype
 from adopt_obs import AdoptError, ErrorCode
 
-__all__ = ["DetectionResult", "RuleHit", "detect"]
+__all__ = ["DetectionResult", "RuleHit", "bounded_listing", "detect"]
 
 #: The flag whose name the ambiguity report prints. It is named here, not
 #: implemented here: `04` §4 step 4 is a later sprint's, and the re-run hint has
@@ -152,6 +161,32 @@ def _walk(root: Path, ignore: GitignoreFilter) -> Iterator[tuple[str, Path, bool
             if ignore.is_ignored(relative, is_dir=False):
                 continue
             yield relative, absolute, True
+
+
+def bounded_listing(root: Path | str, *, limit: int) -> tuple[tuple[str, ...], bool]:
+    """The first `limit` paths this walk would consider. Returns `(paths, truncated)`.
+
+    **Paths only.** No file is opened, so nothing here can carry file contents --
+    which is the `04` §4 step 4 privacy invariant, held by the function not having
+    the capability rather than by its caller remembering not to use it.
+
+    Truncation is reported rather than silent, for the reason `DetectionResult`
+    reports it: a proposal reasoning over a listing that stopped somewhere is
+    reasoning over less evidence than it appears to have, and a model told the
+    listing was truncated can say so in its confidence.
+    """
+    # Resolved and filtered exactly as `detect()` does it, three lines below.
+    # Copying the two lines rather than sharing them is the smaller risk: sharing
+    # would mean a helper both call, and the thing that must not drift is the
+    # *bounds and the filter*, which are named constants and one classmethod.
+    resolved = Path(root).resolve()
+    ignore = GitignoreFilter.for_tree(resolved)
+    paths: list[str] = []
+    for relative, _absolute, _is_file in _walk(resolved, ignore):
+        if len(paths) >= limit:
+            return tuple(paths), True
+        paths.append(relative)
+    return tuple(paths), False
 
 
 def _head(path: Path) -> bytes | None:

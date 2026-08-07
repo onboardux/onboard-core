@@ -28,7 +28,7 @@ declaration with a date on it.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, get_args
 
 import typer
 
@@ -60,6 +60,15 @@ AnswersOption = Annotated[
         "--answers",
         help="JSON file carrying the three qualification answers.",
         show_default=False,
+    ),
+]
+ArchetypeOption = Annotated[
+    str | None,
+    typer.Option(
+        "--archetype",
+        help="Accept an archetype explicitly, when detection was ambiguous. This is the "
+        "human decision PRD §8 requires before an archetype is written -- there is no "
+        "confidence exemption and no flag that lets a proposal write itself.",
     ),
 ]
 StoreOption = Annotated[Path | None, typer.Option("--store", help="Store path override.")]
@@ -153,10 +162,38 @@ def _ensure_scope(scopes: ScopeFacade, wanted: _FullScope, archetype: Archetype 
     return scopes.resolve(wanted.prefix(4))
 
 
+def _accepted_archetype(named: str | None) -> Archetype | None:
+    """Validate an operator-supplied archetype against the canonical vocabulary.
+
+    Checked against the **generated** `Archetype` literal rather than a list held
+    here, so the vocabulary has one home (`02` §2.1) and adding an archetype to the
+    manifest cannot leave this command rejecting it.
+
+    A typo is refused rather than stored: `system.archetype` is what decides which
+    extractors a downstream item runs, so `--archetype wbe` writing an unknown
+    value would be a *different referent* rather than a slightly wrong one -- the
+    argument CR-32 made for scope, applied to the one other field an operator
+    types by hand.
+    """
+    if named is None:
+        return None
+    canonical = get_args(Archetype)
+    if named not in canonical:
+        raise AdoptError(
+            ErrorCode.DETECT_AMBIGUOUS,
+            message=f"--archetype {named!r} is not one of {', '.join(canonical)}",
+            hint="`02` §2.1 fixes the archetype vocabulary, and a value outside it "
+            "would decide which extractors run for this system. Nothing was created.",
+        )
+    accepted: Archetype = named  # type: ignore[assignment]  # membership just checked
+    return accepted
+
+
 def init(
     path: PathArgument = Path(),
     scope: ScopeOption = "",
     answers: AnswersOption = Path("answers.json"),
+    archetype: ArchetypeOption = None,
     store: StoreOption = None,
     write_statement: StatementOption = None,
     json_output: JsonOption = False,
@@ -169,21 +206,32 @@ def init(
     # nothing behind. A store created and then abandoned is exactly the empty
     # database beside the real one that `store_option` already refuses to make.
     result = run_detect(path)
-    if result.ambiguous:
+    accepted = _accepted_archetype(archetype)
+    if result.ambiguous and accepted is None:
         raise AdoptError(
             ErrorCode.DETECT_AMBIGUOUS,
             message=f"confidence {result.confidence} is below the threshold; nothing was created",
             hint=f"Run `adopt detect {path}` for the ranked scores and the rules that "
-            f"fired. Narrow the path to one system, or set {DISAMBIGUATION_FLAG}=1. "
+            f"fired. Narrow the path to one system, or set {DISAMBIGUATION_FLAG}=1 for a "
+            f"proposal and re-run with `--archetype <a>` to accept it. "
             f"Detection does not guess: a wrong archetype is a different set of "
             f"extractors, not a slightly wrong answer.",
         )
+    # **The operator's value wins, and that is the whole human-accept step.** PRD §8
+    # requires human approval for writing an archetype with no confidence
+    # exemption, so a named `--archetype` overrules detection rather than merely
+    # unblocking it -- an operator who has read a proposal, or who simply knows the
+    # system, is the authority the matrix names. `archetype_source` records which
+    # of the two the row came from, because "who decided this" is exactly the
+    # question an audit asks of a system that can propose.
+    effective = accepted if accepted is not None else result.archetype
+    archetype_source = "operator" if accepted is not None else "detected"
 
     store_path = configured_store_path(store)
     with open_or_create_store(store) as handle:
-        resolved = _ensure_scope(handle.scope(), wanted, result.archetype)
+        resolved = _ensure_scope(handle.scope(), wanted, effective)
         view = declare_boundary(
-            handle.boundary(), scope=resolved, decision=decision, archetype=result.archetype
+            handle.boundary(), scope=resolved, decision=decision, archetype=effective
         )
         payload: dict[str, Any] = {
             "store_path": str(store_path),
@@ -193,7 +241,8 @@ def init(
                 "system": wanted.system,
                 "environment": wanted.environment,
             },
-            "archetype": result.archetype,
+            "archetype": effective,
+            "archetype_source": archetype_source,
             "tier": view.tier,
             "schema_version": handle.schema_version,
             "boundary_id": view.boundary_id,

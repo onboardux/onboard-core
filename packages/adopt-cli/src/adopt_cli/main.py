@@ -18,6 +18,7 @@ from typing import Annotated
 import click
 import typer
 
+from adopt_cli.commands import agent as agent_commands
 from adopt_cli.commands import boundary as boundary_command
 from adopt_cli.commands import coverage as coverage_commands
 from adopt_cli.commands import detect as detect_command
@@ -47,6 +48,7 @@ app.add_typer(freshness_commands.app)
 app.add_typer(store_commands.app)
 app.add_typer(policy_commands.probe_app)
 app.add_typer(policy_commands.envelope_app)
+app.add_typer(agent_commands.app)
 
 # `init`, `detect` and `boundary` are bare commands, not groups: contracts §14
 # names them `adopt init [path]`, `adopt detect [path]` and `adopt boundary`.

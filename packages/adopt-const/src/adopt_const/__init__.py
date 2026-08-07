@@ -132,6 +132,41 @@ AGENT_OUTPUT_SCHEMA_RETRIES: Final[int] = 1
 #: seam does not retry, because that would double-count cost.
 AGENT_ADAPTER_TIMEOUT_S: Final[int] = 60
 
+#: The `detect-001` disambiguation pass's budget, stated by AI spec §5's prompt
+#: table. **Not provisional**: `04` §5 fixes both values, so there is nothing for
+#: S9 to ratify against a measurement. They are constants rather than literals
+#: because `AGENT_DETECT_MAX_WALL_SECONDS` shares a value with `EXPORT_P95_SECONDS`
+#: and shares nothing else -- one bounds how long one model call may take, the
+#: other how long exporting fifty thousand items may take.
+AGENT_DETECT_MAX_USD: Final[float] = 0.05
+AGENT_DETECT_MAX_WALL_SECONDS: Final[int] = 30
+
+#: How many tree entries the `detect-001` prompt's bounded listing may carry --
+#: the `{listing_limit}` placeholder in AI spec §5.1's user template.
+#:
+#: **Provisional, ratified at S9 against the `04` §7.2 golden set.** The pack
+#: requires the listing to be bounded and does not say where; this is the
+#: provisional value, its consumer is `adopt_detect.disambiguate`, and what
+#: ratifies it is whether a larger listing measurably improves top-1 accuracy on
+#: the golden set. A bound that is too small starves the evidence and one that is
+#: too large spends the prompt's budget on directory names, and only the golden set
+#: can say which side of that this is.
+AGENT_DETECT_LISTING_MAX_ENTRIES: Final[int] = 150
+
+#: SKILL.md frontmatter bounds, from AI spec §6. They are here rather than as
+#: literals in the loader because `SKILL_DESCRIPTION_MAX_CHARS` and
+#: `URI_MAX_BYTES` are both 1024 today and mean entirely different things -- two
+#: literals that happen to agree are two literals that will silently disagree
+#: the first time one of them moves.
+SKILL_NAME_MAX_CHARS: Final[int] = 64
+SKILL_DESCRIPTION_MAX_CHARS: Final[int] = 1_024
+
+#: How stale a `verified_on` date in the price table may be before the CI check
+#: warns (AI spec §3). It shares a value with `WORKFLOW_RUN_RETENTION_DAYS` and
+#: shares nothing else: one bounds how long we keep a record, the other how long
+#: we trust a vendor's published price.
+PRICING_VERIFIED_MAX_AGE_DAYS: Final[int] = 90
+
 #: Workflow step retry policy, shared by both backends.
 WORKFLOW_STEP_MAX_ATTEMPTS: Final[int] = 5
 WORKFLOW_STEP_BACKOFF_BASE_MS: Final[int] = 250

@@ -49,3 +49,51 @@ def test_doctor_exits_zero_when_it_has_none(
 
     capsys.readouterr()
     assert exit_code == ExitCode.SUCCESS
+
+
+@pytest.mark.unit
+def test_agent_check_refuses_a_hosted_adapter_offline_with_a_policy_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """S7's Final Output Validation item 4, at unit speed.
+
+    *Fails when* the refusal stops reaching the caller as exit `3` -- because the
+    command swallowed it, or because the code's category drifted out of `policy`.
+    *Matters because* an operator's script branches on `3` to distinguish "you
+    are not allowed to do that" from "it broke"; a `1` here reads as an outage.
+    *No other instrument catches it because* `test_agent_runner.py` asserts
+    `build_adapter` raises the code and stops there -- it says nothing about the
+    command that exposes it or about the exit mapping in between.
+    """
+    monkeypatch.setenv("ADOPT_OFFLINE", "1")
+
+    exit_code = main(["agent", "check", "--adapter", "anthropic", "--json"])
+
+    # The envelope goes to **stderr** (`json_out.emit_error`), so stdout stays
+    # clean for a caller piping a successful payload into `jq`. Asserting on
+    # stdout here would have passed for the wrong reason if the refusal were
+    # printed nowhere at all.
+    captured = capsys.readouterr()
+    assert exit_code == ExitCode.POLICY_REFUSAL
+    assert "AGENT_OFFLINE_ADAPTER_DENIED" in captured.err
+    assert captured.out == ""
+
+
+@pytest.mark.unit
+def test_agent_adapters_reports_rather_than_refusing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The control for the row above, and the §14 division it rests on.
+
+    `adapters` **reports** and exits `0` even when nothing is available: being
+    told Anthropic is denied offline is the answer, not a failure. Without this,
+    a group that refused on every subcommand would satisfy the refusal test.
+    """
+    monkeypatch.setenv("ADOPT_OFFLINE", "1")
+
+    exit_code = main(["agent", "adapters", "--json"])
+
+    out = capsys.readouterr().out
+    assert exit_code == ExitCode.SUCCESS
+    assert '"anthropic"' in out
+    assert '"available": false' in out

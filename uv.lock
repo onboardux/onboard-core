@@ -30,7 +30,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6.100,<7" },
     { name = "import-linter", specifier = ">=2.0,<3" },
     { name = "mypy", specifier = ">=1.11,<2" },
-    { name = "pytest", specifier = ">=8,<9" },
+    { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-benchmark", specifier = ">=4,<6" },
     { name = "ruff", specifier = ">=0.6,<1" },
     { name = "types-pyyaml", specifier = ">=6,<7" },
@@ -40,12 +40,27 @@ dev = [
 name = "adopt-agent"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-agent" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-obs" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "pydantic", specifier = ">=2.7,<3" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+]
 
 [[package]]
 name = "adopt-cli"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-cli" }
 dependencies = [
+    { name = "adopt-agent" },
     { name = "adopt-const" },
     { name = "adopt-coverage" },
     { name = "adopt-detect" },
@@ -64,6 +79,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "adopt-agent", editable = "packages/adopt-agent" },
     { name = "adopt-const", editable = "packages/adopt-const" },
     { name = "adopt-coverage", editable = "packages/adopt-coverage" },
     { name = "adopt-detect", editable = "packages/adopt-detect" },
@@ -107,6 +123,7 @@ name = "adopt-detect"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-detect" }
 dependencies = [
+    { name = "adopt-agent" },
     { name = "adopt-const" },
     { name = "adopt-model" },
     { name = "adopt-obs" },
@@ -116,6 +133,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "adopt-agent", editable = "packages/adopt-agent" },
     { name = "adopt-const", editable = "packages/adopt-const" },
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },
@@ -266,6 +284,7 @@ name = "adopt-store"
 version = "0.3.0.dev0"
 source = { editable = "packages/adopt-store" }
 dependencies = [
+    { name = "adopt-agent" },
     { name = "adopt-const" },
     { name = "adopt-coverage" },
     { name = "adopt-model" },
@@ -277,6 +296,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "adopt-agent", editable = "packages/adopt-agent" },
     { name = "adopt-const", editable = "packages/adopt-const" },
     { name = "adopt-coverage", editable = "packages/adopt-coverage" },
     { name = "adopt-model", editable = "packages/adopt-model" },
@@ -755,7 +775,7 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "8.4.2"
+version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
@@ -764,9 +784,9 @@ dependencies = [
     { name = "pluggy" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01", size = 1519618, upload-time = "2025-09-04T14:34:22.711Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79", size = 365750, upload-time = "2025-09-04T14:34:20.226Z" },
+    { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
 ]
 
 [[package]]

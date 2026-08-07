@@ -6,7 +6,17 @@ requires-python = ">=3.12"
 # `no-provider-sdk` import contract: only `adopt_agent.adapters.*` may import a
 # provider client. No model identifier is hard-coded anywhere, including as a
 # default -- model selection is configuration.
-dependencies = []
+#
+# `no-raw-sqlite` names this package a source module and follows indirect
+# chains, so there is deliberately **no `adopt-store` here**: the runtime annex
+# is reached through the `AnnexRecords` port and realized in `adopt_store.annex`
+# (contracts §12, CR-34's pattern).
+dependencies = [
+    "adopt-const",
+    "adopt-obs",
+    "pydantic>=2.7,<3",
+    "pyyaml>=6,<7",
+]
 
 [build-system]
 requires = ["hatchling"]

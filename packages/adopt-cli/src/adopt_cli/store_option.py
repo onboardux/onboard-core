@@ -17,15 +17,19 @@ second exemption -- including `adopt import`'s explicitly-named target store and
 the `written_by` provenance string an export bundle records.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from adopt_cli.config import resolve_all
 from adopt_obs import AdoptError, ErrorCode
 from adopt_store import open_store
+from adopt_store.annex import SqliteAnnexRecords, open_annex
 from adopt_store.api import SqliteStoreHandle, writer_identity
 
 __all__ = [
     "SqliteStoreHandle",
+    "configured_annex",
     "configured_store_path",
     "open_configured_store",
     "open_for_migration",
@@ -35,6 +39,7 @@ __all__ = [
 ]
 
 _STORE_KEY = "ADOPT_STORE_PATH"
+_RUNTIME_KEY = "ADOPT_RUNTIME_PATH"
 
 
 def configured_store_path(override: Path | None = None) -> Path:
@@ -88,6 +93,35 @@ def open_for_migration(override: Path | None = None) -> SqliteStoreHandle:
     store.
     """
     return open_store(configured_store_path(override), migrate=True)
+
+
+@contextmanager
+def configured_annex() -> Iterator[SqliteAnnexRecords]:
+    """The runtime annex at `ADOPT_RUNTIME_PATH`, opened for one call.
+
+    **Here rather than in the command that needs it**, for the reason this whole
+    module exists (CR-36): `no-raw-sqlite` follows indirect chains into
+    `adopt_cli` and exempts only this module by name, so a command reaching
+    `adopt_store.annex` directly breaks the contract. The seam itself never sees a
+    driver either -- it is handed an `AnnexRecords`, which this satisfies
+    structurally.
+
+    The annex is a **second store, outside `schema_version`** (contracts §12,
+    CR-08), which is why it does not go through `configured_store_path`: pointing
+    both at one resolution order is the coupling the ratification exists to
+    prevent.
+    """
+    for resolution in resolve_all():
+        if resolution.key == _RUNTIME_KEY and resolution.value:
+            with open_annex(Path(resolution.value)) as records:
+                yield records
+            return
+    raise AdoptError(
+        ErrorCode.ADOPT_CONFIG_UNRESOLVED,
+        message=f"{_RUNTIME_KEY} has no value in any configuration source",
+        hint=f"Set {_RUNTIME_KEY}. It carries agent-run idempotency and in-client "
+        f"audit, and is never exported.",
+    )
 
 
 def open_named_store(path: Path, *, migrate: bool = False) -> SqliteStoreHandle:

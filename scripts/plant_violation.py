@@ -117,6 +117,56 @@ def plant_revision_update() -> str:
     return f"added an UPDATE against knowledge_revision to {REVISION_WRITER.name}"
 
 
+#: Where `provider-sdk` plants its import: the deterministic detection module.
+#:
+#: **This is the one place the violation would actually be written.** `04` §4 makes
+#: detection the first and only caller that may reach a model, and it may do so
+#: only after the deterministic path has declined and only through the seam. A
+#: contributor shortening that path writes `import anthropic` here, four lines
+#: from the docstring saying they must not -- not in a scratch file, and not in
+#: `adopt_agent.adapters`, where it is allowed.
+DETECT_MODULE: Final[Path] = (
+    REPO_ROOT / "packages" / "adopt-detect" / "src" / "adopt_detect" / "detect.py"
+)
+
+#: The provider module named in the planted import. One of the six
+#: `no-provider-sdk` forbids, and deliberately the one PRD F13.2 names first --
+#: so the proof is against a module the pack actually expects someone to reach
+#: for, rather than an obscure entry that happens to be on the list.
+PLANTED_PROVIDER: Final[str] = "anthropic"
+
+
+def plant_provider_sdk() -> str:
+    """Import a provider SDK outside `adopt_agent.adapters` -- PRD F13.1's gate.
+
+    **Under CR-46 this contract constrains nothing on a clean tree**, because the
+    owner decided the hosted adapters speak HTTP over the standard library and no
+    vendor SDK enters the wheel at all. That makes the gate *preventive* -- it
+    fires the moment anyone adds one -- and it makes this proof more important,
+    not less: a contract with no members in its forbidden set could be silently
+    misconfigured and still report `KEPT` forever. `no-dbos` was in exactly this
+    state inside `adopt-core` before S8, which is the reason that gate was worth
+    having then.
+
+    The import is planted **inside a function** so it is a real import edge that
+    grimp records without the module having to be installed -- the tree has no
+    `anthropic` distribution and, by CR-46, never will.
+    """
+    if not DETECT_MODULE.exists():  # pragma: no cover -- layout change
+        raise SystemExit(
+            f"{DETECT_MODULE.relative_to(REPO_ROOT)} does not exist, so nothing was "
+            "planted. Update this script rather than leaving the gate unproven."
+        )
+    _backup(DETECT_MODULE)
+    with DETECT_MODULE.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            "\n\ndef _planted_violation() -> None:\n"
+            f"    import {PLANTED_PROVIDER}\n\n"
+            f"    del {PLANTED_PROVIDER}\n"
+        )
+    return f"added `import {PLANTED_PROVIDER}` to {DETECT_MODULE.name}"
+
+
 def plant_covered_cache_write() -> str:
     """Add a cache write outside `adopt_coverage` -- PRD F7.4's gate.
 
@@ -142,6 +192,7 @@ def plant_covered_cache_write() -> str:
 KINDS: Final[dict[str, Callable[[], str]]] = {
     "covered-cache-write": plant_covered_cache_write,
     "drop-column": plant_drop_column,
+    "provider-sdk": plant_provider_sdk,
     "revision-update": plant_revision_update,
 }
 

@@ -107,6 +107,60 @@ jobs:
       - name: Check the installed tree
         run: uv run python scripts/licence_gate.py --check
 
+  pricing-freshness:
+    name: pricing-freshness (warns; never blocks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      # AI spec §3: the price table carries `verified_on` and a CI check *warns*
+      # past `PRICING_VERIFIED_MAX_AGE_DAYS`. `stale_rows` existed from the day
+      # it was written with no caller, so the check the spec requires did not
+      # run. This is the caller.
+      #
+      # The step exits 0 on a stale row on purpose -- a drifted price makes
+      # `Cost.usd` an estimate, and a build that refuses because a vendor has not
+      # edited a page in ninety-one days is a red gate no code change can fix.
+      # Which is exactly why the self-test comes first: a check that cannot fail
+      # is a check that can rot, so this proves it still *detects*.
+      - name: Prove the check still detects a stale row
+        run: uv run python scripts/pricing_freshness.py --self-test
+      - name: Report price rows past their re-verification window
+        run: uv run python scripts/pricing_freshness.py
+
+  vuln-audit:
+    name: vuln-audit (pip-audit over the resolved tree)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      # `licence-verifications.md` records a security status per dependency, and
+      # the release gate (`--strict-verify`) rejects `pending-audit`. This is what
+      # keeps that status true between releases: dependencies acquire
+      # vulnerabilities after we pin them, so an audit that runs once is a
+      # statement about a day rather than about the tree.
+      #
+      # **Run through `uvx`, deliberately.** `pip-audit` in an isolated
+      # environment keeps its own ~20 transitive dependencies out of `uv.lock` and
+      # therefore out of `licence-verifications.md`. A scanner added as a dev
+      # dependency makes every one of its dependencies a verification obligation,
+      # which is a poor trade for a tool that only reads a list.
+      #
+      # Pinned by version for the reason everything else here is: a scanner that
+      # changed under us would change this job's verdict without a commit.
+      - name: Export the resolved tree
+        run: uv export --format requirements-txt --no-hashes --all-groups -o reqs.check.txt
+      - name: Audit it
+        run: uvx pip-audit@2.9.0 -r reqs.check.txt --progress-spinner off
+      # The audit is only worth its status column if the audited set *is* the
+      # recorded set. Without this a row could read `clean` having never been
+      # looked at -- the same class of hole `escape_coverage.py` exists to close
+      # for isolation tests.
+      - name: The audited set is the recorded set
+        run: uv run python scripts/licence_gate.py --check --strict-verify
+
   no-destructive-sql:
     name: no-destructive-sql (the store never loses data)
     runs-on: ubuntu-24.04
@@ -181,6 +235,51 @@ jobs:
             exit 1
           fi
           echo "durability suite collected $count tests"
+
+  conformance-matrix:
+    name: conformance-matrix (>= 2 non-test adapters green)
+    runs-on: ubuntu-24.04
+    # PRD N12 and D5, AI spec §7.1's gate. **A pipeline exercising one vendor is a
+    # failing pipeline** -- below two real adapters the BYO-model argument is
+    # decorative and the seam is a vendor wrapper with extra steps.
+    #
+    # The rule itself lives in `scripts/conformance_matrix.py`, not in this file.
+    # A gate written as shell here is a gate nobody writes a negative test for, and
+    # this one has ways to be wrong that all look green: counting a red adapter as
+    # green, counting the recorded fake toward the arity, and never noticing that
+    # only one adapter ran. `--self-test` drives each.
+    #
+    # **The "at least one local" half is deferred to backlog (CR-48).** The local
+    # model server, its digest pin and the run-time model pull all went with it --
+    # see `BACKLOG.md` for what that gives up and what brings it back.
+    #
+    # **The job runs only once someone names the adapters to prove it against.**
+    # `ADOPT_CONFORMANCE_ADAPTERS` unset means no credential has been provisioned,
+    # and a job that failed in that state would be permanently red for a reason no
+    # code change can fix -- which is how a gate gets deleted. Its absence is
+    # visible instead: `test_ci_gates.py` asserts the job is still declared, and
+    # `05`'s Definition of Done condition 4 stays open until it has run green.
+    if: ${{ vars.ADOPT_CONFORMANCE_ADAPTERS != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      - name: Prove the two-adapter rule still rejects
+        run: uv run python scripts/conformance_matrix.py --self-test
+      # `ADOPT_CONFORMANCE_ADAPTERS` carries a model per adapter --
+      # `openai=gpt-5,anthropic=claude-sonnet-4-5`. It has to: no adapter has a
+      # default model (AI spec §2), and one process-wide `ADOPT_MODEL` across two
+      # hosted vendors names a model at one and a stranger at the other, so the
+      # gate could not have gone green however many credentials were provisioned.
+      # `ADOPT_CONFORMANCE_MODEL` remains the fallback for a bare adapter id.
+      - name: The matrix
+        env:
+          ADOPT_MODEL: ${{ vars.ADOPT_CONFORMANCE_MODEL }}
+          ADOPT_ADAPTER_ENDPOINT: ${{ vars.ADOPT_ADAPTER_ENDPOINT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          uv run python scripts/conformance_matrix.py             --adapters=${{ vars.ADOPT_CONFORMANCE_ADAPTERS }}
 
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
@@ -262,6 +361,24 @@ jobs:
           fi
           uv run python scripts/plant_violation.py --revert
           echo "planted coverage-cache write detected -- gate is live"
+      # `no-provider-sdk` has been declared since S0 and, under CR-46, has
+      # nothing to constrain: the owner decided the hosted adapters speak HTTP
+      # over the standard library, so no vendor SDK is in the graph at all. That
+      # makes the contract preventive rather than constraining -- and it makes
+      # this proof matter *more*, because a forbidden-module list with no members
+      # can be misconfigured and still report KEPT forever. `no-dbos` sat in
+      # exactly that state inside this repository before S8.
+      - name: Prove the gate still rejects a planted provider-SDK import
+        run: |
+          set -euo pipefail
+          uv run python scripts/plant_violation.py --kind provider-sdk
+          if uv run lint-imports --config importlinter.ini; then
+            echo "::error::a planted provider-SDK import outside adopt_agent.adapters was NOT detected"
+            uv run python scripts/plant_violation.py --revert
+            exit 1
+          fi
+          uv run python scripts/plant_violation.py --revert
+          echo "planted provider-SDK import detected -- gate is live"
       - name: The tree is exactly as it was found
         run: git diff --exit-code
       # The sprint plan's Final Output Validation greps both repositories.

@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 from scripts import (
     ci_ratchet,
+    conformance_matrix,
     constants_sync,
     error_registry_sync,
     licence_gate,
@@ -582,6 +583,7 @@ class TestWorkflowsAreRunnable:
 
     #: Gates the pack requires to exist (implementation spec §7). A gate deleted
     #: from CI is a gate that stops running, and nothing else would notice.
+    #: (See `TestConformanceMatrixTargets` below for the `--adapters` parser.)
     REQUIRED_JOBS = frozenset(
         {
             "lint",
@@ -604,6 +606,23 @@ class TestWorkflowsAreRunnable:
             # Same reason as the two above: a gate absent from this list is a
             # gate whose deletion nothing notices.
             "durability",
+            # `pricing-freshness` landed at S7 and is named in implementation
+            # spec §2.2 rather than in §7's job table. Listed anyway, and for a
+            # sharper version of the same reason: it exits 0 by design, so its
+            # deletion would change nothing visible on any run.
+            "pricing-freshness",
+            # `vuln-audit` landed at S9 prep. A dependency acquires a
+            # vulnerability after we pin it, so an audit that runs once is a
+            # statement about a day rather than about the tree -- and the
+            # `clean-<date>` statuses in `licence-verifications.md` are only
+            # true for as long as this keeps running.
+            "vuln-audit",
+            # `conformance-matrix` landed at S7 and is named in implementation
+            # spec §7. It is **red until PRD Q5 closes**, which is the honest
+            # state for an unfinished capability -- and exactly why it must be on
+            # this list: the cheapest way to make a red gate green is to delete
+            # it, and Build DoD condition 4 is this job.
+            "conformance-matrix",
         }
     )
 
@@ -662,3 +681,86 @@ class TestWorkflowsAreRunnable:
                 )
             return
         raise AssertionError("golden-g0 is not declared in any workflow")
+
+
+@pytest.mark.unit
+class TestConformanceMatrixTargets:
+    """`--adapters` resolves a model per adapter.
+
+    *Fails when* the `id=model` parser breaks. *Matters because* no adapter
+    carries a default model (AI spec §2) and `ADOPT_MODEL` is one process-wide
+    value, so a mis-parse either sends one vendor's model id to the other vendor
+    or drops it entirely -- and both surface in CI as an adapter that refused to
+    construct, which reads exactly like a bad credential. *No other instrument
+    catches it because* the matrix only executes where credentials exist, and
+    there a wiring defect and a vendor outage are indistinguishable.
+    """
+
+    def test_a_bare_id_inherits_the_process_model(self) -> None:
+        """The pre-CR-48 form still means what it meant.
+
+        `fake_recorded` is typed `test` and needs no model at all; requiring one
+        would break the default invocation this repository runs on every PR.
+        """
+        assert conformance_matrix.parse_targets("fake_recorded") == [
+            conformance_matrix.Target(adapter="fake_recorded", model=None)
+        ]
+
+    def test_each_adapter_carries_its_own_model(self) -> None:
+        """The defect CR-51 closed: two hosted vendors, two model ids."""
+        assert conformance_matrix.parse_targets("openai=gpt-5,anthropic=claude-sonnet-4-5") == [
+            conformance_matrix.Target(adapter="openai", model="gpt-5"),
+            conformance_matrix.Target(adapter="anthropic", model="claude-sonnet-4-5"),
+        ]
+
+    def test_the_two_forms_mix_and_whitespace_is_not_significant(self) -> None:
+        assert conformance_matrix.parse_targets(" openai=gpt-5 , fake_recorded ") == [
+            conformance_matrix.Target(adapter="openai", model="gpt-5"),
+            conformance_matrix.Target(adapter="fake_recorded", model=None),
+        ]
+
+    @pytest.mark.parametrize(
+        ("spec", "fragment", "why"),
+        [
+            ("openai=", "names no model", "an empty model reads as an intention to name one"),
+            ("nope=gpt-5", "not a registered adapter", "a typo must cost a message, not a run"),
+            ("nope", "not a registered adapter", "the bare form validates too"),
+        ],
+    )
+    def test_a_malformed_target_is_refused_before_any_provider_is_called(
+        self, spec: str, fragment: str, why: str
+    ) -> None:
+        with pytest.raises(SystemExit) as raised:
+            conformance_matrix.parse_targets(spec)
+        assert fragment in str(raised.value), why
+
+    def test_the_model_does_not_leak_from_one_invocation_to_the_next(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """*Fails when* `_run_one` mutates the parent environment.
+
+        That is the original defect's shape one level down: a per-adapter model
+        written into `os.environ` would be inherited by every later adapter, so
+        the second vendor would silently run against the first vendor's model
+        and the matrix would report a vendor failure for a wiring bug.
+        """
+        seen: list[dict[str, str]] = []
+
+        class _Completed:
+            returncode = 0
+
+        def _fake_run(argv: list[str], **kwargs: object) -> _Completed:
+            env = kwargs.get("env")
+            assert isinstance(env, dict)
+            seen.append(env)
+            return _Completed()
+
+        monkeypatch.setattr(conformance_matrix.subprocess, "run", _fake_run)
+        monkeypatch.delenv("ADOPT_MODEL", raising=False)
+
+        for target in conformance_matrix.parse_targets("openai=gpt-5,fake_recorded"):
+            conformance_matrix.run_one(target)
+
+        assert seen[0]["ADOPT_MODEL"] == "gpt-5"
+        assert "ADOPT_MODEL" not in seen[1], "the first adapter's model reached the second"
+        assert "ADOPT_MODEL" not in os.environ, "the parent environment was mutated"

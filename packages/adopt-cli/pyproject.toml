@@ -3,7 +3,12 @@ name = "adopt-cli"
 version = "0.3.0.dev0"
 description = "The adopt command surface: config resolution, JSON mode, exit codes."
 requires-python = ">=3.12"
+# `adopt-agent` is here for `adopt agent adapters | check` (contracts §14). It
+# drags no driver in: the seam reaches the runtime annex through the
+# `AnnexRecords` port, so `no-raw-sqlite` -- which follows indirect chains into
+# `adopt_cli` (CR-36) -- sees nothing new.
 dependencies = [
+    "adopt-agent",
     "adopt-const",
     "adopt-coverage",
     "adopt-detect",

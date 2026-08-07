@@ -93,6 +93,14 @@ REGISTRY: Final[tuple[ConfigKey, ...]] = (
     ConfigKey("ADOPT_LOG_LEVEL", "info", "Minimum emitted log level."),
     ConfigKey("ADOPT_LOG_FORMAT", "json", "Log rendering. JSON is the only supported sink format."),
     ConfigKey("ADOPT_SCRATCH_DIR", None, "Scratch directory for bundle and export work."),
+    ConfigKey(
+        "ADOPT_PROMPTS_DIR",
+        "prompts",
+        "Immutable prompt versions (AI spec §5). `03` §1.2 places the directory at the "
+        "repository root, which is not inside any package -- so its location is "
+        "configuration rather than a path a module can compute, and `doctor` reports "
+        "where it resolved from.",
+    ),
     ConfigKey("ADOPT_FEATURE_AGENT_DISAMBIGUATION", "0", "Archetype disambiguation pass. Off."),
     ConfigKey("ADOPT_FEATURE_DBOS_BACKEND", "0", "DBOS workflow backend. Off."),
     ConfigKey("ADOPT_FEATURE_POSTGRES_STORE", "0", "Postgres store realization. Off."),

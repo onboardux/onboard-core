@@ -13,7 +13,15 @@ requires-python = ">=3.12"
 # `pyyaml` is here because the archetype rules are **data**: implementation spec
 # §4.11 requires that adding a signal be a data change, and a rule set expressed
 # as Python would make every new signal a review of a scoring function.
+#
+# `adopt-agent` is here for the `04` §4 disambiguation pass (`disambiguate.py`),
+# Build 0's one production model caller. The pass takes an `AgentRunner` -- `02`
+# §10.1's Protocol -- rather than constructing one, so `detect()` still cannot
+# reach a model. `no-provider-sdk` is unaffected: the adapters are resolved by a
+# lazy `import_module` inside `adopt_agent.adapters`, and under CR-46 no vendor
+# SDK is in the tree at all.
 dependencies = [
+    "adopt-agent",
     "adopt-const",
     "adopt-model",
     "adopt-obs",

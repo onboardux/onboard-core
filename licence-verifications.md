@@ -40,45 +40,73 @@ case.
 
 ## Verification records
 
-**Security status** is `pending-audit` for every row below: no vulnerability
-audit has been run against this dependency set yet. That is recorded honestly
-rather than asserted clear. `licence_gate.py --check --strict-verify` — the
-release gate at S9 — **rejects `pending-audit`**, so this set must be audited
-before `0.3.0` ships.
+**Security status** is `clean-2026-08-07` for every row below: `pip-audit`
+was run against the whole resolved tree on that date and reported no known
+vulnerability. `licence_gate.py --check --strict-verify` — the release gate at
+S9 — **rejects `pending-audit`**, which is what these rows said until the audit
+ran.
+
+**The audit found one real vulnerability and it was fixed rather than accepted.**
+`pytest` 8.4.2 carried `PYSEC-2026-1845`, fixed in 9.0.3. It would have been
+defensible to accept it — `pytest` is `dev-only` and never enters the wheel or
+the binary, so the exposure was to our own CI rather than to any client — but the
+upgrade turned out to cost nothing: the pin moved to `>=9.0.3,<10` in **both**
+repositories, resolution landed on 9.1.1, and all 710 tests, the cross-repository
+durability drill, the conformance suite, the seeded property run and the unit
+ratchet were green with no code change. Accepting a risk you can remove for free
+is how a `dev-only` exemption becomes a habit.
+
+**How the audit is run**, and why it adds no rows to this file:
+
+```sh
+uv export --format requirements-txt --no-hashes --all-groups -o reqs.check.txt
+uvx pip-audit@2.9.0 -r reqs.check.txt
+```
+
+`uvx` runs `pip-audit` in an **isolated environment**, so its own dependency tree
+— roughly twenty packages — never enters `uv.lock` and never needs a row here. A
+scanner added as a dev dependency would have made every one of its transitive
+dependencies a verification obligation, which is a poor trade for a tool that only
+reads a list.
+
+**The audited set is proven to be this set.** The 31 rows below and the 31
+third-party distributions in the export match exactly, in both directions, with no
+first-party package counted — otherwise a row could be marked clean here having
+never been audited.
 
 | Dependency | Repository | Version | Licence hash | Security status | Usage mode | Owner | Re-verification date | Licence |
 |---|---|---|---|---|---|---|---|---|
-| `annotated-doc` | https://github.com/fastapi/annotated-doc | 0.0.5 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `annotated-types` | https://github.com/annotated-types/annotated-types | 0.8.0 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `click` | https://github.com/pallets/click | 8.4.2 | `118dbcd2d5c9f9b2` | pending-audit | in-binary | eng-lead | 2026-10-30 | BSD-3-Clause |
-| `colorama` | https://github.com/tartley/colorama | 0.4.6 | `684e9824f05014cf` | pending-audit | in-binary | eng-lead | 2026-10-30 | BSD-3-Clause |
-| `grimp` | https://github.com/seddonym/grimp | 3.15 | `684e9824f05014cf` | pending-audit | dev-only | eng-lead | 2026-10-30 | BSD-3-Clause |
-| `hypothesis` | https://github.com/HypothesisWorks/hypothesis | 6.164.0 | `09962c1dc23fac80` | pending-audit | dev-only | eng-lead | 2026-10-30 | MPL-2.0 |
-| `import-linter` | https://github.com/seddonym/import-linter | 2.13 | `684e9824f05014cf` | pending-audit | dev-only | eng-lead | 2026-10-30 | BSD-3-Clause |
-| `iniconfig` | https://github.com/pytest-dev/iniconfig | 2.3.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
-| `librt` | https://github.com/mypyc/librt | 0.13.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
-| `markdown-it-py` | https://github.com/executablebooks/markdown-it-py | 4.2.0 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `mdurl` | https://github.com/executablebooks/mdurl | 0.1.2 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `mypy` | https://github.com/python/mypy | 1.20.2 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
-| `mypy-extensions` | https://github.com/python/mypy_extensions | 1.1.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
-| `packaging` | https://github.com/pypa/packaging | 26.2 | `f83c2e92648be1cb` | pending-audit | dev-only | eng-lead | 2026-10-30 | Apache-2.0 OR BSD-2-Clause |
-| `pathspec` | https://github.com/cpburnz/python-pathspec | 1.1.1 | `09962c1dc23fac80` | pending-audit | dev-only | eng-lead | 2026-10-30 | MPL-2.0 |
-| `pluggy` | https://github.com/pytest-dev/pluggy | 1.6.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
-| `py-cpuinfo` | https://github.com/workhorsy/py-cpuinfo | 9.0.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
-| `pydantic` | https://github.com/pydantic/pydantic | 2.13.4 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `pydantic-core` | https://github.com/pydantic/pydantic-core | 2.46.4 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `pygments` | https://github.com/pygments/pygments | 2.20.0 | `248dd895a2f89e28` | pending-audit | in-binary | eng-lead | 2026-10-30 | BSD-2-Clause |
-| `pytest` | https://github.com/pytest-dev/pytest | 8.4.2 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
-| `pytest-benchmark` | https://github.com/ionelmc/pytest-benchmark | 5.2.3 | `248dd895a2f89e28` | pending-audit | dev-only | eng-lead | 2026-10-30 | BSD-2-Clause |
-| `pyyaml` | https://github.com/yaml/pyyaml | 6.0.3 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `rich` | https://github.com/Textualize/rich | 14.3.4 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `ruff` | https://github.com/astral-sh/ruff | 0.16.0 | `e5dcffe836b6ec8a` | pending-audit | dev-only | eng-lead | 2026-10-30 | MIT |
-| `shellingham` | https://github.com/sarugaku/shellingham | 1.5.4 | `d8d62d58d661d5dd` | pending-audit | in-binary | eng-lead | 2026-10-30 | ISC |
-| `sortedcontainers` | https://github.com/grantjenks/python-sortedcontainers | 2.4.0 | `6a666d685ab3d80b` | pending-audit | dev-only | eng-lead | 2026-10-30 | Apache-2.0 |
-| `typer` | https://github.com/fastapi/typer | 0.27.0 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
-| `typing-extensions` | https://github.com/python/typing_extensions | 4.16.0 | `606b04e71db9ca7a` | pending-audit | in-binary | eng-lead | 2026-10-30 | PSF-2.0 |
-| `types-pyyaml` | https://github.com/python/typeshed | 6.0.12.20260724 | `2af71558e438db0b` | pending-audit | dev-only | eng-lead | 2026-10-30 | Apache-2.0 |
-| `typing-inspection` | https://github.com/pydantic/typing-inspection | 0.4.2 | `e5dcffe836b6ec8a` | pending-audit | in-binary | eng-lead | 2026-10-30 | MIT |
+| `annotated-doc` | https://github.com/fastapi/annotated-doc | 0.0.5 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `annotated-types` | https://github.com/annotated-types/annotated-types | 0.8.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `click` | https://github.com/pallets/click | 8.4.2 | `118dbcd2d5c9f9b2` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | BSD-3-Clause |
+| `colorama` | https://github.com/tartley/colorama | 0.4.6 | `684e9824f05014cf` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | BSD-3-Clause |
+| `grimp` | https://github.com/seddonym/grimp | 3.15 | `684e9824f05014cf` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | BSD-3-Clause |
+| `hypothesis` | https://github.com/HypothesisWorks/hypothesis | 6.164.0 | `09962c1dc23fac80` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MPL-2.0 |
+| `import-linter` | https://github.com/seddonym/import-linter | 2.13 | `684e9824f05014cf` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | BSD-3-Clause |
+| `iniconfig` | https://github.com/pytest-dev/iniconfig | 2.3.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
+| `librt` | https://github.com/mypyc/librt | 0.13.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
+| `markdown-it-py` | https://github.com/executablebooks/markdown-it-py | 4.2.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `mdurl` | https://github.com/executablebooks/mdurl | 0.1.2 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `mypy` | https://github.com/python/mypy | 1.20.2 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
+| `mypy-extensions` | https://github.com/python/mypy_extensions | 1.1.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
+| `packaging` | https://github.com/pypa/packaging | 26.2 | `f83c2e92648be1cb` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | Apache-2.0 OR BSD-2-Clause |
+| `pathspec` | https://github.com/cpburnz/python-pathspec | 1.1.1 | `09962c1dc23fac80` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MPL-2.0 |
+| `pluggy` | https://github.com/pytest-dev/pluggy | 1.6.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
+| `py-cpuinfo` | https://github.com/workhorsy/py-cpuinfo | 9.0.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
+| `pydantic` | https://github.com/pydantic/pydantic | 2.13.4 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `pydantic-core` | https://github.com/pydantic/pydantic-core | 2.46.4 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `pygments` | https://github.com/pygments/pygments | 2.20.0 | `248dd895a2f89e28` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | BSD-2-Clause |
+| `pytest` | https://github.com/pytest-dev/pytest | 9.1.1 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
+| `pytest-benchmark` | https://github.com/ionelmc/pytest-benchmark | 5.2.3 | `248dd895a2f89e28` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | BSD-2-Clause |
+| `pyyaml` | https://github.com/yaml/pyyaml | 6.0.3 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `rich` | https://github.com/Textualize/rich | 14.3.4 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `ruff` | https://github.com/astral-sh/ruff | 0.16.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
+| `shellingham` | https://github.com/sarugaku/shellingham | 1.5.4 | `d8d62d58d661d5dd` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | ISC |
+| `sortedcontainers` | https://github.com/grantjenks/python-sortedcontainers | 2.4.0 | `6a666d685ab3d80b` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | Apache-2.0 |
+| `typer` | https://github.com/fastapi/typer | 0.27.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `typing-extensions` | https://github.com/python/typing_extensions | 4.16.0 | `606b04e71db9ca7a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | PSF-2.0 |
+| `types-pyyaml` | https://github.com/python/typeshed | 6.0.12.20260724 | `2af71558e438db0b` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | Apache-2.0 |
+| `typing-inspection` | https://github.com/pydantic/typing-inspection | 0.4.2 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
 
 ## Toolchain that is never distributed
 

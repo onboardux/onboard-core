@@ -1,0 +1,198 @@
+{
+  "_comment": [
+    "The detect-001 golden set. AI spec §7.2.",
+    "",
+    "Fifteen hand-labelled AMBIGUOUS systems, three per archetype. Each case is",
+    "recorded as EVIDENCE rather than as a tree, and that is deliberate: the pass",
+    "only ever sees scores, rule names, paths and a bounded listing (AI spec §4",
+    "step 4), so evidence is the whole input. Recording trees instead would make",
+    "the eval inputs a function of the detector's current scoring, and a change to",
+    "a rule weight would silently change what the golden set measures.",
+    "",
+    "`archetype` is the HAND LABEL -- what a human who looked at the real system",
+    "concluded. It is the truth the report scores `primary` against; it is not what",
+    "the heuristics said, which is the point of the case being here at all.",
+    "",
+    "Every case is ambiguous by construction: no archetype's score clears",
+    "DETECT_CONFIDENCE_MIN, which is the only situation in which this prompt is",
+    "ever called.",
+    "",
+    "`listing` entries are anonymized: real client paths never enter this",
+    "repository, and a golden set that carried them would put client structure in",
+    "an Apache-2.0 tree permanently."
+  ],
+  "cases": [
+    {
+      "id": "web-01",
+      "archetype": "web",
+      "notes": "Django service whose analytics folder holds dbt models. The dbt project is a subordinate reporting concern; editing Python changes behaviour.",
+      "scores": { "web": 0.44, "data": 0.39, "ai": 0.09, "platform": 0.05, "lowcode": 0.03 },
+      "rules_fired": [
+        { "archetype": "web", "rule": "django-settings", "path": "orders/settings.py", "why": "Django settings module" },
+        { "archetype": "web", "rule": "django-manage", "path": "manage.py", "why": "Django entry point" },
+        { "archetype": "data", "rule": "dbt-project", "path": "analytics/dbt_project.yml", "why": "dbt project file" }
+      ],
+      "listing": ["manage.py", "orders/settings.py", "orders/views.py", "orders/urls.py", "analytics/dbt_project.yml", "analytics/models/revenue.sql", "requirements.txt"]
+    },
+    {
+      "id": "web-02",
+      "archetype": "web",
+      "notes": "Express API that calls an LLM for one endpoint. Behaviour is in the source; the model call is a feature, not the system.",
+      "scores": { "web": 0.41, "ai": 0.40, "data": 0.10, "platform": 0.05, "lowcode": 0.04 },
+      "rules_fired": [
+        { "archetype": "web", "rule": "express-app", "path": "src/app.js", "why": "Express application" },
+        { "archetype": "web", "rule": "node-package", "path": "package.json", "why": "Node package manifest" },
+        { "archetype": "ai", "rule": "provider-sdk-dep", "path": "package.json", "why": "provider SDK dependency" }
+      ],
+      "listing": ["package.json", "src/app.js", "src/routes/billing.js", "src/routes/summarize.js", "src/lib/model_client.js", "test/app.test.js"]
+    },
+    {
+      "id": "web-03",
+      "archetype": "web",
+      "notes": "FastAPI service deployed onto a low-code platform's container runtime. The platform hosts it; it does not define it.",
+      "scores": { "web": 0.43, "lowcode": 0.38, "data": 0.09, "platform": 0.06, "ai": 0.04 },
+      "rules_fired": [
+        { "archetype": "web", "rule": "fastapi-app", "path": "app/main.py", "why": "FastAPI application" },
+        { "archetype": "lowcode", "rule": "platform-manifest", "path": "platform/app.manifest.json", "why": "low-code deployment manifest" }
+      ],
+      "listing": ["app/main.py", "app/routers/orders.py", "app/models.py", "platform/app.manifest.json", "pyproject.toml", "Dockerfile"]
+    },
+    {
+      "id": "platform-01",
+      "archetype": "platform",
+      "notes": "SAP customization exported alongside a small Python helper. The ABAP objects are the system; the helper is a build script.",
+      "scores": { "platform": 0.45, "web": 0.36, "data": 0.11, "ai": 0.05, "lowcode": 0.03 },
+      "rules_fired": [
+        { "archetype": "platform", "rule": "abap-objects", "path": "src/zorders.abap", "why": "ABAP source object" },
+        { "archetype": "platform", "rule": "transport-request", "path": "transports/K900123.xml", "why": "transport request" },
+        { "archetype": "web", "rule": "python-package", "path": "tools/pyproject.toml", "why": "Python package manifest" }
+      ],
+      "listing": ["src/zorders.abap", "src/zorders_top.abap", "transports/K900123.xml", "tools/export.py", "tools/pyproject.toml"]
+    },
+    {
+      "id": "platform-02",
+      "archetype": "platform",
+      "notes": "Salesforce org metadata with Apex triggers plus a static site for docs. Configuration lives in the vendor metadata store.",
+      "scores": { "platform": 0.42, "web": 0.40, "data": 0.08, "lowcode": 0.06, "ai": 0.04 },
+      "rules_fired": [
+        { "archetype": "platform", "rule": "sfdx-project", "path": "sfdx-project.json", "why": "Salesforce DX project" },
+        { "archetype": "platform", "rule": "apex-class", "path": "force-app/main/default/classes/OrderTrigger.cls", "why": "Apex class" },
+        { "archetype": "web", "rule": "static-site", "path": "docs/index.html", "why": "static HTML entry point" }
+      ],
+      "listing": ["sfdx-project.json", "force-app/main/default/classes/OrderTrigger.cls", "force-app/main/default/objects/Order__c.object-meta.xml", "docs/index.html", "docs/style.css"]
+    },
+    {
+      "id": "platform-03",
+      "archetype": "platform",
+      "notes": "Dynamics customization whose reporting layer is a semantic model. The ERP customization is the system under adoption.",
+      "scores": { "platform": 0.40, "data": 0.39, "web": 0.11, "lowcode": 0.06, "ai": 0.04 },
+      "rules_fired": [
+        { "archetype": "platform", "rule": "dynamics-solution", "path": "solution/customizations.xml", "why": "Dynamics solution export" },
+        { "archetype": "data", "rule": "semantic-model", "path": "reporting/model.bim", "why": "tabular semantic model" }
+      ],
+      "listing": ["solution/customizations.xml", "solution/solution.xml", "plugins/OrderPlugin.cs", "reporting/model.bim", "reporting/measures.dax"]
+    },
+    {
+      "id": "lowcode-01",
+      "archetype": "lowcode",
+      "notes": "Power Platform solution package with one Azure Function. The flows are the system; the function is a called utility.",
+      "scores": { "lowcode": 0.44, "web": 0.37, "data": 0.10, "platform": 0.05, "ai": 0.04 },
+      "rules_fired": [
+        { "archetype": "lowcode", "rule": "powerapps-solution", "path": "solution.xml", "why": "Power Platform solution manifest" },
+        { "archetype": "lowcode", "rule": "flow-definition", "path": "Workflows/ApproveOrder.json", "why": "cloud flow definition" },
+        { "archetype": "web", "rule": "dotnet-project", "path": "functions/Orders.csproj", "why": ".NET project" }
+      ],
+      "listing": ["solution.xml", "Workflows/ApproveOrder.json", "Workflows/NotifyOwner.json", "CanvasApps/orders_app.msapp", "functions/Orders.csproj"]
+    },
+    {
+      "id": "lowcode-02",
+      "archetype": "lowcode",
+      "notes": "Retool-style exported app whose queries are SQL files. The exported package defines behaviour.",
+      "scores": { "lowcode": 0.41, "data": 0.40, "web": 0.09, "platform": 0.06, "ai": 0.04 },
+      "rules_fired": [
+        { "archetype": "lowcode", "rule": "app-export", "path": "app.export.json", "why": "low-code app export" },
+        { "archetype": "data", "rule": "sql-models", "path": "queries/orders.sql", "why": "SQL query files" }
+      ],
+      "listing": ["app.export.json", "queries/orders.sql", "queries/customers.sql", "resources/postgres.json", "README.md"]
+    },
+    {
+      "id": "lowcode-03",
+      "archetype": "lowcode",
+      "notes": "ServiceNow update set with a scripted REST resource. The platform package is the unit of change.",
+      "scores": { "lowcode": 0.39, "platform": 0.38, "web": 0.13, "data": 0.06, "ai": 0.04 },
+      "rules_fired": [
+        { "archetype": "lowcode", "rule": "update-set", "path": "update_sets/orders.xml", "why": "platform update set" },
+        { "archetype": "platform", "rule": "vendor-metadata", "path": "sys_script_include.xml", "why": "vendor metadata record" }
+      ],
+      "listing": ["update_sets/orders.xml", "sys_script_include.xml", "sys_rest_message.xml", "scripts/order_helper.js"]
+    },
+    {
+      "id": "data-01",
+      "archetype": "data",
+      "notes": "dbt project with an Airflow DAG that orchestrates it. The transformation models are the system.",
+      "scores": { "data": 0.45, "web": 0.36, "ai": 0.09, "lowcode": 0.06, "platform": 0.04 },
+      "rules_fired": [
+        { "archetype": "data", "rule": "dbt-project", "path": "dbt_project.yml", "why": "dbt project file" },
+        { "archetype": "data", "rule": "dbt-models", "path": "models/marts/orders.sql", "why": "dbt model" },
+        { "archetype": "web", "rule": "python-package", "path": "pyproject.toml", "why": "Python package manifest" }
+      ],
+      "listing": ["dbt_project.yml", "models/staging/stg_orders.sql", "models/marts/orders.sql", "dags/run_dbt.py", "pyproject.toml", "profiles.yml"]
+    },
+    {
+      "id": "data-02",
+      "archetype": "data",
+      "notes": "Warehouse repository holding a catalog plus a small Flask status page. The catalog and models are the system.",
+      "scores": { "data": 0.42, "web": 0.39, "lowcode": 0.08, "ai": 0.06, "platform": 0.05 },
+      "rules_fired": [
+        { "archetype": "data", "rule": "catalog-manifest", "path": "catalog/datasets.yml", "why": "data catalog manifest" },
+        { "archetype": "web", "rule": "flask-app", "path": "status/app.py", "why": "Flask application" }
+      ],
+      "listing": ["catalog/datasets.yml", "catalog/lineage.yml", "models/revenue.sql", "models/churn.sql", "status/app.py"]
+    },
+    {
+      "id": "data-03",
+      "archetype": "data",
+      "notes": "Feature store whose features feed a model service. The system under adoption is the transformation layer.",
+      "scores": { "data": 0.40, "ai": 0.39, "web": 0.11, "lowcode": 0.06, "platform": 0.04 },
+      "rules_fired": [
+        { "archetype": "data", "rule": "feature-definitions", "path": "features/orders.yaml", "why": "feature definitions" },
+        { "archetype": "ai", "rule": "model-config", "path": "serving/model.yaml", "why": "model serving configuration" }
+      ],
+      "listing": ["features/orders.yaml", "features/customers.yaml", "transformations/agg_orders.sql", "serving/model.yaml", "serving/requirements.txt"]
+    },
+    {
+      "id": "ai-01",
+      "archetype": "ai",
+      "notes": "LangGraph agent system with a thin FastAPI wrapper. Behaviour changes when prompts or retrieval config change, with no code edit.",
+      "scores": { "ai": 0.44, "web": 0.37, "data": 0.10, "lowcode": 0.05, "platform": 0.04 },
+      "rules_fired": [
+        { "archetype": "ai", "rule": "graph-definition", "path": "agents/graph.py", "why": "agent graph definition" },
+        { "archetype": "ai", "rule": "prompt-directory", "path": "prompts/triage/v1/system.md", "why": "versioned prompt directory" },
+        { "archetype": "web", "rule": "fastapi-app", "path": "api/main.py", "why": "FastAPI application" }
+      ],
+      "listing": ["agents/graph.py", "agents/tools.py", "prompts/triage/v1/system.md", "prompts/triage/v2/system.md", "api/main.py", "retrieval/index.yaml"]
+    },
+    {
+      "id": "ai-02",
+      "archetype": "ai",
+      "notes": "RAG service whose retrieval configuration is the behaviour. The vector index config changes answers without a deploy.",
+      "scores": { "ai": 0.41, "data": 0.40, "web": 0.10, "platform": 0.05, "lowcode": 0.04 },
+      "rules_fired": [
+        { "archetype": "ai", "rule": "retrieval-config", "path": "retrieval/chunking.yaml", "why": "retrieval configuration" },
+        { "archetype": "data", "rule": "embedding-pipeline", "path": "pipelines/embed.sql", "why": "embedding pipeline" }
+      ],
+      "listing": ["retrieval/chunking.yaml", "retrieval/rerank.yaml", "pipelines/embed.sql", "prompts/answer/v1/system.md", "src/serve.py"]
+    },
+    {
+      "id": "ai-03",
+      "archetype": "ai",
+      "notes": "Prompt-driven document classifier packaged as a low-code connector. The prompts decide behaviour.",
+      "scores": { "ai": 0.39, "lowcode": 0.38, "web": 0.12, "data": 0.07, "platform": 0.04 },
+      "rules_fired": [
+        { "archetype": "ai", "rule": "prompt-directory", "path": "prompts/classify/v1/system.md", "why": "versioned prompt directory" },
+        { "archetype": "lowcode", "rule": "connector-manifest", "path": "connector/apiDefinition.json", "why": "low-code connector manifest" }
+      ],
+      "listing": ["prompts/classify/v1/system.md", "prompts/classify/v1/user.md", "connector/apiDefinition.json", "connector/apiProperties.json", "scripts/score.py"]
+    }
+  ]
+}

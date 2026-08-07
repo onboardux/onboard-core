@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "Dated provider prices, USD per million tokens. AI spec §3.",
+    "This is DATA, not configuration and not a tunable: every row records what a",
+    "human read on a vendor's published page on `verified_on`. Correcting a price",
+    "is a data change, which is what it is -- the same reasoning that makes",
+    "`adopt_detect`'s archetype rules YAML rather than Python.",
+    "These model names are price-table KEYS. Nothing selects a model from this",
+    "file; `ADOPT_MODEL` is the only thing that chooses one (AI spec §2)."
+  ],
+  "rows": [
+    {
+      "adapter": "anthropic",
+      "model": "claude-sonnet-5",
+      "input_usd_per_million": 2.00,
+      "output_usd_per_million": 10.00,
+      "verified_on": "2026-08-06",
+      "source": "https://www.anthropic.com/pricing"
+    },
+    {
+      "adapter": "anthropic",
+      "model": "claude-haiku-4-5-20251001",
+      "input_usd_per_million": 1.00,
+      "output_usd_per_million": 5.00,
+      "verified_on": "2026-08-06",
+      "source": "https://www.anthropic.com/pricing"
+    },
+    {
+      "adapter": "openai",
+      "model": "gpt-5.6-terra",
+      "input_usd_per_million": 2.00,
+      "output_usd_per_million": 12.00,
+      "verified_on": "2026-08-06",
+      "source": "https://openai.com/api/pricing/"
+    },
+    {
+      "adapter": "openai",
+      "model": "gpt-5.6-luna",
+      "input_usd_per_million": 0.25,
+      "output_usd_per_million": 1.20,
+      "verified_on": "2026-08-06",
+      "source": "https://openai.com/api/pricing/"
+    }
+  ]
+}

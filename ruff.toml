@@ -47,6 +47,14 @@ ignore = [
 # A benchmark harness reports to stdout and drives `psql` as a subprocess; it is
 # a measurement tool, not library code, and is never linked into the wheel.
 "bench/**" = ["T20", "S603", "S607"]
+# The `detect-001` golden set is a **reporting script that happens to live under
+# `tests/`**, because `05` S7 and `03` §1.2 place it there. AI spec §7.2 makes it
+# informational rather than gating, so it prints a result table and exits 0 -- it
+# is deliberately not a pytest test, since a skipped eval that renders as a
+# passing test is the exact failure the whole file is written against.
+# `BLE001`: one bad case must not end the report, so it catches broadly and
+# records the reason per case.
+"tests/golden_prompts/**" = ["T20", "BLE001"]
 
 [lint.isort]
 known-first-party = [

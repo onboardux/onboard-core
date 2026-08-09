@@ -80,6 +80,7 @@ never been audited.
 | `annotated-types` | https://github.com/annotated-types/annotated-types | 0.8.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
 | `click` | https://github.com/pallets/click | 8.4.2 | `118dbcd2d5c9f9b2` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | BSD-3-Clause |
 | `colorama` | https://github.com/tartley/colorama | 0.4.6 | `684e9824f05014cf` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | BSD-3-Clause |
+| `coverage` | https://github.com/coveragepy/coveragepy | 7.15.4 | `2af71558e438db0b` | clean-2026-08-10 | dev-only | onboardux | 2026-10-30 | Apache-2.0 |
 | `grimp` | https://github.com/seddonym/grimp | 3.15 | `684e9824f05014cf` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | BSD-3-Clause |
 | `hypothesis` | https://github.com/HypothesisWorks/hypothesis | 6.164.0 | `09962c1dc23fac80` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MPL-2.0 |
 | `import-linter` | https://github.com/seddonym/import-linter | 2.13 | `684e9824f05014cf` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | BSD-3-Clause |

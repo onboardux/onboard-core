@@ -280,6 +280,15 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           uv run python scripts/conformance_matrix.py             --adapters=${{ vars.ADOPT_CONFORMANCE_ADAPTERS }}
+      # D5's inputs. Uploaded even on failure: "which adapters were green" is
+      # exactly the question a red matrix leaves open.
+      - name: Adapter verdicts for the metrics job
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metrics-conformance
+          path: ci-metrics.jsonl
+          if-no-files-found: ignore
 
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
@@ -320,6 +329,28 @@ jobs:
           count="$(grep -c "runtime" /tmp/b1/manifest.json || true)"
           echo "occurrences of 'runtime' in manifest.json: ${count}"
           test "${count}" = "0"
+
+  coverage-floor:
+    name: coverage-floor (an alarm, never a target)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      # `COVERAGE_FLOOR_CORE` reached S9 with no consumer anywhere in either
+      # tree -- the one §2.3 constant that measured nothing. Implementation spec
+      # §6 names six packages it alarms on, and this is the alarm.
+      #
+      # It fails BELOW the floor and does nothing at all above it. There is no
+      # ratchet and no "must not decrease" rule: §2.3 says "never a target" and
+      # §6 bans coverage as a target outright, and a floor that rewards a rise is
+      # a target with better manners -- which is what manufactures assertion-free
+      # tests. `adopt-cli` sits under the floor deliberately and is not judged;
+      # `05`'s summary table budgets zero dedicated tests there.
+      - name: Prove the alarm still fires
+        run: uv run python scripts/coverage_floor.py --self-test
+      - name: The floor
+        run: uv run python scripts/coverage_floor.py --check
 
   append-only:
     name: append-only (no UPDATE on a revision, no covered_cache write outside adopt_coverage)
@@ -507,3 +538,66 @@ jobs:
           name: emitted-ddl
           path: schema/migrations/**/*.sql
 
+  metrics:
+    name: metrics (PRD §6 success metrics)
+    runs-on: ubuntu-24.04
+    # `always()`, because a red gate is a data point rather than a reason to stop
+    # measuring -- D1 is a *pass rate* and a run that only records its green days
+    # reports 1.0 forever.
+    if: always()
+    needs: [golden-g0, schema-lint, append-only, lint, durability, conformance-matrix]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+
+      - name: Prove the §6 predicates still reject
+        run: uv run python scripts/ci_metrics.py --self-test
+
+      - name: Adapter verdicts, if the matrix ran
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: metrics-conformance
+
+      # Every event below is derived from a gate's own result. Nothing here
+      # re-judges a gate: §7's jobs decide pass or fail, and this records what
+      # they decided. A second opinion is how two instruments disagree.
+      - name: Record what the gates decided
+        run: |
+          set -euo pipefail
+          emit() { uv run python scripts/ci_metrics.py --event "$1" --field "$2"; }
+
+          # D1 -- G0 pass rate. Skipped is not green and not red; it is absent,
+          # and recording it as either would corrupt the ratio.
+          case "${{ needs.golden-g0.result }}" in
+            success) emit g0_run green=true ;;
+            failure) emit g0_run green=false ;;
+          esac
+
+          # D2 -- a caught non-additive attempt. `schema-lint` failing IS the
+          # catch, which is why the numerator counts its failures.
+          if [ "${{ needs.schema-lint.result }}" = "failure" ]; then
+            emit schema_lint_violation caught=pre-merge
+          fi
+
+          # North star. `append-only` covers the revision and covered_cache
+          # invariants; `lint` carries `no-provider-sdk`, `no-dbos` and
+          # `no-foreign-tables`. A failure here is a Build 0 defect by PRD §6's
+          # own words, not a downstream team's style choice.
+          if [ "${{ needs.append-only.result }}" = "failure" ]; then
+            emit forked_revision_chain source=append-only
+          fi
+          if [ "${{ needs.lint.result }}" = "failure" ]; then
+            emit agent.sdk_import_violation source=import-contracts
+          fi
+
+      - name: Summarize
+        run: uv run python scripts/ci_metrics.py --summarize
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-metrics
+          path: ci-metrics.jsonl
+          if-no-files-found: ignore

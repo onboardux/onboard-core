@@ -11,12 +11,25 @@ name: release
 # a release missing an SBOM, provenance or a signature is not a release
 # (PRD F15.6, NFR N14). The machinery is proven months before it is needed.
 #
-# NOT WIRED YET, and why: the three single-file platform binaries. Packing them
-# requires a packer dependency (PyInstaller, Nuitka or similar), and no
-# dependency enters this tree before it has passed the licence gate and has a
-# row in `licence-verifications.md`. That decision belongs to S9's release task.
-# Until then this workflow builds and signs the wheel, and the BINARY_MAX_MB
-# assertion applies to whatever artefacts are present.
+# THE PACKER, decided at S9 (CR-51). The three single-file platform binaries are
+# built with **Nuitka (Apache-2.0)**, invoked through `uvx` so it never enters
+# `uv.lock` -- the same isolation CR-49 chose for `pip-audit`, and for the same
+# reason: a build tool's ~4 transitive dependencies should not each become a
+# seven-field verification obligation.
+#
+# **PyInstaller was rejected, and not on a technicality.** Its bootloader is
+# compiled into the shipped artefact, so it is `in-binary` by `03` §7.3's own
+# definition, and that mode is "permissive only. No copyleft, ever." The GPL-2.0
+# linking exception means the obligation never actually bites -- and CR-46 set
+# the precedent of refusing on the transitive licence rather than on whether an
+# obligation triggers, when it kept both official provider SDKs out over MPL-2.0
+# `certifi` and `tqdm`. Softening that here would widen the rule for every
+# future dependency, not just this one.
+#
+# !! THIS JOB HAS NEVER EXECUTED. !! It is wired from documentation, not from a
+# green run, and it is the most likely failure point in the first real release.
+# If it fails, drop `binaries` from `supply-chain.needs` to ship the wheel while
+# it is fixed -- the wheel path is proven and the binaries are additive.
 
 on:
   workflow_dispatch:
@@ -53,9 +66,54 @@ jobs:
           name: dist
           path: dist/
 
+  binaries:
+    name: single-file binary (${{ matrix.os }})
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            artefact: adopt-linux-x86_64
+          - os: macos-14
+            artefact: adopt-macos-arm64
+          - os: windows-2022
+            artefact: adopt-windows-x86_64.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+
+      # `--onefile` is the "single-file binary per platform" `03` §1.1 locks.
+      # `--assume-yes-for-downloads` keeps the job non-interactive; without it
+      # Nuitka blocks on a prompt for its C toolchain and the job times out
+      # rather than failing.
+      - name: Pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --with nuitka python -m nuitka             --onefile             --assume-yes-for-downloads             --output-dir=packed             --output-filename=${{ matrix.artefact }}             packages/adopt-cli/src/adopt_cli/main.py
+
+      # A binary that cannot report its own version is not a binary we ship.
+      # This is the cheapest possible smoke test and it catches the failure mode
+      # a packer actually has: a build that succeeds and produces something that
+      # cannot import its own dependencies at run time.
+      - name: It runs, and reports schema version 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./packed/${{ matrix.artefact }} version --json
+          ./packed/${{ matrix.artefact }} version --json | grep -q '"schema_version": *3'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.artefact }}
+          path: packed/${{ matrix.artefact }}
+
   supply-chain:
     name: SBOM, provenance, signatures
-    needs: build
+    needs: [build, binaries]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +124,15 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      # Every binary lands beside the wheel, so the SBOM, the provenance
+      # attestation, the signatures and the BINARY_MAX_MB assertion all cover
+      # them without a second code path.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist/
+          merge-multiple: true
 
       - name: Licence gate at release strictness
         # Blocks on any dependency still `pending-audit`, any lapsed

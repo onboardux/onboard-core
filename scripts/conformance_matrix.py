@@ -67,6 +67,7 @@ if str(REPO_ROOT) not in sys.path:  # pragma: no cover - import bootstrap
 
 from adopt_agent.adapters.base import REGISTRY  # noqa: E402
 from adopt_const import CONFORMANCE_CI_MAX_MINUTES  # noqa: E402
+from scripts import ci_metrics  # noqa: E402
 
 __all__ = ["Target", "Verdict", "evaluate", "main", "parse_targets", "run_one"]
 
@@ -310,6 +311,19 @@ def main(argv: list[str] | None = None) -> int:
             f"{'GREEN' if verdict.green else 'RED':<6} {verdict.detail}"
         )
     print(f"  elapsed {elapsed:.0f}s of {CONFORMANCE_CI_MAX_MINUTES * _SECONDS_PER_MINUTE}s")
+
+    # PRD §6 D5 counts green non-test adapters, and this is the only place that
+    # knows a verdict's `kind`. Emitting here rather than re-deriving it in the
+    # metrics job keeps one answer to "which adapters were green".
+    for verdict in verdicts:
+        ci_metrics.emit(
+            "adapter_verdict",
+            {
+                "adapter": verdict.adapter,
+                "kind": verdict.kind,
+                "green": "true" if verdict.green else "false",
+            },
+        )
 
     failures = evaluate(verdicts, elapsed_seconds=elapsed)
     if failures:

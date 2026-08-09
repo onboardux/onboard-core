@@ -24,3 +24,8 @@ dist/
 # boundary violation the pattern exists to catch.
 adopt-plane/
 plane_*/
+
+# CI metrics, written per run and uploaded as an artefact (PRD §6)
+ci-metrics.jsonl
+.coverage
+cov.json

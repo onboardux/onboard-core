@@ -31,8 +31,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  schema-bench:
-    name: N1 -- schema create, both dialects, on the reference runner
+  perf:
+    name: perf -- every NFR budget, on the reference runner
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -104,85 +104,35 @@ jobs:
           } > runner-profile.md
           cat runner-profile.md
 
-      - name: N1 -- schema create, both dialects
+      # One invocation, one home. `bench/all.py` owns the harness list; a second
+      # list of steps here is the other half of a pair that drifts, and a harness
+      # missing from either is a constant nobody ratifies -- which is exactly how
+      # `CLI_COLD_START_MS` reached S9 with no measurement at all.
+      #
+      # N6 populates 50,000 identities and N7 resolves 200 items with real
+      # fan-out, so this is minutes rather than seconds. `bench/RUNNER.md` rule 4
+      # puts benchmarks on the nightly job precisely so a slow honest measurement
+      # is never traded for a fast meaningless one.
+      #
+      # N4's other half -- the byte-identical re-export -- is not timed. It is a
+      # correctness property with no number attached, asserted by `golden-g0` on
+      # every pull request, and timing it here would suggest it were a budget.
+      - name: Every NFR budget
         env:
           ADOPT_BENCH_PG_DSN: postgresql://postgres:ci-only-not-a-secret@localhost:5432/adopt_bench
         run: |
           set -euo pipefail
-          uv run python -m bench.schema_bench --assert | tee bench-schema.txt
-
-      - name: N3 -- store open at 50k rows, including the schema_meta read
-        run: |
-          set -euo pipefail
-          uv run python -m bench.store_bench --assert | tee bench-store.txt
-
-      - name: N5 -- build_uri throughput
-        run: |
-          set -euo pipefail
-          uv run python -m bench.uri_bench --assert | tee bench-uri.txt
-
-      # N6 populates 50k identities and N7 resolves 200 items with real
-      # fan-out, so both are minutes rather than seconds. They belong here and
-      # not on the PR path: `bench/RUNNER.md` rule 4 puts benchmarks on the
-      # nightly job precisely so a slow, honest measurement is never traded for
-      # a fast, meaningless one.
-      - name: N6 -- coverage recompute at 50k identities
-        run: |
-          set -euo pipefail
-          uv run python -m bench.coverage_bench --assert | tee bench-coverage.txt
-
-      - name: N7 -- freshness resolve, per item
-        run: |
-          set -euo pipefail
-          uv run python -m bench.freshness_bench --assert | tee bench-freshness.txt
-
-      # N4's other half -- the byte-identical re-export -- is not timed. It is a
-      # correctness property with no number attached, asserted by `golden-g0` on
-      # every pull request, and timing it here would suggest it were a budget.
-      - name: N4 -- full export at 50k items, including the per-file digest
-        run: |
-          set -euo pipefail
-          uv run python -m bench.export_bench --assert | tee bench-export.txt
+          uv run python -m bench.all --assert | tee bench-all.txt
 
       - name: Append the measurement to the runner profile
         if: always()
         run: |
           {
             echo
-            echo '## N1 -- `bench.schema_bench --assert`'
+            echo '## `bench.all --assert` -- every NFR harness'
             echo
             echo '```'
-            cat bench-schema.txt
-            echo '```'
-            echo
-            echo '## N3 -- `bench.store_bench --assert`'
-            echo
-            echo '```'
-            cat bench-store.txt
-            echo '```'
-            echo
-            echo '## N5 -- `bench.uri_bench --assert`'
-            echo
-            echo '```'
-            cat bench-uri.txt
-            echo '```'
-            echo
-            echo '## N6 -- `bench.coverage_bench --assert`'
-            echo
-            echo '```'
-            cat bench-coverage.txt
-            echo '```'
-            echo
-            echo '## N7 -- `bench.freshness_bench --assert`'
-            echo
-            echo '```'
-            cat bench-freshness.txt
-            echo '```'
-            echo
-            echo '## N4 -- `bench.export_bench --assert`'
-            echo
-            echo '```'
-            cat bench-export.txt
+            cat bench-all.txt
             echo '```'
           } >> runner-profile.md
 
@@ -193,6 +143,4 @@ jobs:
           name: runner-profile
           path: |
             runner-profile.md
-            bench-schema.txt
-            bench-store.txt
-            bench-uri.txt
+            bench-all.txt

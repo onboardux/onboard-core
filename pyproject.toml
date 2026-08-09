@@ -38,6 +38,7 @@ dev = [
     # silencing it with an ignore would hide every future type error in the
     # manifest loader's YAML boundary.
     "types-PyYAML>=6,<7",
+    "coverage>=7.6,<8",
 ]
 
 [tool.pytest.ini_options]

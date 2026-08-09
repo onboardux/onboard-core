@@ -618,11 +618,33 @@ class TestWorkflowsAreRunnable:
             # true for as long as this keeps running.
             "vuln-audit",
             # `conformance-matrix` landed at S7 and is named in implementation
-            # spec §7. It is **red until PRD Q5 closes**, which is the honest
-            # state for an unfinished capability -- and exactly why it must be on
-            # this list: the cheapest way to make a red gate green is to delete
-            # it, and Build DoD condition 4 is this job.
+            # spec §7. It is **switched off until two vendor credentials land**
+            # (CR-48), which is the honest state for an unfinished capability --
+            # and exactly why it must be on this list: the cheapest way to make a
+            # red gate green is to delete it, and Build DoD condition 4 is this
+            # job.
             "conformance-matrix",
+            # `perf` and `supply-chain` are implementation spec §7's last two
+            # rows, and **neither was on this list until S9** -- so deleting
+            # `bench.yml` outright, or dropping the release's SBOM and signature
+            # steps, would have gone unnoticed by the one instrument that exists
+            # to notice exactly that. `perf` was additionally declared under a
+            # stale job id (`schema-bench`) long after it grew from one harness
+            # to seven; §7 names it `perf` and it is now called that (CR-51).
+            #
+            # §7 calls the release row `release`; the workflow is `release.yml`
+            # and the job that enforces it is `supply-chain`, because `release`
+            # names the file and three jobs live in it. §7 records the mapping.
+            "perf",
+            "supply-chain",
+            # `coverage-floor` landed at S9 and is implementation spec §6's floor
+            # alarm. It is on this list for the sharpest version of the reason:
+            # it is the only gate here that is *supposed* to do nothing on a
+            # healthy tree, so its deletion changes no output at all.
+            "coverage-floor",
+            # `metrics` landed at S9. PRD §6 calls D1-D6 "ratios over CI events
+            # with no human input", and this job is where the events come from.
+            "metrics",
         }
     )
 

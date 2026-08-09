@@ -101,3 +101,105 @@ bench.schema_bench: 20 iterations per dialect
   postgres: p95 0.932s (budget 10s)
 bench.schema_bench: OK
 ```
+
+---
+
+# S9 ratification pass — 2026-08-10
+
+PRD Q4 ratifies the twelve provisional `03` §2.3 constants at S9 exit. **Two are
+ratified here and ten are not**, and the split is not arbitrary: a constant whose
+evidence is a *timing* can only be ratified on the reference runner
+(`bench/RUNNER.md` rule 1), and a constant whose evidence is a *count* or a
+*ratio* can be ratified anywhere, because counts do not vary by machine.
+
+## Ratified
+
+### `COVERAGE_FLOOR_CORE` = `0.80` — **RATIFIED 2026-08-10**
+
+**Evidence:** `uv run python scripts/coverage_floor.py --check`, over the
+`unit or property` suites.
+
+| Judged package (`03` §6) | Line rate |
+|---|---|
+| `adopt-agent` | 89.7% (550/613) |
+| `adopt-schema` | 91.9% (644/701) |
+| `adopt-workflow` | 96.2% (380/395) |
+| `adopt-store` | 96.3% (997/1035) |
+| `adopt-coverage` | 99.2% (126/127) |
+
+**Every judged package clears the floor, the tightest by 9.7 points.** The value
+is ratified as a floor rather than raised to meet the measurement, and that is
+the decision rather than an omission: `03` §2.3 says *"never a target"* and §6
+bans coverage as a target outright, so setting the floor at the current figure
+would convert a healthy margin into a ratchet, and a ratchet on coverage is what
+manufactures assertion-free tests. **The margin is the point.**
+
+`adopt-cli` measures 74.7% and is **not** judged — `03` §6 does not name it and
+`05`'s summary table budgets **zero dedicated tests** there. Reported anyway, so
+the exemption is visible rather than silent.
+
+`plane-store` is judged when the same script runs in `adopt-plane` with
+`--root .`, the CR-29 one-implementation pattern.
+
+### `AGENT_DETECT_LISTING_MAX_ENTRIES` = `150` — **RATIFIED 2026-08-10**
+
+CR-47 made this provisional, to be ratified at S9 *"against the `04` §7.2 golden
+set -- the pack requires the listing bounded and never says where"*.
+
+**Evidence, two populations:**
+
+| Population | Cases | Max entries | Truncated |
+|---|---|---|---|
+| `04` §7.2 golden set (`tests/golden_prompts/detect_001/cases.json`) | 15 | **7** | 0 |
+| Real fixture corpus (`tests/fixtures/*`, via `bounded_listing`) | 7 trees | **70** (`repos`) | 0 |
+
+**The bound never binds on a real tree, and that is what ratifies it.** The
+largest listing any hand-labelled ambiguous case produces is 7 entries — the cap
+has 21× headroom there — and the largest real fixture tree produces 70, giving
+2.1×. So the cap does not truncate evidence a model needs while still bounding a
+pathological tree, which is both halves of what `04` §4 step 4 asks for.
+
+**Why it was not lowered to fit.** 70 is the largest tree *we* have; a client
+monorepo is larger, and a cap tuned to our corpus would start truncating on the
+first real system. The bound exists for the pathological case, not the median.
+
+## Still provisional — the ten timing constants
+
+`SCHEMA_CREATE_P95_SECONDS` · `STORE_OPEN_P95_MS` · `EXPORT_P95_SECONDS` ·
+`URI_BUILD_MIN_PER_SECOND` · `COVERAGE_RECOMPUTE_P95_SECONDS` ·
+`FRESHNESS_RESOLVE_P95_MS` · `CLI_COLD_START_MS` · `BINARY_MAX_MB` ·
+`CONFORMANCE_CI_MAX_MINUTES` · `CI_UNIT_MAX_MINUTES` / `CI_PR_MAX_MINUTES`
+
+**What closes them:** one `perf` run on the reference runner.
+
+```sh
+# .github/workflows/bench.yml, job `perf`. Nightly, or dispatched.
+uv run python -m bench.all --assert     # with ADOPT_BENCH_REFERENCE=1
+```
+
+**Developer-machine readings, recorded as context and explicitly not as
+evidence** (`bench/RUNNER.md` rule 1 — Windows, OneDrive-synced tree, so I/O is
+not comparable):
+
+| NFR | Reading | Budget |
+|---|---|---|
+| N1 schema create | inside | 10 s |
+| N3 store open | inside | 200 ms |
+| N4 export | inside | 30 s |
+| N5 URI build | inside | 50,000/s |
+| N6 coverage recompute | inside | 20 s |
+| N7 freshness resolve | 0.41 ms | 25 ms |
+| CLI cold start | **962 ms p95** | **400 ms** |
+
+**The CLI reading is over budget here and is not a breach.** The empty-interpreter
+floor on this machine is 138 ms p95 against roughly 20–30 ms on a Linux runner,
+so the measurement is dominated by process start rather than by our imports.
+`bench/cli_bench.py` reports that floor beside the figure for exactly this
+reason — `RUNNER.md` rule 2 says the first question on a failure is whether the
+*code* regressed, and one number cannot answer it. **This is the first constant
+to check on the first reference run**, and it is the only one whose developer
+reading is outside budget.
+
+**`BINARY_MAX_MB` cannot be ratified until a binary is built** — see the packer
+decision in `00` §4 CR-51. `scripts/assert_release_complete.py` enforces it and
+has never had an artefact to enforce it against.

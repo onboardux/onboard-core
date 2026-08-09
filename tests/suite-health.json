@@ -1,0 +1,11 @@
+{
+  "_comment": "Suite health per sprint. `behaviors` is entered by a human from the sprint's test manifest -- nothing can count a behavior, and a derived number would be fake precision. Reported, never gated: implementation spec \u00a76 bans test count as a target.",
+  "snapshots": [
+    {
+      "sprint": "S9",
+      "tests": 663,
+      "behaviors": 6,
+      "seconds": 70.5
+    }
+  ]
+}

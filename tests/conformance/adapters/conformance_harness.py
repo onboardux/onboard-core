@@ -109,6 +109,38 @@ class CaseRun:
     replayed: AgentResult | None = None
     tool_arguments: list[dict[str, Any]] = field(default_factory=list)
 
+    @property
+    def why(self) -> str:
+        """Everything needed to tell a seam defect from a provider refusal.
+
+        **`assert run.result.status == "ok"` alone is an assertion that cannot
+        diagnose.** The first real-model run of this suite produced ten
+        `assert 'error' == 'ok'` lines and not one of them said *why* -- and the
+        two adapters had failed for entirely different reasons, one a credential
+        or model id and the other a seam defect on the follow-up turn. Telling
+        those apart from the log is the whole job at that moment, and it cost a
+        CI round trip that this property removes.
+
+        The error's `code` and `message` are safe to print: `_wire.py` builds the
+        message from a status code and never from a response body, precisely
+        because a provider's error payload routinely echoes the request back and
+        `04` §8.3 says prompt text is not retrievable from our artifacts. The
+        trace step *types* are likewise structural -- `['request', 'abort']` says
+        the first call never returned, `[..., 'tool_result', 'abort']` says the
+        follow-up turn did.
+        """
+        error = self.result.error
+        detail = "no error attached"
+        if error is not None:
+            detail = f"{error.code.value}: {error.message}"
+        steps = [step.type for step in self.result.trace.steps]
+        cost = self.result.cost
+        return (
+            f"status={self.result.status!r} · {detail} · trace={steps} · "
+            f"tokens in/out={cost.input_tokens}/{cost.output_tokens} · "
+            f"provider_calls={self.provider_calls}"
+        )
+
 
 def requires(adapter_id: str) -> tuple[bool, str | None, str | None]:
     """`(offline, model, endpoint)` for this adapter, or fail with the reason.

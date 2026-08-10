@@ -12,6 +12,7 @@ stops being a translation and starts being a place bugs hide.
 """
 
 import hashlib
+import json
 import os
 from collections.abc import Mapping
 from typing import Any, Final
@@ -42,6 +43,10 @@ class AnthropicAdapter:
 
     def __init__(self, *, model: str, api_key: str | None) -> None:
         self._model = model
+        #: The content blocks of the previous assistant turn, kept so a
+        #: `tool_result` has the `tool_use` it answers. Per-run state: the
+        #: runner builds one adapter per `run()`, so this never spans runs.
+        self._previous_assistant: list[dict[str, object]] | None = None
         self._api_key = api_key
 
     def model(self) -> str:
@@ -61,20 +66,44 @@ class AnthropicAdapter:
         tool_results: list[Mapping[str, Any]],
         max_tokens: int | None,
     ) -> AdapterResponse:
-        content: list[dict[str, Any]] = [{"type": "text", "text": user}]
-        for result in tool_results:
-            content.append(
+        # A `tool_result` must answer a `tool_use` the API has already seen, in
+        # an assistant turn of the same conversation. Sending the result on its
+        # own -- which this adapter did until the first real-model run -- is a
+        # 400 every time, and it is why conformance cases 4 and 6 reported
+        # `status='error'` after the tool had demonstrably been invoked.
+        #
+        # The seam's signature does not carry conversation history and does not
+        # need to: `build_adapter` is called once per `run()`, so the adapter
+        # instance spans every turn of that run and can remember the assistant
+        # turn it just received. Keeping it here rather than widening `complete`
+        # is deliberate -- the history is a *provider wire* concern, and `02`
+        # §10.1's Protocol stays exactly as declared.
+        messages: list[dict[str, Any]] = [
+            {"role": "user", "content": [{"type": "text", "text": user}]}
+        ]
+        if tool_results and self._previous_assistant is not None:
+            messages.append({"role": "assistant", "content": self._previous_assistant})
+            messages.append(
                 {
-                    "type": "tool_result",
-                    "tool_use_id": str(result["id"]),
-                    "content": str(result["content"]),
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": str(result["id"]),
+                            # `json.dumps`, not `str`: the payload is a dict, and
+                            # `str` renders Python repr with single quotes, which
+                            # is not JSON and is not what the model was shown.
+                            "content": _render(result["content"]),
+                        }
+                        for result in tool_results
+                    ],
                 }
             )
 
         payload: dict[str, Any] = {
             "model": self._model,
             "system": system,
-            "messages": [{"role": "user", "content": content}],
+            "messages": messages,
             "max_tokens": max_tokens or _FALLBACK_MAX_TOKENS,
             "temperature": _TEMPERATURE,
         }
@@ -91,7 +120,18 @@ class AnthropicAdapter:
         headers = {"anthropic-version": _VERSION}
         if self._api_key:
             headers["x-api-key"] = self._api_key
-        return _to_response(post_json(_URL, payload, headers, adapter_id=self.id))
+        body = post_json(_URL, payload, headers, adapter_id=self.id)
+        blocks = body.get("content")
+        # Kept verbatim rather than rebuilt from the normalized response: a
+        # `tool_use` block echoed back with its `id` and `input` reconstructed by
+        # us is a different block, and the API matches on what it sent.
+        self._previous_assistant = blocks if isinstance(blocks, list) else None
+        return _to_response(body)
+
+
+def _render(content: object) -> str:
+    """A tool payload as JSON text, never as a Python repr."""
+    return content if isinstance(content, str) else json.dumps(content, sort_keys=True)
 
 
 def _to_response(body: Mapping[str, Any]) -> AdapterResponse:

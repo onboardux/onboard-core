@@ -43,6 +43,10 @@ class OpenAICompatibleAdapter:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._api_key = api_key
+        #: The previous assistant message, verbatim, kept so a `role: "tool"`
+        #: message has the `tool_calls` turn it answers. Per-run state: the
+        #: runner builds one adapter per `run()`, so this never spans runs.
+        self._previous_assistant: dict[str, Any] | None = None
 
     def model(self) -> str:
         return self._model
@@ -68,18 +72,28 @@ class OpenAICompatibleAdapter:
         tool_results: list[Mapping[str, Any]],
         max_tokens: int | None,
     ) -> AdapterResponse:
+        # A `role: "tool"` message must answer an assistant message carrying the
+        # matching `tool_calls`. Appending the results with no such antecedent --
+        # which this adapter did until the first real-model run -- is a 400 every
+        # time, and it is the same defect the Anthropic adapter carried in its own
+        # dialect. The seam's signature is untouched: `build_adapter` runs once
+        # per `run()`, so the adapter spans the turns and remembers the assistant
+        # message it just received. Conversation history is a provider-wire
+        # concern, and `02` §10.1's Protocol stays exactly as declared.
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
-        for result in tool_results:
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": str(result["id"]),
-                    "content": _render(result["content"]),
-                }
-            )
+        if tool_results and self._previous_assistant is not None:
+            messages.append(self._previous_assistant)
+            for result in tool_results:
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(result["id"]),
+                        "content": _render(result["content"]),
+                    }
+                )
 
         payload: dict[str, Any] = {
             "model": self._model,
@@ -103,6 +117,15 @@ class OpenAICompatibleAdapter:
 
         headers = {"authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         body = post_json(self._base_url + _PATH, payload, headers, adapter_id=self.id)
+        # Kept verbatim rather than rebuilt: the API matches `tool_call_id`
+        # against the `tool_calls` it sent, and a reconstructed message is a
+        # different message.
+        choices = body.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message")
+            self._previous_assistant = message if isinstance(message, dict) else None
+        else:
+            self._previous_assistant = None
         return _to_response(body, adapter_id=self.id)
 
 

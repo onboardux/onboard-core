@@ -266,6 +266,31 @@ jobs:
       - run: uv sync --all-packages
       - name: Prove the two-adapter rule still rejects
         run: uv run python scripts/conformance_matrix.py --self-test
+      # One live call per adapter before the suite, so a bad credential or an
+      # invalid model id is named in one line instead of arriving as thirteen
+      # `assert 'error' == 'ok'` failures with no cause attached. `agent check`
+      # ACTS rather than reports, so it exits non-zero with the error envelope --
+      # which is exactly the difference between "this adapter cannot be reached"
+      # and "this adapter is reachable and the seam is wrong".
+      #
+      # `continue-on-error`, deliberately: this step is a DIAGNOSTIC, not a gate.
+      # The gate is the matrix below, and a preflight that could fail the job
+      # would be a second opinion about adapter health with its own way of being
+      # wrong.
+      - name: Preflight -- can each adapter be reached at all?
+        continue-on-error: true
+        env:
+          ADOPT_ADAPTER_ENDPOINT: ${{ vars.ADOPT_ADAPTER_ENDPOINT }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          for pair in $(echo "${{ vars.ADOPT_CONFORMANCE_ADAPTERS }}" | tr ',' ' '); do
+            adapter="${pair%%=*}"
+            model="${pair#*=}"
+            echo "--- $adapter ($model) ---"
+            ADOPT_MODEL="$model" uv run adopt agent check --adapter "$adapter" || true
+          done
+
       # `ADOPT_CONFORMANCE_ADAPTERS` carries a model per adapter --
       # `openai=gpt-5,anthropic=claude-sonnet-4-5`. It has to: no adapter has a
       # default model (AI spec §2), and one process-wide `ADOPT_MODEL` across two

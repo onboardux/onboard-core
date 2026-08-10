@@ -105,7 +105,7 @@ def test_case_01_structured_echo_returns_the_text_unchanged(
         recorded=[harness.recorded_turn("ECHO")],
     )
 
-    assert run.result.status == "ok"
+    assert run.result.status == "ok", run.why
     assert isinstance(run.result.output, str)
     text = run.result.output.strip()
     assert text == "ECHO"
@@ -136,7 +136,7 @@ def test_case_02_json_validates_and_output_is_a_dict(adapter_id: str, tmp_path: 
         output_schema=_ARCHETYPE_SCHEMA,
     )
 
-    assert run.result.status == "ok"
+    assert run.result.status == "ok", run.why
     assert isinstance(run.result.output, dict)
     validate_against_schema(run.result.output, _ARCHETYPE_SCHEMA)
 
@@ -162,8 +162,8 @@ def test_case_03_schema_failure_retries_exactly_once(adapter_id: str, tmp_path: 
     )
 
     retries = [step for step in run.result.trace.steps if step.type == "validation_retry"]
-    assert len(retries) == 1
-    assert run.result.status == "error"
+    assert len(retries) == 1, run.why
+    assert run.result.status == "error", run.why
     assert run.result.error is not None
     assert run.result.error.code is ErrorCode.AGENT_OUTPUT_SCHEMA
     assert isinstance(run.result.output, str)
@@ -198,7 +198,7 @@ def test_case_04_a_single_tool_call_is_invoked_once_with_valid_arguments(
         budget=Budget(max_usd=1.0, max_wall_seconds=120, max_tool_calls=2),
     )
 
-    assert run.result.status == "ok"
+    assert run.result.status == "ok", run.why
     assert len(seen) == 1, f"the tool was invoked {len(seen)} times, not once"
     validate_against_schema(seen[0], _TOOL_SCHEMA)
 
@@ -239,7 +239,7 @@ def test_case_05_a_multi_turn_tool_loop_terminates_and_respects_the_cap(
         budget=Budget(max_usd=1.0, max_wall_seconds=120, max_tool_calls=2),
     )
 
-    assert seen, "the loop made no tool call at all, so nothing about it was tested"
+    assert seen, f"the loop made no tool call at all, so nothing about it was tested -- {run.why}"
     assert len(seen) <= 2, f"{len(seen)} tool calls were made against a cap of 2"
     assert run.result.status in {"ok", "budget_exhausted"}
     if run.result.status == "budget_exhausted":
@@ -274,8 +274,8 @@ def test_case_06_a_tool_that_raises_is_surfaced_not_crashed(
     )
 
     kinds = [step.type for step in run.result.trace.steps]
-    assert "tool_result" in kinds, "a raising tool produced no tool_result step"
-    assert run.result.status == "ok"
+    assert "tool_result" in kinds, f"a raising tool produced no tool_result step -- {run.why}"
+    assert run.result.status == "ok", run.why
 
 
 # --------------------------------------------------------------- 7-8. budgets
@@ -302,7 +302,7 @@ def test_case_07_token_exhaustion_returns_partial_output_and_accurate_cost(
         budget=Budget(max_usd=1000.0, max_wall_seconds=120, max_tokens=8),
     )
 
-    assert run.result.status == "budget_exhausted"
+    assert run.result.status == "budget_exhausted", run.why
     assert run.result.output is not None, "an abort discarded the partial output"
     cost = run.result.cost
     assert cost.input_tokens + cost.output_tokens > 0
@@ -342,7 +342,7 @@ def test_case_08_wall_clock_exhaustion_aborts_within_the_grace(
         clock_tick=_dt.timedelta(milliseconds=250),
     )
 
-    assert run.result.status == "budget_exhausted"
+    assert run.result.status == "budget_exhausted", run.why
     steps = run.result.trace.steps
     assert steps[-1].type == "abort"
     gap_ms = (steps[-1].at - steps[-2].at).total_seconds() * 1000
@@ -377,7 +377,7 @@ def test_case_09_cancellation_stops_the_run_and_the_trace_records_abort(
         cancel_after=1,
     )
 
-    assert run.result.status == "cancelled"
+    assert run.result.status == "cancelled", run.why
     assert run.result.trace.steps[-1].type == "abort"
     assert run.provider_calls == 1, (
         f"{run.provider_calls} provider turns happened; a cancellation before the second "
@@ -406,7 +406,7 @@ def test_case_10_cost_matches_the_token_counts(adapter_id: str, tmp_path: Path) 
     )
 
     cost = run.result.cost
-    assert cost.input_tokens > 0
+    assert cost.input_tokens > 0, run.why
     assert cost.input_tokens + cost.output_tokens > 0
     row = price_for(run.result.trace.adapter, run.result.trace.model)
     if row is not None:

@@ -125,6 +125,33 @@ def breaches(measurements: list[Measurement], *, floor: float = COVERAGE_FLOOR_C
     ]
 
 
+def _source_roots(root: Path) -> list[str]:
+    """The import roots, named individually rather than as `packages/`.
+
+    **`--source=packages` silently measured only what some test imported.**
+    These are `src/` layouts, so `packages/adopt-agent/src/adopt_agent/…` does
+    not sit at a path coverage can attribute to an importable module by walking
+    `packages/` -- and coverage therefore omitted every never-imported module
+    from the report **entirely**, rather than reporting it at 0%. Three adapter
+    modules were invisible: `anthropic`, `openai` and `local_openai`. A package
+    could have carried a wholly untested module and this alarm would have read
+    *better* for it, which is the "measurement that succeeds by having nothing
+    to measure" failure this build has now caught five times -- and the fifth
+    was in the instrument written to catch the others *(CR-52)*.
+
+    Naming each `packages/*/src/<pkg>` directory gives coverage a real import
+    root to walk, so an unimported module appears at 0% and drags the floor down
+    as it should.
+    """
+    roots = sorted(str(path) for path in root.glob("packages/*/src/*") if path.is_dir())
+    if not roots:
+        raise SystemExit(
+            f"no package source roots under {root}. A floor over an empty set is "
+            "exactly the failure this alarm exists to prevent."
+        )
+    return roots
+
+
 def _measure(root: Path) -> list[Measurement]:
     with tempfile.TemporaryDirectory() as scratch:
         data_file = Path(scratch) / "coverage.data"
@@ -137,7 +164,7 @@ def _measure(root: Path) -> list[Measurement]:
                 "coverage",
                 "run",
                 environment_flag,
-                "--source=packages",
+                f"--source={','.join(_source_roots(root))}",
                 "-m",
                 "pytest",
                 *_SUITE,
@@ -192,6 +219,22 @@ def _self_test() -> int:
             )
         else:
             print(f"  OK -- {label}: {'alarm' if fired else 'silence'}")
+
+    # The denominator, not just the arithmetic. `--source=packages` reported only
+    # what some test imported, so three adapter modules were absent from the
+    # report entirely and the floor read better than the truth. Asserting that
+    # every workspace package contributes a source root is what stops that
+    # returning: the arithmetic above was always right, over the wrong set.
+    roots = _source_roots(REPO_ROOT)
+    packages = sorted(p.name for p in (REPO_ROOT / "packages").iterdir() if p.is_dir())
+    if len(roots) < len(packages):
+        problems.append(
+            f"  only {len(roots)} source root(s) for {len(packages)} package(s): "
+            f"{sorted(set(packages) - {Path(r).name.replace('_', '-') for r in roots})} "
+            "would be invisible to the floor"
+        )
+    else:
+        print(f"  OK -- every one of {len(packages)} packages contributes a source root")
 
     if problems:
         print("SELF-TEST FAILED:")

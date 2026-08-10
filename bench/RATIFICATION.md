@@ -119,22 +119,44 @@ evidence is a *timing* can only be ratified on the reference runner
 **Evidence:** `uv run python scripts/coverage_floor.py --check`, over the
 `unit or property` suites.
 
-| Judged package (`03` §6) | Line rate |
-|---|---|
-| `adopt-agent` | 89.7% (550/613) |
-| `adopt-schema` | 91.9% (644/701) |
-| `adopt-workflow` | 96.2% (380/395) |
-| `adopt-store` | 96.3% (997/1035) |
-| `adopt-coverage` | 99.2% (126/127) |
+> ### ⚠ The first measurement was over the wrong denominator, and the constant
+> ### still stands
+>
+> The figures first recorded here (`adopt-agent` 89.7%, `adopt-schema` 91.9%)
+> were taken with `--source=packages`, which — because every package is a `src/`
+> layout — reported **only the modules some test happened to import**. Three
+> adapter modules were **absent from the report entirely** rather than shown at
+> 0%: `anthropic`, `openai` and `local_openai`. A package could have carried a
+> wholly untested module and this alarm would have read *better* for it.
+>
+> That is the "measurement that succeeds by having nothing to measure" failure
+> this build has now caught five times — the drill that collected one test, the
+> fake standing in for a local adapter, `escape_coverage.py` at 100% of one port
+> in twelve, an undefined ratio reporting 1.0, and now **the instrument written
+> to catch the other four** *(CR-52)*. The gate names each `packages/*/src/<pkg>`
+> import root, and `--self-test` asserts every workspace package contributes one.
+>
+> **The ratification is unaffected and the numbers below are the honest ones.**
+> What was ratified is the constant `0.80`, not any measured figure, and every
+> judged package clears it on the corrected denominator — the tightest by 5.9
+> points rather than 9.7.
 
-**Every judged package clears the floor, the tightest by 9.7 points.** The value
+| Judged package (`03` §6) | Line rate | Was reported as |
+|---|---|---|
+| `adopt-schema` | **85.9%** (644/750) | 91.9% (644/701) |
+| `adopt-agent` | **86.6%** (743/858) | 89.7% (550/613) |
+| `adopt-workflow` | 96.2% (380/395) | unchanged |
+| `adopt-store` | 96.3% (997/1035) | unchanged |
+| `adopt-coverage` | 99.2% (126/127) | unchanged |
+
+**Every judged package clears the floor, the tightest by 5.9 points.** The value
 is ratified as a floor rather than raised to meet the measurement, and that is
 the decision rather than an omission: `03` §2.3 says *"never a target"* and §6
 bans coverage as a target outright, so setting the floor at the current figure
 would convert a healthy margin into a ratchet, and a ratchet on coverage is what
 manufactures assertion-free tests. **The margin is the point.**
 
-`adopt-cli` measures 74.7% and is **not** judged — `03` §6 does not name it and
+`adopt-cli` measures 74.9% and is **not** judged — `03` §6 does not name it and
 `05`'s summary table budgets **zero dedicated tests** there. Reported anyway, so
 the exemption is visible rather than silent.
 

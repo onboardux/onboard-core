@@ -107,7 +107,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --all-packages
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # **The binary is packed from the wheels we publish, not from the source
+      # tree** (CR-54). This job used to `uv sync --all-packages` and point
+      # Nuitka at `packages/adopt-cli/src/adopt_cli/main.py`, and that is an
+      # *editable* install: its `dist-info/RECORD` lists a single `.pth` shim and
+      # no `adopt_cli/` files at all. Two things follow, and the second is worse
+      # than the error that exposed it:
+      #
+      #   1. `--include-distribution-metadata=adopt-cli` failed outright --
+      #      *"including metadata for distribution 'adopt-cli' without including
+      #      related package 'adopt-cli'"*. Nuitka could not map the distribution
+      #      to a package, because nothing in the metadata names one, so it fell
+      #      back to the distribution name and looked for an importable
+      #      `adopt-cli`. There is no flag that fixes this; the install is the
+      #      problem.
+      #   2. `--include-package-data=adopt_schema` **could never have worked from
+      #      a checkout**, because `_assets/schema/` exists only inside a built
+      #      wheel. The packaging fix from CR-53 would have been silently absent
+      #      from every binary, and the smoke test would have caught it -- one
+      #      more round of a failure we had already diagnosed.
+      #
+      # Installing the artefact makes the binary a function of what we publish,
+      # which is what a supply chain requires anyway: the wheel is signed, and a
+      # binary compiled from a different tree is a second thing to trust.
+      - name: Install the published wheel into a clean environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv build-env
+          PY=build-env/bin/python
+          [ -x "$PY" ] || PY=build-env/Scripts/python.exe
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          # Nuitka is installed *into this ephemeral environment* rather than
+          # run through `uvx`. The isolation CR-51 wanted is preserved -- it
+          # still never enters `uv.lock` -- but it must import the same packages
+          # it is compiling, which a separate tool environment cannot do.
+          # Pinned: this job produces a signed artefact, and the failure above
+          # was Nuitka-version-specific behaviour (CR-54).
+          uv pip install --python "$PY" --find-links dist/ adopt-cli nuitka==4.1.3
 
       # `--onefile` is the "single-file binary per platform" `03` §1.1 locks.
       # `--assume-yes-for-downloads` keeps the job non-interactive; without it
@@ -135,7 +178,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv run --with nuitka python -m nuitka \
+          # The installed entry point, asked of the interpreter that will compile
+          # it. `adopt_cli/__init__.py` re-exports `main` as a *function*, so
+          # `adopt_cli.main.__file__` is an AttributeError -- `find_spec` asks
+          # about the module rather than about whatever the name is bound to.
+          MAIN="$("$PY" -c 'import importlib.util as u; print(u.find_spec("adopt_cli.main").origin)')"
+          echo "packing $MAIN"
+          "$PY" -m nuitka \
             --onefile \
             --assume-yes-for-downloads \
             --include-package-data=adopt_agent \
@@ -144,7 +193,7 @@ jobs:
             --include-distribution-metadata=adopt-cli \
             --output-dir=packed \
             --output-filename=${{ matrix.artefact }} \
-            packages/adopt-cli/src/adopt_cli/main.py
+            "$MAIN"
 
       # **`version --json` alone is not a smoke test of a packed binary**, and
       # CR-53 is the proof. It reads two constants and touches no data file, so

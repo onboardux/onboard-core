@@ -712,6 +712,45 @@ class TestWorkflowsAreRunnable:
             return
         raise AssertionError("golden-g0 is not declared in any workflow")
 
+    def test_binaries_are_packed_from_the_published_wheel(self) -> None:
+        """The packer compiles the artefact we ship, not the source tree.
+
+        *Fails when* the `binaries` job goes back to `uv sync --all-packages`
+        and points the packer at `packages/adopt-cli/src/...`. *Matters because*
+        that is an **editable** install: its `RECORD` lists a `.pth` shim and no
+        package files, so Nuitka cannot map the distribution to a package and
+        `--include-distribution-metadata` fails outright (CR-54) -- and, worse,
+        `--include-package-data=adopt_schema` would find no `_assets/schema/`,
+        because that directory exists only inside a built wheel. The binary
+        would build clean and ship without the schema assets CR-53 exists to
+        put there. *No other instrument catches it because* the smoke test would
+        catch the symptom one CI round later, on a job that needs a C toolchain
+        on three platforms and is the slowest feedback loop in the repository.
+        """
+        import yaml
+
+        for path in self._files():
+            job = yaml.safe_load(path.read_text(encoding="utf-8")).get("jobs", {}).get("binaries")
+            if job is None:
+                continue
+            steps = job.get("steps", [])
+            runs = "\n".join(str(step.get("run", "")) for step in steps)
+            uses = [str(step.get("uses", "")) for step in steps]
+
+            assert any("download-artifact" in u for u in uses), (
+                "the binaries job must take the wheels from the build job, "
+                "not rebuild or install from the checkout"
+            )
+            assert "--find-links dist/" in runs, (
+                "the packer's environment must be installed from the published wheels"
+            )
+            assert "packages/adopt-cli/src" not in runs, (
+                "packing from the source tree is an editable install -- the defect CR-54 "
+                "records. Resolve the entry point from the installed distribution instead."
+            )
+            return
+        raise AssertionError("the binaries job is not declared in any workflow")
+
 
 @pytest.mark.unit
 class TestConformanceMatrixTargets:

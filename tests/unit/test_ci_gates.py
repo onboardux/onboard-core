@@ -645,6 +645,14 @@ class TestWorkflowsAreRunnable:
             # `metrics` landed at S9. PRD §6 calls D1-D6 "ratios over CI events
             # with no human input", and this job is where the events come from.
             "metrics",
+            # `packaged-artifact` landed at S9 after the release dry run found
+            # that **nothing this repository builds could create a store**
+            # (CR-53). It is the only gate here whose subject is a built
+            # artefact rather than the source tree, which is precisely the gap
+            # it exists to close: every other job -- and all 749 tests -- runs
+            # against an editable install, where the `parents[N]` walk to
+            # `schema/` still lands in the checkout and the defect is invisible.
+            "packaged-artifact",
         }
     )
 

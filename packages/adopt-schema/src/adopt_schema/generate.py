@@ -32,6 +32,15 @@ TARGETS: Final[tuple[str, ...]] = ("sqlite", "postgres", "jsonschema", "pymodel"
 
 
 def repo_root() -> Path:
+    """The checkout to generate *into* -- deliberately not `assets.assets_root`.
+
+    Every other `schema/` lookup moved to `adopt_schema.assets` at CR-53, which
+    prefers the read-only copy bundled inside the wheel. This one must not: it is
+    a writer, and `adopt-schema generate` rewriting files inside an installed
+    package would silently edit an artefact instead of the source of truth. A
+    developer tool that cannot find a checkout should fail as a missing path,
+    which is what the caller reports.
+    """
     override = os.environ.get(OUT_ROOT_ENV)
     return Path(override) if override else _REPO_ROOT
 

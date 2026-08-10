@@ -16,6 +16,7 @@ from typing import Final
 
 from adopt_agent.annex import AgentRunRecord
 from adopt_const import STORE_BUSY_TIMEOUT_MS
+from adopt_schema.assets import assets_root
 
 __all__ = ["SqliteAnnexRecords", "annex_path", "open_annex"]
 
@@ -24,11 +25,13 @@ __all__ = ["SqliteAnnexRecords", "annex_path", "open_annex"]
 #: idempotency table answering for runs that were never made against it.
 _ANNEX_FILENAME: Final[str] = "runtime.db"
 
-#: The same `parents[N]`-to-the-checkout convention `adopt_schema.manifest` and
-#: `adopt_store.api` already use for `schema/`. One deeper than theirs, because
-#: this module sits in a subpackage.
-# const-sync: ok -- five directories up to the checkout, not WORKFLOW_STEP_MAX_ATTEMPTS.
-_REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[5]
+#: This module used to carry its own `parents[5]` walk to the checkout, and its
+#: comment cited `adopt_schema.manifest` and `adopt_store.api` doing the same --
+#: three copies of one assumption that held only in a checkout (CR-53). All three
+#: now resolve through `adopt_schema.assets`, which is also why this is looked up
+#: per call rather than at import: the answer can now fail, and a failure at
+#: import time would take down every command instead of the one that needs a
+#: store.
 
 _COLUMNS: Final[tuple[str, ...]] = (
     "id",
@@ -71,7 +74,7 @@ def open_annex(path: Path, *, repo_root: Path | None = None) -> Iterator["Sqlite
     someone migrating the annex alongside the canonical store, which is the
     coupling the ratification exists to prevent.
     """
-    root = repo_root if repo_root is not None else _REPO_ROOT
+    root = repo_root if repo_root is not None else assets_root()
     ddl = (root / "schema" / "annex" / "0001__agent_run.sql").read_text(encoding="utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, isolation_level=None)

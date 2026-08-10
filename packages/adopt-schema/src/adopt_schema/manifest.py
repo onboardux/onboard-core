@@ -26,6 +26,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from adopt_obs import AdoptError, ErrorCode
+from adopt_schema.assets import schema_dir
 
 __all__ = [
     "CANONICAL_PATH_ENV",
@@ -42,8 +43,6 @@ __all__ = [
 #: Overrides the manifest location, so a test can load a fixture and CI can load
 #: a checkout at a path this file cannot infer.
 CANONICAL_PATH_ENV: Final[str] = "ADOPT_SCHEMA_MANIFEST"
-
-_REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[4]
 
 #: The §2.3 type vocabulary. `enum(<name>)` is handled separately.
 SCALAR_TYPES: Final[frozenset[str]] = frozenset(
@@ -359,8 +358,14 @@ def _validate(manifest: Manifest) -> None:
 
 
 def canonical_path() -> Path:
+    """The manifest, wherever this artefact carries it.
+
+    Resolved through `assets.assets_root` rather than by walking to a checkout,
+    because a wheel has no checkout above it and the walk landed on an unrelated
+    directory instead of failing (CR-53).
+    """
     override = os.environ.get(CANONICAL_PATH_ENV)
-    return Path(override) if override else _REPO_ROOT / "schema" / "canonical.yaml"
+    return Path(override) if override else schema_dir() / "canonical.yaml"
 
 
 def load_manifest(path: Path | None = None) -> Manifest:

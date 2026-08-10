@@ -48,6 +48,7 @@ from adopt_const import (
     SCHEMA_VERSION,
 )
 from adopt_obs import AdoptError, Clock, ErrorCode
+from adopt_schema.assets import assets_root
 from adopt_schema.migrate import apply as apply_migrations
 from adopt_scope import ScopeFacade
 from adopt_store.facades.boundary import BoundaryFacade
@@ -430,10 +431,14 @@ def _reopen_read_only(path: Path, version: int, clock: Clock | None) -> SqliteSt
 
 
 def _packaged_repo_root() -> Path:
-    """The repository root, found from this file rather than from the cwd.
+    """The root holding `schema/`, wherever this artefact carries it.
 
-    `packages/adopt-store/src/adopt_store/api.py` -> five parents up. A
-    cwd-relative default would work in a checkout and fail from a wheel, which
-    is the failure that only shows up after release.
+    This function used to walk five parents up from `__file__` and its docstring
+    claimed that avoided "the failure that only shows up after release". **It
+    named the failure it did not prevent** (CR-53): from an installed wheel the
+    walk leaves `site-packages` and lands on the environment root, which holds no
+    `schema/`, and the migrations glob then found nothing and reported nothing
+    pending. `adopt_schema.assets` resolves it in one place and raises
+    `SCHEMA_ASSETS_MISSING` when it genuinely cannot be found.
     """
-    return Path(__file__).resolve().parents[4]
+    return assets_root()

@@ -177,6 +177,31 @@ jobs:
       - name: No DROP, ALTER ... DROP, TRUNCATE or unpredicated DELETE
         run: uv run python scripts/no_destructive_sql.py
 
+  packaged-artifact:
+    name: packaged-artifact (install what we ship, then use it)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      # **The whole suite runs against an editable install**, where a
+      # `parents[N]` walk from `__file__` still lands in the checkout. So a wheel
+      # that shipped without `schema/` passed 741 tests, `--check` on every gate,
+      # and a `version --json` smoke test, and was caught only when a packed
+      # binary made it fatal at import (CR-53). Nothing here had ever installed a
+      # built artefact and used it -- the gap was the subject, not the
+      # assertions.
+      #
+      # It lives outside the pytest jobs deliberately: it builds wheels and
+      # creates a venv, and putting that inside the suite would spend the
+      # `CI_UNIT_MAX_MINUTES` ratchet on a subprocess that is not a unit test.
+      - name: Prove the gate still fails on a stripped artefact
+        run: uv run python scripts/packaged_artifact.py --self-test
+      - name: The installed artefact carries its own data
+        run: uv run python scripts/packaged_artifact.py --check
+
   unit:
     name: unit (ratcheted to CI_UNIT_MAX_MINUTES)
     runs-on: ubuntu-24.04

@@ -80,6 +80,7 @@ class ErrorCode(StrEnum):
     SCHEMA_VERSION_TOO_NEW = "SCHEMA_VERSION_TOO_NEW"
     SCHEMA_MIGRATION_PENDING = "SCHEMA_MIGRATION_PENDING"
     SCHEMA_MIGRATION_FAILED = "SCHEMA_MIGRATION_FAILED"
+    SCHEMA_ASSETS_MISSING = "SCHEMA_ASSETS_MISSING"
 
     STORE_READ_ONLY = "STORE_READ_ONLY"
 
@@ -141,6 +142,10 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     ErrorCode.SCHEMA_VERSION_TOO_NEW: ErrorCategory.POLICY,
     ErrorCode.SCHEMA_MIGRATION_PENDING: ErrorCategory.USAGE,
     ErrorCode.SCHEMA_MIGRATION_FAILED: ErrorCategory.INTEGRITY,
+    # The installed artefact does not carry the schema assets it needs. Integrity
+    # rather than usage: the operator did nothing wrong and no flag fixes it --
+    # what they hold was built incompletely.
+    ErrorCode.SCHEMA_ASSETS_MISSING: ErrorCategory.INTEGRITY,
     ErrorCode.STORE_READ_ONLY: ErrorCategory.POLICY,
     ErrorCode.SCOPE_SLUG_INVALID: ErrorCategory.USAGE,
     ErrorCode.SCOPE_SLUG_IMMUTABLE: ErrorCategory.POLICY,

@@ -61,6 +61,30 @@ jobs:
       - name: Build the wheels
         run: uv build --all-packages --out-dir dist/
 
+      # **The wheel that cannot create a store passes every test in the suite**,
+      # because the suite runs against an editable install where `parents[4]`
+      # still lands in the checkout (CR-53). Nothing in CI had ever installed a
+      # built wheel and used it, so `schema/` being absent from the artefact was
+      # invisible until a packed binary made it fatal at import.
+      #
+      # This installs the artefact into a clean environment -- no checkout on the
+      # path to fall back to -- and runs the two commands that must open a
+      # packaged file to answer. It is the wheel-side twin of the binaries smoke
+      # test, and it is the cheaper of the two: it needs no C toolchain and it
+      # fails in seconds.
+      - name: The installed wheel is self-contained
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          uv venv "$work/venv"
+          uv pip install --python "$work/venv/bin/python" --find-links dist/ adopt-cli
+          cd "$work"          # nowhere near the checkout, so no fallback can hide a gap
+          "$work/venv/bin/adopt" version --json | grep -q '"schema_version": *3'
+          "$work/venv/bin/adopt" detect "$work" --json > "$work/detect.json" || true
+          grep -q '"scores"' "$work/detect.json"
+          "$work/venv/bin/adopt" store migrate --store "$work/s.db" --json
+          "$work/venv/bin/adopt" store info --store "$work/s.db" --json | grep -q '"schema_version": *3'
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -89,22 +113,77 @@ jobs:
       # `--assume-yes-for-downloads` keeps the job non-interactive; without it
       # Nuitka blocks on a prompt for its C toolchain and the job times out
       # rather than failing.
+      #
+      # **Nuitka ships no package data unless told, and the first run of this job
+      # proved it** (CR-53). It followed the import graph, compiled every module,
+      # and produced a binary that died on its first import: `adopt_agent.pricing`
+      # reads `prices.json` from beside itself at module scope. Three data sets
+      # have to be named, and they are named separately rather than by a wildcard
+      # so that a fourth is a build failure here rather than a `FileNotFoundError`
+      # in front of an operator:
+      #
+      #   * `adopt_agent`   -- `prices.json`, read at import.
+      #   * `adopt_detect`  -- `rules/*.yaml`, read lazily by `adopt detect`.
+      #   * `adopt_schema`  -- `_assets/schema/`, the manifest, the migrations and
+      #                        the annex DDL, placed there by `hatch_build.py`.
+      #
+      # `--include-distribution-metadata` is for `adopt version`: without it
+      # `importlib.metadata` finds nothing and the binary reports itself as
+      # `0.0.0+unknown`, which defeats the one job that command has -- tying an
+      # artefact in the field back to the one that was signed.
       - name: Pack
         shell: bash
         run: |
           set -euo pipefail
-          uv run --with nuitka python -m nuitka             --onefile             --assume-yes-for-downloads             --output-dir=packed             --output-filename=${{ matrix.artefact }}             packages/adopt-cli/src/adopt_cli/main.py
+          uv run --with nuitka python -m nuitka \
+            --onefile \
+            --assume-yes-for-downloads \
+            --include-package-data=adopt_agent \
+            --include-package-data=adopt_detect \
+            --include-package-data=adopt_schema \
+            --include-distribution-metadata=adopt-cli \
+            --output-dir=packed \
+            --output-filename=${{ matrix.artefact }} \
+            packages/adopt-cli/src/adopt_cli/main.py
 
-      # A binary that cannot report its own version is not a binary we ship.
-      # This is the cheapest possible smoke test and it catches the failure mode
-      # a packer actually has: a build that succeeds and produces something that
-      # cannot import its own dependencies at run time.
+      # **`version --json` alone is not a smoke test of a packed binary**, and
+      # CR-53 is the proof. It reads two constants and touches no data file, so
+      # it passes against a binary carrying none -- it only failed above because
+      # `prices.json` happens to be read at *import* time. Everything read
+      # lazily -- the detect rules, the migrations, the annex DDL -- stayed
+      # invisible to it. That is this build's recurring failure exactly: a check
+      # that passes by never reaching the thing it is meant to judge.
+      #
+      # So the smoke test runs one command per packaged data set, and each is
+      # chosen because it *must* open the file to answer at all.
       - name: It runs, and reports schema version 3
         shell: bash
         run: |
           set -euo pipefail
-          ./packed/${{ matrix.artefact }} version --json
-          ./packed/${{ matrix.artefact }} version --json | grep -q '"schema_version": *3'
+          BIN="$PWD/packed/${{ matrix.artefact }}"
+          "$BIN" version --json
+          "$BIN" version --json | grep -q '"schema_version": *3'
+          # Not `0.0.0+unknown`: the binary must know which artefact it is.
+          "$BIN" version --json | grep -q '"version": *"[0-9]'
+
+      - name: It carries its data -- detect rules, migrations, annex DDL
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$PWD/packed/${{ matrix.artefact }}"
+          work="$(mktemp -d)"
+
+          # adopt_detect/rules/*.yaml. `detect` exits 2 on an empty directory by
+          # design -- a proposal is never a decision -- so the assertion is on
+          # the payload, which only a loaded rule set can produce.
+          "$BIN" detect "$work" --json > "$work/detect.json" || true
+          grep -q '"scores"' "$work/detect.json"
+
+          # adopt_schema/_assets: the manifest and the sqlite migration. This is
+          # the one that was broken from a wheel as well as from a binary, and
+          # it failed as `no such table: firm` rather than as a missing file.
+          "$BIN" store migrate --store "$work/s.db" --json
+          "$BIN" store info --store "$work/s.db" --json | grep -q '"schema_version": *3'
 
       - uses: actions/upload-artifact@v4
         with:

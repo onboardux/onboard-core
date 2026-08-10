@@ -94,6 +94,27 @@ def declared_version(sql: str) -> int | None:
 
 
 def _ordered_files(directory: Path) -> list[tuple[int, Path]]:
+    """Every migration in `directory`, in application order.
+
+    **A directory that does not exist is a failure, not an empty result**
+    (CR-53). `Path.glob` on a missing directory yields nothing, so this used to
+    report zero migrations for an artefact whose migrations were never packaged
+    -- `open_store` then created an empty database, and the first query failed
+    with `no such table: firm`, four layers below the cause and blaming the
+    store.
+
+    An *existing but empty* directory is left to `pending`, not judged here:
+    `new_migration` calls this on a directory it has just created, where empty
+    is the correct answer and the whole point.
+    """
+    if not directory.is_dir():
+        raise AdoptError(
+            ErrorCode.SCHEMA_ASSETS_MISSING,
+            message=f"no migrations directory at {directory}",
+            hint="This artefact does not carry the schema assets it needs, so no store "
+            "can be created. Reinstall from a released artefact or run from a source "
+            "checkout; `ADOPT_SCHEMA_ASSETS_ROOT` overrides where they are looked for.",
+        )
     found: list[tuple[int, Path]] = []
     for path in sorted(directory.glob("*.sql")):
         match = _FILENAME_RE.match(path.name)
@@ -139,8 +160,21 @@ def pending(root: Path, dialect: str, from_version: int) -> list[Path]:
     An empty store reports `0`, so everything is pending; a store already at the
     version a file produces has had it applied.
     """
+    directory = migrations_dir(root, dialect)
+    ordered = _ordered_files(directory)
+    if not ordered:
+        # The read path, so empty is never legitimate: every dialect ships at
+        # least the initial migration. Reporting "nothing pending" here is the
+        # same silent success a missing directory used to produce (CR-53), one
+        # packaging accident further along.
+        raise AdoptError(
+            ErrorCode.SCHEMA_ASSETS_MISSING,
+            message=f"{directory} holds no migrations",
+            hint="The schema assets are present but incomplete -- every dialect ships "
+            "at least the initial migration. Reinstall from a released artefact.",
+        )
     found: list[Path] = []
-    for _, path in _ordered_files(migrations_dir(root, dialect)):
+    for _, path in ordered:
         produces = declared_version(path.read_text(encoding="utf-8"))
         if produces is None:
             raise AdoptError(

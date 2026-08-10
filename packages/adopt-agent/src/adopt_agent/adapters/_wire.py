@@ -25,6 +25,7 @@ import json
 import ssl
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from typing import Any, Final
 
 from adopt_const import AGENT_ADAPTER_TIMEOUT_S
@@ -60,6 +61,47 @@ _ERROR_IDENTIFIERS: Final[tuple[str, ...]] = ("type", "code", "param")
 # const-sync: ok -- a display cap for an error identifier, not a tunable.
 _IDENTIFIER_MAX_CHARS: Final[int] = 64
 
+#: The status that means "this request shape is wrong", and the only one worth
+#: renegotiating. A 401 or a 404 is not fixed by dropping a parameter.
+# const-sync: ok -- an HTTP status code, not CLI_COLD_START_MS.
+_BAD_REQUEST: Final[int] = 400
+
+#: A ceiling on renegotiation, so a provider rejecting a different field each
+#: time terminates instead of looping. Three is the number of parameters any
+#: adapter here declares negotiable.
+# const-sync: ok -- a loop bound for parameter negotiation, not a tunable.
+_MAX_ADJUSTMENTS: Final[int] = 3
+
+
+def _body(exc: urllib.error.HTTPError) -> str:
+    """The error body, read once and memoized.
+
+    `HTTPError` is a file object: the second reader gets an empty string. Both
+    the diagnostic string and the negotiation need it, so neither may own it.
+    """
+    cached = getattr(exc, "_adopt_body", None)
+    if cached is None:
+        try:
+            cached = exc.read().decode("utf-8", errors="replace")
+        except Exception:  # an error path must not raise
+            cached = ""
+        exc._adopt_body = cached  # type: ignore[attr-defined]
+    return str(cached)
+
+
+def _rejected(exc: urllib.error.HTTPError) -> tuple[str, str]:
+    """`(code, param)` from a provider error body, or `("", "")`."""
+    try:
+        payload = json.loads(_body(exc))
+    except Exception:  # diagnosis is best-effort: an error path must not raise
+        return "", ""
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return "", ""
+    return str(error.get("code") or "")[:_IDENTIFIER_MAX_CHARS], str(error.get("param") or "")[
+        :_IDENTIFIER_MAX_CHARS
+    ]
+
 
 def _identifiers(exc: urllib.error.HTTPError) -> str:
     """`(type=…, param=…)` from a provider error body, or `""`.
@@ -69,7 +111,7 @@ def _identifiers(exc: urllib.error.HTTPError) -> str:
     strictly worse than one that says less.
     """
     try:
-        payload = json.loads(exc.read().decode("utf-8", errors="replace"))
+        payload = json.loads(_body(exc))
     except Exception:  # diagnosis is best-effort: an error path must not raise
         return ""
     error = payload.get("error") if isinstance(payload, dict) else None
@@ -84,7 +126,12 @@ def _identifiers(exc: urllib.error.HTTPError) -> str:
 
 
 def post_json(
-    url: str, payload: dict[str, Any], headers: dict[str, str], *, adapter_id: str
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    *,
+    adapter_id: str,
+    negotiate: Callable[[dict[str, Any], str, str], bool] | None = None,
 ) -> dict[str, Any]:
     """POST JSON and return the decoded object, or raise `AGENT_PROVIDER_ERROR`.
 
@@ -102,12 +149,23 @@ def post_json(
     and cannot carry prompt text, because they are not free-text fields.
     `error.message` is deliberately **excluded**: it is free text, and a
     content-policy refusal quotes the content that triggered it.
+
+    **`negotiate` is how a caller answers a 400 that names a parameter**
+    *(CR-52)*. It is handed `(payload, code, param)`, may adjust the payload in
+    place, and returns whether it did; a `True` costs one more attempt with the
+    adjusted payload. **This is not a transient retry** and is counted
+    separately -- a provider that rejects a parameter will reject it forever, so
+    retrying unchanged is spending money to receive the same refusal, while
+    retrying *changed* is the only way to discover a shape the endpoint accepts.
+
+    Why discovery rather than a table keyed by model: `04` §2 forbids any
+    hard-coded model identifier, *including as a default*, so a table mapping
+    model prefixes to parameter sets is exactly the "house lab" that rule exists
+    to prevent -- and it would be wrong the day a vendor ships a variant. The
+    provider names the parameter it will not take; that is the authority.
     """
-    body = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(  # noqa: S310 -- scheme checked immediately below
-        url, data=body, headers={**headers, "content-type": "application/json"}, method="POST"
-    )
-    if request.type != "https" and request.host.split(":")[0] not in _LOOPBACK:
+    probe = urllib.request.Request(url, method="POST")  # noqa: S310 -- checked immediately
+    if probe.type != "https" and probe.host.split(":")[0] not in _LOOPBACK:
         raise AdoptError(
             ErrorCode.AGENT_PROVIDER_ERROR,
             message=f"{adapter_id} refused a plaintext endpoint that is not loopback",
@@ -119,7 +177,17 @@ def post_json(
         )
 
     last: str = "no attempt was made"
-    for attempt in range(_MAX_ATTEMPTS):
+    #: Each parameter may be adjusted at most once, so negotiation terminates
+    #: even against a provider that rejects a different field every time.
+    adjustments = 0
+    attempt = 0
+    while attempt < _MAX_ATTEMPTS:
+        request = urllib.request.Request(  # noqa: S310 -- scheme checked above
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={**headers, "content-type": "application/json"},
+            method="POST",
+        )
         try:
             with urllib.request.urlopen(  # noqa: S310 -- scheme checked above
                 request, timeout=AGENT_ADAPTER_TIMEOUT_S, context=_CONTEXT
@@ -128,6 +196,15 @@ def post_json(
                 return decoded
         except urllib.error.HTTPError as exc:
             last = f"HTTP {exc.code}{_identifiers(exc)}"
+            if (
+                negotiate is not None
+                and exc.code == _BAD_REQUEST
+                and adjustments < _MAX_ADJUSTMENTS
+            ):
+                code, param = _rejected(exc)
+                if param and negotiate(payload, code, param):
+                    adjustments += 1
+                    continue  # a changed request, not a repeat of a refused one
             if exc.code not in _RETRYABLE or attempt == _MAX_ATTEMPTS - 1:
                 break
         except (urllib.error.URLError, TimeoutError) as exc:
@@ -137,6 +214,7 @@ def post_json(
         except json.JSONDecodeError:
             last = "the provider returned a body that is not JSON"
             break
+        attempt += 1
 
     raise AdoptError(
         ErrorCode.AGENT_PROVIDER_ERROR,

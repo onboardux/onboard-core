@@ -19,7 +19,10 @@ the model meant.
 
 from typing import Any, Final
 
-__all__ = ["SchemaViolation", "UnsupportedSchema", "validate_against_schema"]
+#: A markdown code fence. Three backticks, the only form a chat model emits.
+_FENCE: Final[str] = "```"
+
+__all__ = ["SchemaViolation", "UnsupportedSchema", "unfence", "validate_against_schema"]
 
 #: Everything this file enforces. A schema using anything else is refused.
 _SUPPORTED: Final[frozenset[str]] = frozenset(
@@ -175,3 +178,34 @@ def _check_object(value: dict[str, Any], schema: dict[str, Any], path: str) -> N
     for name, sub in properties.items():
         if name in value and isinstance(sub, dict):
             validate_against_schema(value[name], sub, f"{path}.{name}")
+
+
+def unfence(text: str) -> str:
+    """A whole-output markdown fence removed, or the text unchanged.
+
+    **Narrow on purpose.** It strips a fence only when the *entire* output is
+    one fenced block; it never scans for JSON inside prose. A scanner would have
+    to guess which of several objects the model meant, and a wrong guess is not
+    a wrong answer but a *different* one -- CR-32's argument, applied to output.
+
+    **Why tolerate it at all.** `04` §5.1 already instructs "no markdown
+    fences", and a frontier model still returned
+    a fenced ```json block containing exactly the right object to conformance
+    case 2, twice --
+    burning the single retry `04` §3 allows. A fence is a chat-transport
+    artifact rather than content: the model answered correctly and wrapped it.
+    Refusing it makes the seam's contract hostage to per-model formatting habit,
+    which is the vendor-shaped fragility the two-adapter rule exists to expose.
+    The inner text still has to parse and still has to satisfy the schema, so
+    nothing is loosened about what counts as a valid answer *(CR-52)*.
+    """
+    stripped = text.strip()
+    if not stripped.startswith(_FENCE) or not stripped.endswith(_FENCE):
+        return text
+    inner = stripped[len(_FENCE) : -len(_FENCE)]
+    # ```json -> drop the language tag on the opening line, which is part of the
+    # fence rather than of the payload.
+    newline = inner.find("\n")
+    if newline != -1 and inner[:newline].strip().isalpha():
+        inner = inner[newline + 1 :]
+    return inner.strip()

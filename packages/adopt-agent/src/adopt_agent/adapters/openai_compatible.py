@@ -101,8 +101,15 @@ class OpenAICompatibleAdapter:
             "temperature": _TEMPERATURE,
         }
         if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
+            payload[_CAP_FIELD] = max_tokens
         if tools:
+            # A reasoning model defaults `reasoning_effort` to a non-`none`
+            # value, and several reject function tools in combination with it on
+            # this endpoint. Sending `none` explicitly is the documented remedy
+            # and is what this seam wants anyway: `04` §2 asks for determinism,
+            # and reasoning is the opposite of reproducible. An endpoint that
+            # does not know the field rejects it by name and `negotiate` drops it.
+            payload["reasoning_effort"] = _NO_REASONING
             payload["tools"] = [
                 {
                     "type": "function",
@@ -116,7 +123,9 @@ class OpenAICompatibleAdapter:
             ]
 
         headers = {"authorization": f"Bearer {self._api_key}"} if self._api_key else {}
-        body = post_json(self._base_url + _PATH, payload, headers, adapter_id=self.id)
+        body = post_json(
+            self._base_url + _PATH, payload, headers, adapter_id=self.id, negotiate=negotiate
+        )
         # Kept verbatim rather than rebuilt: the API matches `tool_call_id`
         # against the `tool_calls` it sent, and a reconstructed message is a
         # different message.
@@ -127,6 +136,53 @@ class OpenAICompatibleAdapter:
         else:
             self._previous_assistant = None
         return _to_response(body, adapter_id=self.id)
+
+
+#: The output-cap field this adapter sends first. (Named `_CAP_FIELD`
+#: rather than anything containing `TOKEN`: ruff's S105 reads that as a
+#: credential, and a `noqa` on a field name is noise next to a rename.) Newer OpenAI models reject
+#: `max_tokens` outright; older endpoints and most local servers reject
+#: `max_completion_tokens`. `negotiate` renames between them rather than
+#: choosing from the model id, which `04` §2 forbids hard-coding.
+_CAP_FIELD: Final[str] = "max_completion_tokens"
+_CAP_FIELD_LEGACY: Final[str] = "max_tokens"
+
+#: Reasoning off. `04` §2's determinism requirement, and the documented remedy
+#: for endpoints that refuse function tools alongside reasoning.
+_NO_REASONING: Final[str] = "none"
+
+#: Parameters this adapter will give up when the provider names them, and what
+#: giving each one up costs. **The token cap is not here**: it is renamed, never
+#: dropped, because dropping a cap turns a bounded request into an unbounded one
+#: and the budget exists to stop exactly that.
+_DROPPABLE: Final[frozenset[str]] = frozenset({"temperature", "reasoning_effort"})
+
+
+def negotiate(payload: dict[str, Any], code: str, param: str) -> bool:
+    """Answer a 400 that names a parameter. Returns whether the payload changed.
+
+    Pure, and unit-tested as such: the provider's rejection is data, and the
+    decision it drives should not need a socket to exercise.
+
+    **Dropping `temperature` degrades a guarantee and does not hide it**
+    *(CR-52)*. `04` §2 lists `temperature=0` for this adapter, and the GPT-5
+    family accepts only its own default -- so at that vendor the seam cannot ask
+    for greedy decoding at all, and reproducibility there rests on the
+    provider's default rather than on our request. Refusing to send anything
+    would leave `04` §2 satisfied and the adapter unusable, which trades a real
+    capability for a sentence.
+    """
+    if param == _CAP_FIELD and _CAP_FIELD in payload:
+        # A rename, not a drop. The cap survives under the other spelling.
+        payload[_CAP_FIELD_LEGACY] = payload.pop(_CAP_FIELD)
+        return True
+    if param == _CAP_FIELD_LEGACY and _CAP_FIELD_LEGACY in payload:
+        payload[_CAP_FIELD] = payload.pop(_CAP_FIELD_LEGACY)
+        return True
+    if param in _DROPPABLE and param in payload:
+        del payload[param]
+        return True
+    return False
 
 
 def _render(content: object) -> str:

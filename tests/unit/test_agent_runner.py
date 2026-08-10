@@ -397,3 +397,87 @@ def test_a_malformed_skill_is_refused_before_any_adapter_is_built(
         runner.run(_request(skill_ref="bad/v1"))
 
     assert raised.value.code is ErrorCode.MANIFEST_INVALID
+
+
+@pytest.mark.unit
+class TestProviderNegotiation:
+    """A 400 that names a parameter is answered by changing it, once.
+
+    *Fails when* the negotiation rules stop matching what a provider rejects.
+    *Matters because* `04` §2 forbids hard-coding a model identifier, so the
+    parameter set cannot be chosen from the model name -- the provider naming
+    the field is the only authority available, and the first real run against
+    GPT-5.6 was rejected three separate times for `temperature`, `max_tokens`
+    and `reasoning_effort`. *No other instrument catches it because* the matrix
+    only executes where credentials exist, and there a wiring defect and a
+    vendor outage look identical.
+    """
+
+    def test_the_output_cap_is_renamed_never_dropped(self) -> None:
+        """Dropping a cap turns a bounded request into an unbounded one."""
+        from adopt_agent.adapters.openai_compatible import negotiate
+
+        payload = {"max_completion_tokens": 64}
+
+        assert negotiate(payload, "unsupported_parameter", "max_completion_tokens") is True
+        assert payload == {"max_tokens": 64}, "the cap must survive under the other spelling"
+
+        assert negotiate(payload, "unsupported_parameter", "max_tokens") is True
+        assert payload == {"max_completion_tokens": 64}, "and back, for a newer endpoint"
+
+    @pytest.mark.parametrize("param", ["temperature", "reasoning_effort"])
+    def test_a_droppable_parameter_is_dropped(self, param: str) -> None:
+        from adopt_agent.adapters.openai_compatible import negotiate
+
+        payload = {"model": "m", param: "x"}
+
+        assert negotiate(payload, "unsupported_value", param) is True
+        assert param not in payload
+        assert payload == {"model": "m"}, "nothing else may be disturbed"
+
+    def test_an_unknown_parameter_is_not_negotiated(self) -> None:
+        """Otherwise a genuine 400 -- a bad tool schema -- reads as a parameter
+        problem and the request is retried into the same refusal."""
+        from adopt_agent.adapters.openai_compatible import negotiate
+
+        payload = {"model": "m", "tools": []}
+
+        assert negotiate(payload, "invalid_request_error", "tools") is False
+        assert payload == {"model": "m", "tools": []}
+
+
+@pytest.mark.unit
+class TestUnfence:
+    """A whole-output markdown fence is stripped; nothing else is.
+
+    *Fails when* the seam starts hunting for JSON inside prose, or stops
+    tolerating the wrapper a frontier model actually emitted. *Matters because*
+    conformance case 2 burned both attempts on ```json-wrapped output that was
+    otherwise exactly correct. *No other instrument catches it because* the
+    recorded fake replays unfenced fixtures and never produces the wrapper.
+    """
+
+    @pytest.mark.parametrize(
+        ("raw", "expected", "why"),
+        [
+            ('```json\n{"a": 1}\n```', '{"a": 1}', "the case that was observed failing"),
+            ('```\n{"a": 1}\n```', '{"a": 1}', "a fence with no language tag"),
+            ('{"a": 1}', '{"a": 1}', "unfenced output is untouched"),
+            ('  ```json\n{"a": 1}\n```  ', '{"a": 1}', "surrounding whitespace"),
+        ],
+    )
+    def test_it_strips_exactly_a_whole_output_fence(
+        self, raw: str, expected: str, why: str
+    ) -> None:
+        from adopt_agent.schema_check import unfence
+
+        assert unfence(raw) == expected, why
+
+    def test_prose_around_a_fence_is_left_alone(self) -> None:
+        """*Not* scanned for JSON: a guess at which object was meant is not a
+        wrong answer but a different referent -- CR-32's argument, on output."""
+        from adopt_agent.schema_check import unfence
+
+        raw = 'Here you go:\n```json\n{"a": 1}\n```\nHope that helps.'
+
+        assert unfence(raw) == raw

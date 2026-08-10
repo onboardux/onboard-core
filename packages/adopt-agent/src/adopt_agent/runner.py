@@ -59,7 +59,12 @@ from adopt_agent.api import (
 )
 from adopt_agent.budget import Meter
 from adopt_agent.pricing import cost_usd
-from adopt_agent.schema_check import SchemaViolation, UnsupportedSchema, validate_against_schema
+from adopt_agent.schema_check import (
+    SchemaViolation,
+    UnsupportedSchema,
+    unfence,
+    validate_against_schema,
+)
 from adopt_agent.skills import LoadedSkill, load_skill
 from adopt_const import AGENT_OUTPUT_SCHEMA_RETRIES
 from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, format_timestamp, new_id
@@ -338,7 +343,11 @@ class Runner:
                 return "ok", last_text, None
 
             try:
-                parsed = json.loads(last_text)
+                # `unfence` strips a whole-output markdown fence and nothing
+                # else. A frontier model returned the correct object wrapped in
+                # ```json twice, burning the single retry `04` §3 allows, and a
+                # fence is a chat-transport artifact rather than content (CR-52).
+                parsed = json.loads(unfence(last_text))
             except json.JSONDecodeError:
                 parsed = None
             violation: str | None = None

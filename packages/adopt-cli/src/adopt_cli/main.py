@@ -144,3 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     # A command returning an `int` returned it through `typer.Exit`; commands
     # return `None` otherwise, so there is no value here to confuse with a code.
     return result if isinstance(result, int) else ExitCode.SUCCESS
+
+
+if __name__ == "__main__":  # pragma: no cover -- exercised through the release entry point
+    sys.exit(main())

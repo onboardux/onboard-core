@@ -15,10 +15,46 @@ checkbox asserted it, which is exactly how a contract goes unimplemented while
 every test passes.
 """
 
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from adopt_cli.main import main
 from adopt_obs import ExitCode
+
+
+@pytest.mark.unit
+def test_the_nuitka_source_entry_point_invokes_the_cli() -> None:
+    """The module compiled by the release job is an executable entry point.
+
+    *Fails when* `main.py` defines `main()` without invoking it when executed as
+    a script. *Matters because* Nuitka compiles this file directly, producing a
+    binary that otherwise exits zero without running a command or emitting JSON;
+    the release smoke test then fails at its first `grep` on every platform.
+    *No other instrument catches it because* the installed `adopt` launcher and
+    every existing CLI test call `main()` on the module's behalf.
+    """
+    entry_point = (
+        Path(__file__).resolve().parents[2]
+        / "packages"
+        / "adopt-cli"
+        / "src"
+        / "adopt_cli"
+        / "main.py"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(entry_point), "version", "--json"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == ExitCode.SUCCESS, completed.stderr
+    assert json.loads(completed.stdout)["schema_version"] == 3
 
 
 @pytest.mark.unit

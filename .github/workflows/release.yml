@@ -12,10 +12,10 @@ name: release
 # (PRD F15.6, NFR N14). The machinery is proven months before it is needed.
 #
 # THE PACKER, decided at S9 (CR-51). The three single-file platform binaries are
-# built with **Nuitka (Apache-2.0)**, invoked through `uvx` so it never enters
-# `uv.lock` -- the same isolation CR-49 chose for `pip-audit`, and for the same
-# reason: a build tool's ~4 transitive dependencies should not each become a
-# seven-field verification obligation.
+# built with **Nuitka (Apache-2.0)**, pinned inside an ephemeral build environment
+# so it never enters `uv.lock` -- the same isolation CR-49 chose for `pip-audit`,
+# and for the same reason: a build tool's ~4 transitive dependencies should not
+# each become a seven-field verification obligation (CR-54).
 #
 # **PyInstaller was rejected, and not on a technicality.** Its bootloader is
 # compiled into the shipped artefact, so it is `in-binary` by `03` §7.3's own
@@ -26,10 +26,12 @@ name: release
 # `certifi` and `tqdm`. Softening that here would widen the rule for every
 # future dependency, not just this one.
 #
-# !! THIS JOB HAS NEVER EXECUTED. !! It is wired from documentation, not from a
-# green run, and it is the most likely failure point in the first real release.
-# If it fails, drop `binaries` from `supply-chain.needs` to ship the wheel while
-# it is fixed -- the wheel path is proven and the binaries are additive.
+# !! THIS JOB HAS EXECUTED, BUT HAS NOT YET COMPLETED GREEN. !! Four dry runs
+# successively exposed missing package data, an editable-install metadata gap, a
+# onefile-only path-depth crash, and finally a binary that exited 0 without ever
+# invoking the CLI (CR-53 .. CR-56). If it fails, drop `binaries` from
+# `supply-chain.needs` to ship the wheel while it is fixed -- the wheel path is
+# proven and the binaries are additive.
 
 on:
   workflow_dispatch:
@@ -210,10 +212,25 @@ jobs:
         run: |
           set -euo pipefail
           BIN="$PWD/packed/${{ matrix.artefact }}"
-          "$BIN" version --json
-          "$BIN" version --json | grep -q '"schema_version": *3'
+          version_json="$("$BIN" version --json)" || {
+            status=$?
+            echo "::error::packed binary version command exited $status" >&2
+            exit "$status"
+          }
+          if [ -z "$version_json" ]; then
+            echo "::error::packed binary exited 0 but produced no version JSON" >&2
+            exit 1
+          fi
+          printf '%s\n' "$version_json"
+          printf '%s\n' "$version_json" | grep -q '"schema_version": *3' || {
+            echo "::error::packed binary did not report schema_version 3" >&2
+            exit 1
+          }
           # Not `0.0.0+unknown`: the binary must know which artefact it is.
-          "$BIN" version --json | grep -q '"version": *"[0-9]'
+          printf '%s\n' "$version_json" | grep -q '"version": *"[0-9]' || {
+            echo "::error::packed binary did not report a release version" >&2
+            exit 1
+          }
 
       - name: It carries its data -- detect rules, migrations, annex DDL
         shell: bash

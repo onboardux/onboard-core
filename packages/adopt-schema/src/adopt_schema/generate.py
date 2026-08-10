@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Final
 
 from adopt_obs import AdoptError, ErrorCode
+from adopt_schema.assets import checkout_root
 from adopt_schema.emitters import jsonschema, postgres, pymodel, sqlite
 from adopt_schema.manifest import Manifest, load_manifest
 
@@ -23,7 +24,11 @@ __all__ = ["OUT_ROOT_ENV", "TARGETS", "generate", "render_all", "repo_root"]
 
 OUT_ROOT_ENV: Final[str] = "ADOPT_SCHEMA_OUT_ROOT"
 
-_REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[4]
+#: `None` when there is no checkout at this depth -- inside a packed binary, for
+#: one. Computed through the shared helper rather than with a bare `parents[4]`,
+#: which raises `IndexError` on a shallow path and takes the whole package down
+#: at import time (CR-55).
+_REPO_ROOT: Final[Path | None] = checkout_root(Path(__file__))
 
 MODEL_PACKAGE: Final[str] = "packages/adopt-model/src/adopt_model"
 INITIAL_MIGRATION: Final[str] = "0001__init_v3.sql"
@@ -42,7 +47,17 @@ def repo_root() -> Path:
     which is what the caller reports.
     """
     override = os.environ.get(OUT_ROOT_ENV)
-    return Path(override) if override else _REPO_ROOT
+    if override:
+        return Path(override)
+    if _REPO_ROOT is None:
+        raise AdoptError(
+            ErrorCode.SCHEMA_ASSETS_MISSING,
+            message="there is no checkout above this module to generate into",
+            hint="`adopt-schema generate` writes the four targets into a source tree "
+            f"and is a developer tool, not a shipped one. Run it from a checkout, or "
+            f"set {OUT_ROOT_ENV} to the tree to write.",
+        )
+    return _REPO_ROOT
 
 
 def _render_sqlite(manifest: Manifest) -> dict[str, str]:

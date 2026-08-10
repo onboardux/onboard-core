@@ -43,7 +43,13 @@ from typing import Final
 
 from adopt_obs import AdoptError, ErrorCode
 
-__all__ = ["ASSETS_ROOT_ENV", "SCHEMA_DIRNAME", "assets_root", "schema_dir"]
+__all__ = [
+    "ASSETS_ROOT_ENV",
+    "SCHEMA_DIRNAME",
+    "assets_root",
+    "checkout_root",
+    "schema_dir",
+]
 
 #: Points at a directory *containing* `schema/`, not at `schema/` itself, so an
 #: override and a checkout root are the same kind of thing.
@@ -54,8 +60,35 @@ SCHEMA_DIRNAME: Final[str] = "schema"
 #: Written into the wheel by `hatch_build.py`; absent from every checkout.
 _BUNDLED: Final[Path] = Path(__file__).resolve().parent / "_assets"
 
-#: `packages/adopt-schema/src/adopt_schema/assets.py` -> four parents up.
-_CHECKOUT: Final[Path] = Path(__file__).resolve().parents[4]
+#: `packages/adopt-schema/src/adopt_schema/<module>.py` -> four parents up.
+_CHECKOUT_DEPTH: Final[int] = 4  # const-sync: ok -- a path depth, not a tunable.
+
+
+def checkout_root(module_file: Path) -> Path | None:
+    """The checkout `module_file` sits in, or `None` when there is no such depth.
+
+    **`parents[4]` raises `IndexError` on a path with fewer than five parents,
+    and a packed binary is exactly that** (CR-55). Nuitka's `--onefile` unpacks
+    to `/tmp/onefile_<pid>_<n>/`, so this module runs as
+    `/tmp/onefile_x/adopt_schema/assets.py` -- three parents, not five -- and the
+    walk crashed the binary at import before any of this module's careful "not
+    found" handling could run.
+
+    So the answer is `None`, not an exception: *"there is no checkout here"* is
+    an ordinary, expected state for an installed artefact, and `assets_root`
+    already knows what to do with it. Raising from a module-scope constant turns
+    a missing directory into an unimportable package.
+
+    Shared with `generate`, which carried the same eager `parents[4]` and would
+    have failed identically the moment anything in a binary imported it.
+    """
+    parents = module_file.resolve().parents
+    if len(parents) <= _CHECKOUT_DEPTH:
+        return None
+    return parents[_CHECKOUT_DEPTH]
+
+
+_CHECKOUT: Final[Path | None] = checkout_root(Path(__file__))
 
 
 def _holds_schema(root: Path) -> bool:
@@ -82,15 +115,19 @@ def assets_root() -> Path:
             "use the copy inside the installed package.",
         )
 
+    # `_CHECKOUT` is `None` inside a packed binary, where there is no checkout at
+    # this depth to look in. That is an ordinary state, not an error -- the
+    # bundled copy is the answer there.
     for candidate in (_BUNDLED, _CHECKOUT):
-        if _holds_schema(candidate):
+        if candidate is not None and _holds_schema(candidate):
             return candidate
 
+    above = _CHECKOUT if _CHECKOUT is not None else "no checkout at this depth"
     raise AdoptError(
         ErrorCode.SCHEMA_ASSETS_MISSING,
         message=(
             f"no {SCHEMA_DIRNAME}/ directory beside the installed package "
-            f"({_BUNDLED}) or in a checkout above it ({_CHECKOUT})"
+            f"({_BUNDLED}) or in a checkout above it ({above})"
         ),
         hint="This build of adopt is incomplete -- the schema assets that ship "
         "inside the wheel are absent, so no store can be created or migrated. "

@@ -17,12 +17,13 @@ needed and neither substitutes: this file pins the *behaviour* when assets are
 absent, that script proves they are *present* in what we ship.
 """
 
+import re
 from pathlib import Path
 
 import pytest
 
 from adopt_obs import AdoptError, ErrorCode
-from adopt_schema.assets import ASSETS_ROOT_ENV, assets_root, schema_dir
+from adopt_schema.assets import ASSETS_ROOT_ENV, assets_root, checkout_root, schema_dir
 from adopt_schema.emitters import sqlite as sqlite_emitter
 from adopt_schema.manifest import load_manifest
 from adopt_schema.migrate import new_migration, pending
@@ -121,6 +122,61 @@ def test_an_override_wins_over_both_candidates(
     monkeypatch.setenv(ASSETS_ROOT_ENV, str(override))
 
     assert assets_root() == override
+
+
+@pytest.mark.unit
+def test_a_packed_binary_has_no_checkout_above_it_and_that_is_not_an_error() -> None:
+    """The exact path shape that crashed the first working binary.
+
+    *Fails when* the checkout candidate is computed with a bare `parents[4]`.
+    *Matters because* Nuitka's `--onefile` unpacks to `/tmp/onefile_<pid>_<n>/`,
+    so this module runs three parents from the root, and `parents[4]` raises
+    `IndexError` **at module scope** -- taking down the whole package at import,
+    before any of the "not found" handling below can run (CR-55). *No other
+    instrument catches it because* every install this repository tests against
+    is deep enough: a venv puts `site-packages` five levels down, so the wheel
+    gate `packaged-artifact` cannot reach this and only a packed binary can.
+    """
+    packed = Path("/tmp/onefile_5272_295892_ER82k0aDOO8/adopt_schema/assets.py")
+    assert checkout_root(packed) is None
+
+
+@pytest.mark.unit
+def test_a_real_checkout_still_resolves_four_parents_up() -> None:
+    """The other half: `None` must mean "too shallow", not "always"."""
+    deep = Path("/src/repo/packages/adopt-schema/src/adopt_schema/assets.py")
+    assert checkout_root(deep) == Path("/src/repo").resolve()
+
+
+@pytest.mark.unit
+def test_no_module_computes_a_deep_parent_index_outside_the_helper() -> None:
+    """One helper owns path-depth arithmetic, and nothing else may.
+
+    *Fails when* a module reintroduces `parents[3]` or deeper inline. *Matters
+    because* the failure mode is an `IndexError` at **import** time on any
+    layout shallower than assumed, which presents as an unimportable package
+    rather than as a missing file -- and it has now happened twice, in
+    `adopt_schema.manifest`/`adopt_store` (CR-53) and again in the module
+    written to replace them (CR-55). *No other instrument catches it because*
+    the arithmetic is correct in every layout the suite runs against, so only a
+    packed artefact exercises the failing branch.
+    """
+    packages = Path(__file__).resolve().parents[2] / "packages"
+    offenders: list[str] = []
+    for module in packages.rglob("*.py"):
+        for number, line in enumerate(module.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"\.parents\[\s*[3-9]\d*\s*\]", line) and "#:" not in line:
+                offenders.append(f"{module.name}:{number}: {line.strip()}")
+
+    # `assets.checkout_root` is the one place this is allowed, because it is the
+    # one place that checks the length first.
+    allowed = "assets.py"
+    unexpected = [entry for entry in offenders if not entry.startswith(allowed)]
+    assert not unexpected, (
+        "path-depth arithmetic outside `adopt_schema.assets.checkout_root`:\n  "
+        + "\n  ".join(unexpected)
+        + "\nUse `checkout_root(Path(__file__))`, which returns None instead of raising."
+    )
 
 
 @pytest.mark.unit

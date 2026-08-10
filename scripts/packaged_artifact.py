@@ -31,6 +31,27 @@ directory can satisfy is not a gate.
 it deletes the bundled assets from the installed environment and requires the
 check to fail, and to fail naming `SCHEMA_ASSETS_MISSING` rather than reporting
 a missing table four layers down.
+
+**What this gate cannot see, stated so nobody assumes otherwise.** It installs
+into a virtualenv, where `site-packages` sits five directories down. A packed
+binary does not: Nuitka's `--onefile` unpacks to `/tmp/onefile_<pid>_<n>/`, three
+parents from the root, and **that difference alone crashed the first binary that
+ever built** -- a module-scope `parents[4]` raised `IndexError` at import
+(CR-55). No arrangement of this script reaches that, because the depth comes
+from where a venv lives.
+
+Two other instruments cover it, and both are cheaper than a C build:
+
+* `tests/unit/test_schema_assets.py` forbids deep `parents[N]` outside the one
+  helper that checks the length first, and pins the onefile path shape directly.
+* The layout can be simulated with no packer at all -- copy the environment's
+  `site-packages` to a shallow root and put it on `PYTHONPATH`:
+
+      cp -r <venv>/lib/python3.12/site-packages/* /pkg/
+      PYTHONPATH=/pkg python -c 'from adopt_cli.main import main; main(["version","--json"])'
+
+  That reproduces the import failure exactly, in seconds, on a machine with no
+  compiler -- which is how CR-55's fix was verified.
 """
 
 import argparse

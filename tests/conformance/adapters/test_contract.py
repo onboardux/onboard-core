@@ -136,7 +136,11 @@ def test_case_02_json_validates_and_output_is_a_dict(adapter_id: str, tmp_path: 
         output_schema=_ARCHETYPE_SCHEMA,
     )
 
-    assert run.result.status == "ok", run.why
+    # `04` §3 returns the last raw output as text on a double schema failure,
+    # and this case's inputs are fixed synthetic fixtures -- there is no client
+    # content here to leak. Without it, "output is not JSON" cannot distinguish
+    # a markdown fence from a prose preamble, and the two have different remedies.
+    assert run.result.status == "ok", f"{run.why} | raw={str(run.result.output)[:300]!r}"
     assert isinstance(run.result.output, dict)
     validate_against_schema(run.result.output, _ARCHETYPE_SCHEMA)
 

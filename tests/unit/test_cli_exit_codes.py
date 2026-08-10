@@ -97,3 +97,32 @@ def test_agent_adapters_reports_rather_than_refusing(
     assert exit_code == ExitCode.SUCCESS
     assert '"anthropic"' in out
     assert '"available": false' in out
+
+
+@pytest.mark.unit
+class TestAllowNetworkFlag:
+    """`--allow-network` actually permits egress.
+
+    *Fails when* the root flag stops reaching the offline decision. *Matters
+    because* `adopt_cli.main`'s docstring calls it *the* way to permit egress and
+    `AGENT_OFFLINE_ADAPTER_DENIED`'s hint tells operators to pass it -- and for
+    the whole of S7 and S8 `main._root` wrote `ctx.obj["allow_network"]` and
+    **nothing read it**, so the documented remedy did nothing at all. *No other
+    instrument catches it because* every existing test asserts the offline
+    refusal, which a dead flag produces perfectly.
+    """
+
+    def test_the_flag_turns_offline_off(self) -> None:
+        from adopt_cli.commands import agent
+
+        offline, *_ = agent.adapter_settings(allow_network=True)
+
+        assert offline is False
+
+    def test_offline_is_still_the_default_without_it(self) -> None:
+        """The posture, not a fallback."""
+        from adopt_cli.commands import agent
+
+        offline, *_ = agent.adapter_settings()
+
+        assert offline is True

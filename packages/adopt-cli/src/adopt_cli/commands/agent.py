@@ -63,7 +63,15 @@ AdapterOption = Annotated[
 _FALSEY: frozenset[str] = frozenset({"0", "false", "no"})
 
 
-def adapter_settings() -> tuple[bool, str | None, str | None, str | None]:
+def _allow_network(ctx: typer.Context) -> bool:
+    """The root `--allow-network` flag, or `False` when invoked without a context."""
+    obj = ctx.obj if isinstance(ctx.obj, dict) else {}
+    return bool(obj.get("allow_network", False))
+
+
+def adapter_settings(
+    *, allow_network: bool = False
+) -> tuple[bool, str | None, str | None, str | None]:
     """`(offline, adapter, model, endpoint)` from the §3 config registry.
 
     Resolved through `resolve_all` so the order is flag > env > project > user >
@@ -71,9 +79,18 @@ def adapter_settings() -> tuple[bool, str | None, str | None, str | None]:
     **on** when the key is absent is the posture, not a fallback: a seam whose
     default were online would make "offline by default" a property of whoever
     happened to set the variable.
+
+    **`--allow-network` is the flag layer of that order and it was not wired.**
+    `main._root` wrote `ctx.obj["allow_network"]` and **nothing anywhere read
+    it**, so the root flag `adopt_cli.main`'s own docstring calls the way to
+    permit egress did nothing at all -- while `AGENT_OFFLINE_ADAPTER_DENIED`'s
+    hint told operators to pass it. A remedy a document names and no code
+    honours costs whoever hits it an hour, and the CI preflight hit it first.
     """
     by_key = {resolution.key: resolution.value for resolution in resolve_all()}
     offline = (by_key.get("ADOPT_OFFLINE") or "1").strip().lower() not in _FALSEY
+    if allow_network:
+        offline = False
     return (
         offline,
         by_key.get("ADOPT_ADAPTER"),
@@ -138,18 +155,20 @@ def _no_adapter_named() -> AdoptError:
 
 
 @app.command()
-def adapters(json_output: JsonOption = False) -> None:
+def adapters(ctx: typer.Context, json_output: JsonOption = False) -> None:
     """List every registered adapter and why each unusable one is unusable.
 
     Exits `0` even when nothing is available: the report is the answer.
     """
-    offline, _, model, endpoint = adapter_settings()
+    offline, _, model, endpoint = adapter_settings(allow_network=_allow_network(ctx))
     payload = build_payload(describe_adapters(offline=offline, model=model, endpoint=endpoint))
     emit(payload, as_json=json_output, title="adopt agent adapters")
 
 
 @app.command()
-def check(adapter: AdapterOption = None, json_output: JsonOption = False) -> None:
+def check(
+    ctx: typer.Context, adapter: AdapterOption = None, json_output: JsonOption = False
+) -> None:
     """Construct one adapter, or refuse with the reason.
 
     Raises `AGENT_ADAPTER_UNKNOWN` (usage, exit `2`) for an unregistered id or
@@ -157,7 +176,7 @@ def check(adapter: AdapterOption = None, json_output: JsonOption = False) -> Non
     `3`) for a hosted adapter offline. The envelope and the exit code are
     `adopt_cli.main`'s doing, so this command does not restate the mapping.
     """
-    offline, configured, model, endpoint = adapter_settings()
+    offline, configured, model, endpoint = adapter_settings(allow_network=_allow_network(ctx))
     chosen = adapter or configured
     if chosen is None:
         raise _no_adapter_named()

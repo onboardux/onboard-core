@@ -266,18 +266,23 @@ jobs:
       - run: uv sync --all-packages
       - name: Prove the two-adapter rule still rejects
         run: uv run python scripts/conformance_matrix.py --self-test
-      # One live call per adapter before the suite, so a bad credential or an
-      # invalid model id is named in one line instead of arriving as thirteen
-      # `assert 'error' == 'ok'` failures with no cause attached. `agent check`
-      # ACTS rather than reports, so it exits non-zero with the error envelope --
-      # which is exactly the difference between "this adapter cannot be reached"
-      # and "this adapter is reachable and the seam is wrong".
+      # A CONFIGURATION check, not a liveness check, and the distinction matters
+      # so nobody reads a green preflight as "the credential works". `agent check`
+      # deliberately opens no socket -- it must be usable before any credential
+      # exists, which is when an operator is configuring them -- so it answers
+      # "is this adapter registered, permitted and given a model", and nothing
+      # about whether the provider will accept the request.
       #
-      # `continue-on-error`, deliberately: this step is a DIAGNOSTIC, not a gate.
-      # The gate is the matrix below, and a preflight that could fail the job
-      # would be a second opinion about adapter health with its own way of being
-      # wrong.
-      - name: Preflight -- can each adapter be reached at all?
+      # It earned its place immediately: its first run reported
+      # AGENT_OFFLINE_ADAPTER_DENIED for both adapters, because offline is the
+      # default (contracts §1.7) and this step had not passed `--allow-network`.
+      # Diagnosing a bad key or a rejected parameter is `_wire.py`'s job, via the
+      # allowlisted `error.type/code/param` identifiers (CR-52).
+      #
+      # `continue-on-error`, deliberately: a DIAGNOSTIC, not a gate. The matrix
+      # below is the gate, and a preflight that could fail the job would be a
+      # second opinion about adapter health with its own way of being wrong.
+      - name: Preflight -- is each adapter configured and permitted?
         continue-on-error: true
         env:
           ADOPT_ADAPTER_ENDPOINT: ${{ vars.ADOPT_ADAPTER_ENDPOINT }}
@@ -288,7 +293,11 @@ jobs:
             adapter="${pair%%=*}"
             model="${pair#*=}"
             echo "--- $adapter ($model) ---"
-            ADOPT_MODEL="$model" uv run adopt agent check --adapter "$adapter" || true
+            # `--allow-network` is the root flag, so it precedes the subcommand.
+            # Without it every check is refused with AGENT_OFFLINE_ADAPTER_DENIED
+            # before a socket opens -- offline is the default (contracts §1.7),
+            # and that is the posture rather than a misconfiguration.
+            ADOPT_MODEL="$model" uv run adopt --allow-network agent check --adapter "$adapter" || true
           done
 
       # `ADOPT_CONFORMANCE_ADAPTERS` carries a model per adapter --

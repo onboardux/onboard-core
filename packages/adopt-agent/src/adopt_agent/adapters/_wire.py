@@ -50,6 +50,39 @@ _CONTEXT: Final[ssl.SSLContext] = ssl.create_default_context()
 _LOOPBACK: Final[frozenset[str]] = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
 
 
+#: The only fields lifted out of a provider's error body. Enumerated identifiers
+#: naming a parameter or a failure class -- never free text. `message` is
+#: excluded on purpose: a content-policy refusal quotes what triggered it.
+_ERROR_IDENTIFIERS: Final[tuple[str, ...]] = ("type", "code", "param")
+
+#: A hard ceiling on each identifier, so a provider that returns something
+#: unexpected in one of these fields cannot turn this into a body dump.
+# const-sync: ok -- a display cap for an error identifier, not a tunable.
+_IDENTIFIER_MAX_CHARS: Final[int] = 64
+
+
+def _identifiers(exc: urllib.error.HTTPError) -> str:
+    """`(type=…, param=…)` from a provider error body, or `""`.
+
+    Reading the body cannot itself fail the request: a provider under load
+    returns HTML, and an error path that raises while explaining an error is
+    strictly worse than one that says less.
+    """
+    try:
+        payload = json.loads(exc.read().decode("utf-8", errors="replace"))
+    except Exception:  # diagnosis is best-effort: an error path must not raise
+        return ""
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return ""
+    parts = [
+        f"{field}={str(error[field])[:_IDENTIFIER_MAX_CHARS]}"
+        for field in _ERROR_IDENTIFIERS
+        if error.get(field)
+    ]
+    return f" ({', '.join(parts)})" if parts else ""
+
+
 def post_json(
     url: str, payload: dict[str, Any], headers: dict[str, str], *, adapter_id: str
 ) -> dict[str, Any]:
@@ -58,6 +91,17 @@ def post_json(
     The body is never included in the raised message. A provider's error payload
     routinely echoes the request back, and AI spec §8.3 says prompt text is not
     retrievable from our artifacts -- an exception message is one of ours.
+
+    **Three identifier fields are the exception, and they are an allowlist rather
+    than a relaxation** *(CR-52)*. `HTTP 400` alone is undiagnosable: it says a
+    request was malformed and not which part, so the first real-model run left
+    "the request shape is wrong somewhere" as the whole finding, and the privacy
+    rule that produced that message is not one to soften. `error.type`,
+    `error.code` and `error.param` are **enumerated identifiers naming a
+    parameter or a failure class** -- `unsupported_parameter`, `temperature` --
+    and cannot carry prompt text, because they are not free-text fields.
+    `error.message` is deliberately **excluded**: it is free text, and a
+    content-policy refusal quotes the content that triggered it.
     """
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(  # noqa: S310 -- scheme checked immediately below
@@ -83,7 +127,7 @@ def post_json(
                 decoded: dict[str, Any] = json.loads(response.read().decode("utf-8"))
                 return decoded
         except urllib.error.HTTPError as exc:
-            last = f"HTTP {exc.code}"
+            last = f"HTTP {exc.code}{_identifiers(exc)}"
             if exc.code not in _RETRYABLE or attempt == _MAX_ATTEMPTS - 1:
                 break
         except (urllib.error.URLError, TimeoutError) as exc:

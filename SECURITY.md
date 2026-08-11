@@ -30,10 +30,51 @@ revert, not a review comment.
 
 ## Verifying a release
 
+Download the complete asset set from the GitHub Release. For example, to verify
+the Linux binary from `onboardux/adopt-core`:
+
 ```sh
-cosign verify-blob --signature adopt-<version>-<platform>.sig adopt-<version>-<platform>
-adopt version --json    # reports version, schema_version, export_version, sbom_sha256, build_id
+asset=adopt-linux-x86_64
+identity='https://github.com/onboardux/adopt-core/.github/workflows/release.yml@refs/tags/v0.3.0'
+issuer='https://token.actions.githubusercontent.com'
+
+cosign verify-blob \
+  --certificate "$asset.pem" \
+  --signature "$asset.sig" \
+  --certificate-identity "$identity" \
+  --certificate-oidc-issuer "$issuer" \
+  "$asset"
+
+cosign verify-blob \
+  --certificate sbom.cdx.json.pem \
+  --signature sbom.cdx.json.sig \
+  --certificate-identity "$identity" \
+  --certificate-oidc-issuer "$issuer" \
+  sbom.cdx.json
+
+gh attestation verify "$asset" \
+  --repo onboardux/adopt-core \
+  --bundle provenance.intoto.jsonl \
+  --limit 100 \
+  --cert-identity "$identity" \
+  --cert-oidc-issuer "$issuer" \
+  --predicate-type https://slsa.dev/provenance/v1
+
+./"$asset" version --json
+sha256sum sbom.cdx.json
 ```
+
+The reported `version` must match the tag, and the reported `sbom_sha256` must
+equal the `sha256sum` output. The attestation command verifies that the bundle
+names the downloaded binary as a subject of this exact workflow. `build_id`
+names the repository, workflow run, attempt, and commit that produced the
+artifact. Replace the tag in `identity` for later releases; do not weaken either
+identity or issuer to a wildcard.
+
+The other binary names are `adopt-macos-arm64` and
+`adopt-windows-x86_64.exe`. Every wheel, source distribution, binary, and the
+SBOM has its own `.sig` and `.pem`; `provenance.intoto.jsonl` is the GitHub SLSA
+attestation bundle.
 
 ## Supported versions
 

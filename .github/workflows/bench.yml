@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   perf:
-    name: perf -- every NFR budget, on the reference runner
+    name: perf -- seven benchmark budgets, on the reference runner
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -54,8 +54,8 @@ jobs:
       # than something the harness guesses from the environment.
       ADOPT_BENCH_REFERENCE: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
 
       - name: PostgreSQL client
@@ -117,7 +117,7 @@ jobs:
       # N4's other half -- the byte-identical re-export -- is not timed. It is a
       # correctness property with no number attached, asserted by `golden-g0` on
       # every pull request, and timing it here would suggest it were a budget.
-      - name: Every NFR budget
+      - name: Every dedicated benchmark budget
         env:
           ADOPT_BENCH_PG_DSN: postgresql://postgres:ci-only-not-a-secret@localhost:5432/adopt_bench
         run: |
@@ -129,7 +129,7 @@ jobs:
         run: |
           {
             echo
-            echo '## `bench.all --assert` -- every NFR harness'
+            echo '## `bench.all --assert` -- seven dedicated performance harnesses'
             echo
             echo '```'
             cat bench-all.txt
@@ -138,7 +138,7 @@ jobs:
 
       - name: Upload the ratification evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: runner-profile
           path: |

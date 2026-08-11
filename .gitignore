@@ -13,6 +13,11 @@ dist/
 .venv/
 .env
 .env.local
+.env.*
+!.env.example
+*.key
+*.p12
+*.pfx
 
 # Local store and scratch
 .adopt/

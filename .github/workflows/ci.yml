@@ -27,10 +27,10 @@ jobs:
     name: lint (ruff, mypy --strict, twelve import contracts)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: adopt-core
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
       - name: Sync
@@ -54,12 +54,28 @@ jobs:
   constants-sync:
     name: constants-sync
     runs-on: ubuntu-24.04
+    # The handoff pack is private. Fork and Dependabot pull requests never
+    # receive its token, and a fork's own `main` may not configure a pack at
+    # all. Skip this trusted-boundary comparison before allocating a runner;
+    # every self-contained public gate still runs.
+    if: >-
+      ${{
+        vars.ADOPT_PACK_REPOSITORY != '' &&
+        (
+          github.event_name == 'push' ||
+          (
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            github.event.pull_request.user.login != 'dependabot[bot]'
+          )
+        )
+      }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: adopt-core
       - name: Check out the handoff pack
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ vars.ADOPT_PACK_REPOSITORY }}
           path: pack
@@ -68,7 +84,8 @@ jobs:
           # checkout, which reads like an infrastructure flake rather than the
           # missing secret it is.
           token: ${{ secrets.ADOPT_PACK_TOKEN }}
-      - uses: astral-sh/setup-uv@v5
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - working-directory: adopt-core
         run: uv sync --all-packages
       - name: Constants table matches both modules
@@ -78,17 +95,30 @@ jobs:
   error-registry-sync:
     name: error-registry-sync
     runs-on: ubuntu-24.04
+    if: >-
+      ${{
+        vars.ADOPT_PACK_REPOSITORY != '' &&
+        (
+          github.event_name == 'push' ||
+          (
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            github.event.pull_request.user.login != 'dependabot[bot]'
+          )
+        )
+      }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: adopt-core
       - name: Check out the handoff pack
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ vars.ADOPT_PACK_REPOSITORY }}
           path: pack
           token: ${{ secrets.ADOPT_PACK_TOKEN }}
-      - uses: astral-sh/setup-uv@v5
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - working-directory: adopt-core
         run: uv sync --all-packages
       - name: Contracts §13 matches the error module, both directions
@@ -99,8 +129,8 @@ jobs:
     name: licence-gate
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       - name: Prove the gate still rejects
         run: uv run python scripts/licence_gate.py --self-test
@@ -111,8 +141,8 @@ jobs:
     name: pricing-freshness (warns; never blocks)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # AI spec §3: the price table carries `verified_on` and a CI check *warns*
       # past `PRICING_VERIFIED_MAX_AGE_DAYS`. `stale_rows` existed from the day
@@ -133,8 +163,8 @@ jobs:
     name: vuln-audit (pip-audit over the resolved tree)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # `licence-verifications.md` records a security status per dependency, and
       # the release gate (`--strict-verify`) rejects `pending-audit`. This is what
@@ -165,8 +195,8 @@ jobs:
     name: no-destructive-sql (the store never loses data)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # The store has no down-migration and never will: recovery from a bad
       # deploy is older code opening a newer store, which only holds while every
@@ -181,8 +211,8 @@ jobs:
     name: packaged-artifact (install what we ship, then use it)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
       - run: uv sync --all-packages
@@ -206,8 +236,8 @@ jobs:
     name: unit (ratcheted to CI_UNIT_MAX_MINUTES)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # The ratchet is a hard failure: a green suite over budget still fails.
       # Adding runtime requires removing equivalent runtime in the same change.
@@ -218,8 +248,8 @@ jobs:
     name: property
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # Seeded so a failure is reproducible from the log alone. The nightly
       # run uses a fresh seed to keep exploring the space.
@@ -230,8 +260,8 @@ jobs:
     name: durability (kill and resume, in-process backend)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # Implementation spec §6 budgets this suite at two minutes and runs it on
       # every PR. It spawns a child process, kills it mid-step and asserts the
@@ -284,10 +314,21 @@ jobs:
     # code change can fix -- which is how a gate gets deleted. Its absence is
     # visible instead: `test_ci_gates.py` asserts the job is still declared, and
     # `05`'s Definition of Done condition 4 stays open until it has run green.
-    if: ${{ vars.ADOPT_CONFORMANCE_ADAPTERS != '' }}
+    if: >-
+      ${{
+        vars.ADOPT_CONFORMANCE_ADAPTERS != '' &&
+        (
+          github.event_name == 'push' ||
+          (
+            github.event_name == 'pull_request' &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            github.event.pull_request.user.login != 'dependabot[bot]'
+          )
+        )
+      }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       - name: Prove the two-adapter rule still rejects
         run: uv run python scripts/conformance_matrix.py --self-test
@@ -343,7 +384,7 @@ jobs:
       # exactly the question a red matrix leaves open.
       - name: Adapter verdicts for the metrics job
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: metrics-conformance
           path: ci-metrics.jsonl
@@ -363,8 +404,8 @@ jobs:
     # looking at a pull request should see whether portability holds without
     # opening a log.
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       - name: The three G0 assertions over a fixture covering every exportable table
         run: uv run pytest tests/golden -m golden
@@ -393,8 +434,8 @@ jobs:
     name: coverage-floor (an alarm, never a target)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # `COVERAGE_FLOOR_CORE` reached S9 with no consumer anywhere in either
       # tree -- the one §2.3 constant that measured nothing. Implementation spec
@@ -415,8 +456,8 @@ jobs:
     name: append-only (no UPDATE on a revision, no covered_cache write outside adopt_coverage)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # The `lint` job runs all twelve contracts; this job exists to run the two
       # that guard an invariant with no other enforcement, and to prove one of
@@ -491,8 +532,8 @@ jobs:
     name: schema-check (generated artifacts match the manifest)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       - name: No drift between the manifest and its four targets
         run: uv run adopt-schema generate --check
@@ -511,12 +552,12 @@ jobs:
     name: schema-lint (additive-only against the base branch)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The linter reads a manifest from a git ref without checking it out,
           # so the ref has to be in the object store.
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       - name: Make the base branch available as origin/main
         run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
@@ -562,7 +603,7 @@ jobs:
         ports:
           - 5432:5432
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Database clients
         run: |
           sudo apt-get update -qq
@@ -592,7 +633,7 @@ jobs:
           test "$(cat /tmp/rls_count.txt)" -gt 0
       - name: Upload the emitted DDL as review evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: emitted-ddl
           path: schema/migrations/**/*.sql
@@ -606,15 +647,15 @@ jobs:
     if: always()
     needs: [golden-g0, schema-lint, append-only, lint, durability, conformance-matrix]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
 
       - name: Prove the §6 predicates still reject
         run: uv run python scripts/ci_metrics.py --self-test
 
       - name: Adapter verdicts, if the matrix ran
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: metrics-conformance
@@ -654,7 +695,7 @@ jobs:
       - name: Summarize
         run: uv run python scripts/ci_metrics.py --summarize
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: ci-metrics

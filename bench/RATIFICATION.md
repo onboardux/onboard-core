@@ -112,11 +112,11 @@ bench.schema_bench: OK
 
 # S9 ratification pass — 2026-08-10
 
-PRD Q4 ratifies the twelve provisional `03` §2.3 constants at S9 exit. **Two are
-ratified here and ten are not**, and the split is not arbitrary: a constant whose
-evidence is a *timing* can only be ratified on the reference runner
-(`bench/RUNNER.md` rule 1), and a constant whose evidence is a *count* or a
-*ratio* can be ratified anywhere, because counts do not vary by machine.
+PRD Q4 owns exactly twelve `03` §2.3 constants. The private S9 pass ratified one
+of them (`COVERAGE_FLOOR_CORE`); the listing bound recorded later in this file is
+a separate §2.2 decision and was never one of Q4's twelve. CR-57 reopens Q4 for
+fresh public-release evidence because repository visibility changes the runner
+class used by every timing workflow.
 
 ## Ratified
 
@@ -169,6 +169,8 @@ the exemption is visible rather than silent.
 `plane-store` is judged when the same script runs in `adopt-plane` with
 `--root .`, the CR-29 one-implementation pattern.
 
+## Separate §2.2 ratification
+
 ### `AGENT_DETECT_LISTING_MAX_ENTRIES` = `150` — **RATIFIED 2026-08-10**
 
 CR-47 made this provisional, to be ratified at S9 *"against the `04` §7.2 golden
@@ -191,19 +193,25 @@ pathological tree, which is both halves of what `04` §4 step 4 asks for.
 monorepo is larger, and a cap tuned to our corpus would start truncating on the
 first real system. The bound exists for the pathological case, not the median.
 
-## Still provisional — the ten timing constants
+## Public release evidence still open — all twelve Q4 constants
 
 `SCHEMA_CREATE_P95_SECONDS` · `STORE_OPEN_P95_MS` · `EXPORT_P95_SECONDS` ·
 `URI_BUILD_MIN_PER_SECOND` · `COVERAGE_RECOMPUTE_P95_SECONDS` ·
 `FRESHNESS_RESOLVE_P95_MS` · `CLI_COLD_START_MS` · `BINARY_MAX_MB` ·
 `CONFORMANCE_CI_MAX_MINUTES` · `CI_UNIT_MAX_MINUTES` / `CI_PR_MAX_MINUTES`
 
-**What closes them:** one `perf` run on the reference runner.
+No single command closes this set. Evidence has five owners:
 
-```sh
-# .github/workflows/bench.yml, job `perf`. Nightly, or dispatched.
-uv run python -m bench.all --assert     # with ADOPT_BENCH_REFERENCE=1
-```
+| Evidence owner | Constants |
+|---|---|
+| `bench.all --assert` on the public reference runner | schema create, store open, export, URI throughput, coverage recompute, freshness resolve, CLI cold start |
+| Public `conformance-matrix` job | conformance CI duration |
+| Public unit and full-PR CI ratchets | unit and PR duration budgets |
+| Public `coverage-floor` job | `COVERAGE_FLOOR_CORE` |
+| Strict public `release` job | `BINARY_MAX_MB` over the three shipped binaries |
+
+The release record must link all five sources. A green `perf` job alone proves
+seven values, not twelve.
 
 **Developer-machine readings, recorded as context and explicitly not as
 evidence** (`bench/RUNNER.md` rule 1 — Windows, OneDrive-synced tree, so I/O is

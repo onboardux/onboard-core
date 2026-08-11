@@ -26,6 +26,7 @@ from scripts import (
     licence_gate,
     no_destructive_sql,
     plant_violation,
+    release_context,
 )
 from tools.contracts import source_rules
 
@@ -638,6 +639,8 @@ class TestWorkflowsAreRunnable:
             # names the file and three jobs live in it. §7 records the mapping.
             "perf",
             "supply-chain",
+            "publish",
+            "github-release",
             # `coverage-floor` landed at S9 and is implementation spec §6's floor
             # alarm. It is on this list for the sharpest version of the reason:
             # it is the only gate here that is *supposed* to do nothing on a
@@ -678,6 +681,41 @@ class TestWorkflowsAreRunnable:
             assert isinstance(document, dict), f"{path.name} did not parse to a mapping"
             assert document.get("jobs"), f"{path.name} declares no jobs"
 
+    def test_every_external_action_uses_an_immutable_commit(self) -> None:
+        """Mutable action tags must not change release or CI code without a commit.
+
+        *Fails when* any job- or step-level ``uses`` value names a tag or branch.
+        *Matters because* an upstream retag could change privileged release code
+        after this repository's review. *No other instrument catches it because*
+        quoted YAML values defeat line-oriented scans unless the parsed value is
+        checked, and GitHub accepts both quoted and unquoted action references.
+        """
+        import re
+
+        import yaml
+
+        references: list[tuple[Path, str]] = []
+        for path in self._files():
+            jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
+            for job in jobs.values():
+                if "uses" in job:
+                    references.append((path, str(job["uses"])))
+                references.extend(
+                    (path, str(step["uses"])) for step in job.get("steps", []) if "uses" in step
+                )
+
+        external = [
+            (path, reference)
+            for path, reference in references
+            if not reference.startswith(("./", "docker://"))
+        ]
+        assert external, "no external action references were found"
+        for path, reference in external:
+            _, separator, revision = reference.rpartition("@")
+            assert separator and re.fullmatch(r"[0-9a-f]{40}", revision), (
+                f"{path.name} uses mutable action reference {reference!r}; pin the exact commit"
+            )
+
     def test_every_required_gate_is_still_declared(self) -> None:
         import yaml
 
@@ -713,6 +751,40 @@ class TestWorkflowsAreRunnable:
             return
         raise AssertionError("golden-g0 is not declared in any workflow")
 
+    def test_secret_bearing_ci_jobs_never_run_fork_code(self) -> None:
+        """Public fork PRs receive no secrets and must not turn CI red.
+
+        *Fails when* a job that consumes a private-pack or provider credential
+        loses its trusted-event guard. *Matters because* an unguarded job either
+        fails every external contribution or tempts a switch to
+        ``pull_request_target``, which would expose secrets to fork-controlled
+        code. *No other instrument catches it because* repository-local CI has
+        secrets and therefore cannot simulate a fork's event boundary.
+        """
+        import yaml
+
+        text = (self.WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+        assert "pull_request_target" not in text
+        jobs = yaml.safe_load(text)["jobs"]
+
+        for job_name in ("constants-sync", "error-registry-sync", "conformance-matrix"):
+            condition = str(jobs[job_name].get("if", ""))
+            assert "github.event.pull_request.head.repo.full_name == github.repository" in condition
+            assert "dependabot[bot]" in condition
+            assert "github.event_name == 'push'" in condition
+
+        for job_name in ("constants-sync", "error-registry-sync"):
+            condition = str(jobs[job_name]["if"])
+            assert "vars.ADOPT_PACK_REPOSITORY != ''" in condition
+            pack_checkout = next(
+                step
+                for step in jobs[job_name]["steps"]
+                if "ADOPT_PACK_REPOSITORY" in str(step.get("with", {}).get("repository", ""))
+            )
+            assert pack_checkout["with"]["persist-credentials"] is False
+
+        assert "vars.ADOPT_CONFORMANCE_ADAPTERS != ''" in str(jobs["conformance-matrix"]["if"])
+
     def test_binaries_are_packed_from_the_published_wheel(self) -> None:
         """The packer compiles the artefact we ship, not the source tree.
 
@@ -737,13 +809,27 @@ class TestWorkflowsAreRunnable:
             steps = job.get("steps", [])
             runs = "\n".join(str(step.get("run", "")) for step in steps)
             uses = [str(step.get("uses", "")) for step in steps]
+            install = next(
+                step
+                for step in steps
+                if step.get("name") == "Install the published wheel into a clean environment"
+            )
 
             assert any("download-artifact" in u for u in uses), (
                 "the binaries job must take the wheels from the build job, "
                 "not rebuild or install from the checkout"
             )
-            assert "--find-links dist/" in runs, (
-                "the packer's environment must be installed from the published wheels"
+            assert "--requirement runtime-constraints.txt" in runs
+            assert install["env"]["FIRST_PARTY_DISTRIBUTIONS"] == (
+                "${{ needs.build.outputs.distributions }}"
+            )
+            assert "for distribution in $FIRST_PARTY_DISTRIBUTIONS" in runs
+            assert '"${distribution}==${EXPECTED_VERSION}"' in runs
+            assert all(
+                flag in runs for flag in ("--no-index", "--find-links dist/", "--no-deps")
+            ), "the packer's first-party environment must come only from the published wheels"
+            assert "adopt-cli nuitka" not in runs, (
+                "Nuitka is a build tool and must be installed separately from first-party wheels"
             )
             assert "packages/adopt-cli/src" not in runs, (
                 "packing from the source tree is an editable install -- the defect CR-54 "
@@ -752,8 +838,65 @@ class TestWorkflowsAreRunnable:
             return
         raise AssertionError("the binaries job is not declared in any workflow")
 
+    def test_each_binary_is_measured_against_the_governed_size_ceiling(self) -> None:
+        """Every platform build must fail before upload when its binary is too large.
+
+        *Fails when* the matrix relies only on the later merged-bundle check,
+        uses a rounded shell utility instead of exact bytes, or hard-codes the
+        limit. *Matters because* one oversized platform artifact otherwise spends
+        the supply-chain job signing an unreleasable bundle. *No other instrument
+        produces per-platform evidence because* only this job still has the
+        installed build environment and its matrix-specific step summary.
+        """
+        import yaml
+
+        release = yaml.safe_load((self.WORKFLOWS / "release.yml").read_text(encoding="utf-8"))
+        steps = release["jobs"]["binaries"]["steps"]
+        names = [step.get("name") for step in steps]
+        gate = next(
+            step for step in steps if step.get("name") == "Enforce the governed binary size ceiling"
+        )
+        upload_index = next(
+            index
+            for index, step in enumerate(steps)
+            if "upload-artifact" in str(step.get("uses", ""))
+        )
+
+        assert names.index("Pack") < steps.index(gate) < upload_index
+        run = str(gate["run"])
+        assert '"$PY" - "$BIN" "$GITHUB_STEP_SUMMARY"' in run
+        assert "from adopt_const import BINARY_MAX_MB" in run
+        assert "binary.stat().st_size" in run
+        assert "limit_bytes = BINARY_MAX_MB * bytes_per_mib" in run
+        assert "if size_bytes > limit_bytes" in run
+        assert "Exact bytes" in run and "GITHUB_STEP_SUMMARY" in run
+        assert "continue-on-error" not in gate
+
+    def test_release_never_installs_the_cosign_version_affected_by_ghsa_whqx_f9j3_ch6m(
+        self,
+    ) -> None:
+        """Both irreversible boundaries must select a patched Cosign release.
+
+        *Fails when* the installer falls back to its v2.5.2 default or the two
+        verification jobs drift apart. *Matters because* Cosign versions through
+        2.6.1 are affected by GHSA-whqx-f9j3-ch6m. *No other instrument catches
+        it because* the action itself is immutably pinned while the tool version
+        it downloads is a separate input with its own default.
+        """
+        import yaml
+
+        release = yaml.safe_load((self.WORKFLOWS / "release.yml").read_text(encoding="utf-8"))
+        for job_name in ("supply-chain", "github-release"):
+            installers = [
+                step
+                for step in release["jobs"][job_name]["steps"]
+                if str(step.get("uses", "")).startswith("sigstore/cosign-installer@")
+            ]
+            assert len(installers) == 1
+            assert installers[0].get("with", {}).get("cosign-release") == "v2.6.3"
+
     def test_release_provenance_has_one_fail_closed_private_dry_run_exception(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The unsupported private dry run is the only provenance exception.
 
@@ -779,7 +922,10 @@ class TestWorkflowsAreRunnable:
         provenance = next(step for step in steps if step.get("name") == "SLSA provenance")
         assert provenance.get("id") == "provenance"
         assert provenance.get("if") == "${{ env.ALLOW_MISSING_PROVENANCE != 'true' }}"
-        assert provenance.get("uses") == "actions/attest-build-provenance@v4"
+        assert str(provenance.get("uses", "")).startswith("actions/attest-build-provenance@")
+        assert not str(provenance["uses"]).endswith("@v4"), (
+            "release actions are pinned to immutable commits, not mutable major tags"
+        )
         assert provenance.get("with", {}).get("subject-path") == "dist/*"
         assert "continue-on-error" not in provenance
 
@@ -791,6 +937,23 @@ class TestWorkflowsAreRunnable:
         assert staged.get("if") == "${{ steps.provenance.outcome == 'success' }}"
         assert "${{ steps.provenance.outputs.bundle-path }}" in staged["run"]
         assert "dist/provenance.intoto.jsonl" in staged["run"]
+
+        verified = next(
+            step
+            for step in steps
+            if step.get("name") == "Verify provenance covers every exact payload"
+        )
+        assert verified.get("if") == "${{ env.ALLOW_MISSING_PROVENANCE != 'true' }}"
+        verification_run = str(verified["run"])
+        assert "for artefact in dist/*" in verification_run
+        assert 'gh attestation verify "$artefact"' in verification_run
+        assert "--bundle dist/provenance.intoto.jsonl" in verification_run
+        assert "--limit 100" in verification_run
+        assert '--repo "$GITHUB_REPOSITORY"' in verification_run
+        assert '--cert-identity "$CERTIFICATE_IDENTITY"' in verification_run
+        assert '--cert-oidc-issuer "$CERTIFICATE_OIDC_ISSUER"' in verification_run
+        assert "--predicate-type https://slsa.dev/provenance/v1" in verification_run
+        assert "continue-on-error" not in verified
 
         complete = next(
             step
@@ -805,20 +968,258 @@ class TestWorkflowsAreRunnable:
         dist.mkdir()
         (dist / "adopt_cli-0.3.0-py3-none-any.whl").write_bytes(b"wheel")
         (dist / "adopt_cli-0.3.0-py3-none-any.whl.sig").write_text("signature", encoding="utf-8")
+        (dist / "adopt_cli-0.3.0-py3-none-any.whl.pem").write_text("certificate", encoding="utf-8")
         (dist / "sbom.cdx.json").write_text(
             '{"components": [{"name": "adopt-core"}]}', encoding="utf-8"
         )
+        (dist / "sbom.cdx.json.sig").write_text("signature", encoding="utf-8")
+        (dist / "sbom.cdx.json.pem").write_text("certificate", encoding="utf-8")
 
-        missing = assert_release_complete.check(dist)
+        missing = assert_release_complete.check(
+            dist,
+            expected_version="0.3.0",
+            expected_python_distributions=15,
+        )
         assert not missing.ok
-        assert any("no SLSA provenance" in violation for violation in missing.violations)
-        assert assert_release_complete.main(["--dir", str(dist), "--allow-missing-provenance"]) == 0
+        provenance_violation = "exactly one SLSA provenance attestation is required"
+        assert any(provenance_violation in violation for violation in missing.violations)
+
+        relaxed = assert_release_complete.check(
+            dist,
+            require_provenance=False,
+            expected_version="0.3.0",
+            expected_python_distributions=15,
+        )
+        assert not any(provenance_violation in violation for violation in relaxed.violations)
 
         (dist / "provenance.intoto.jsonl").write_text(
             '{"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}', encoding="utf-8"
         )
-        report = assert_release_complete.check(dist)
-        assert report.ok, report.violations
+        report = assert_release_complete.check(
+            dist,
+            expected_version="0.3.0",
+            expected_python_distributions=15,
+        )
+        assert not any(provenance_violation in violation for violation in report.violations)
+
+        captured: dict[str, object] = {}
+
+        def capture_check(
+            directory: Path,
+            *,
+            require_provenance: bool = True,
+            expected_version: str | None = None,
+            expected_python_distributions: int | None = None,
+        ) -> assert_release_complete.Report:
+            captured.update(
+                directory=directory,
+                require_provenance=require_provenance,
+                expected_version=expected_version,
+                expected_python_distributions=expected_python_distributions,
+            )
+            return assert_release_complete.Report()
+
+        monkeypatch.setattr(assert_release_complete, "check", capture_check)
+        assert (
+            assert_release_complete.main(
+                [
+                    "--dir",
+                    str(dist),
+                    "--version",
+                    "0.3.0",
+                    "--python-distributions",
+                    "15",
+                    "--allow-missing-provenance",
+                ]
+            )
+            == 0
+        )
+        assert captured == {
+            "directory": dist,
+            "require_provenance": False,
+            "expected_version": "0.3.0",
+            "expected_python_distributions": 15,
+        }
+
+    def test_release_publication_is_tag_bound_and_artifacts_are_separated(self) -> None:
+        """A green supply-chain job must not make an unsafe publish possible.
+
+        *Fails when* build facts are stamped after packaging, PyPI receives the
+        evidence bundle, signature verification trusts wildcard identities, or
+        publication is no longer bound to the exact version tag. *Matters
+        because* each defect is discovered only after an irreversible upload.
+        *No other instrument catches it because* source tests neither evaluate
+        GitHub routing nor inspect the uploader's artifact boundary.
+        """
+        import re
+
+        import yaml
+
+        path = self.WORKFLOWS / "release.yml"
+        text = path.read_text(encoding="utf-8")
+        release = yaml.safe_load(text)
+        jobs = release["jobs"]
+        build_steps = jobs["build"]["steps"]
+        build_names = [step.get("name") for step in build_steps]
+
+        assert "FIRST_PARTY_DISTRIBUTIONS" not in release.get("env", {})
+        assert jobs["build"]["outputs"]["distributions"] == (
+            "${{ steps.context.outputs.distributions }}"
+        )
+        named_distributions = set(re.findall(r"\badopt-[a-z][a-z-]*\b", text))
+        assert not release_context.CANONICAL_DISTRIBUTIONS.issubset(named_distributions), (
+            "release.yml must consume release_context's distribution output, not repeat its list"
+        )
+
+        assert (
+            build_names.index("CycloneDX SBOM")
+            < build_names.index("Embed immutable build facts")
+            < build_names.index("Build all 15 Python distributions")
+        )
+
+        pypi_upload = next(
+            step for step in build_steps if step.get("with", {}).get("name") == "pypi-dist"
+        )
+        pypi_paths = str(pypi_upload["with"]["path"]).splitlines()
+        assert pypi_paths == ["dist/*.whl", "dist/*.tar.gz"]
+
+        installed_smoke = next(
+            step
+            for step in build_steps
+            if step.get("name") == "The installed wheel is self-contained and stamped"
+        )
+        installed_run = str(installed_smoke["run"])
+        assert installed_smoke["env"]["FIRST_PARTY_DISTRIBUTIONS"] == (
+            "${{ steps.context.outputs.distributions }}"
+        )
+        assert installed_run.index("--requirement runtime-constraints.txt") < installed_run.index(
+            "--no-index"
+        )
+        assert "for distribution in $FIRST_PARTY_DISTRIBUTIONS" in installed_run
+        assert '"${distribution}==${EXPECTED_VERSION}"' in installed_run
+        assert all(
+            flag in installed_run for flag in ("--no-index", "--find-links dist/", "--no-deps")
+        )
+        assert "adopt-cli\n" not in installed_run
+
+        publish = jobs["publish"]
+        publish_condition = (
+            "${{ github.event_name == 'workflow_dispatch' && inputs.publish == true && "
+            "github.ref == format('refs/tags/{0}', needs.build.outputs.tag) }}"
+        )
+        assert publish["if"] == publish_condition
+        publish_downloads = [
+            step for step in publish["steps"] if "download-artifact" in step.get("uses", "")
+        ]
+        assert len(publish_downloads) == 1
+        assert publish_downloads[0]["with"] == {"name": "pypi-dist", "path": "dist/"}
+        assert "release-bundle" not in str(publish)
+
+        supply_runs = "\n".join(str(step.get("run", "")) for step in jobs["supply-chain"]["steps"])
+        assert '--certificate-identity "$CERTIFICATE_IDENTITY"' in supply_runs
+        assert '--certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER"' in supply_runs
+        assert "identity-regexp" not in supply_runs and "issuer-regexp" not in supply_runs
+
+        github_release = jobs["github-release"]
+        assert github_release["if"] == publish_condition
+        assert github_release["env"]["GH_REPO"] == "${{ github.repository }}"
+        release_verification = next(
+            step
+            for step in github_release["steps"]
+            if step.get("name") == "Verify downloaded release assets"
+        )
+        release_verification_run = str(release_verification["run"])
+        assert 'gh attestation verify "$artefact"' in release_verification_run
+        assert "--bundle dist/provenance.intoto.jsonl" in release_verification_run
+        assert "--limit 100" in release_verification_run
+        assert '--repo "$GITHUB_REPOSITORY"' in release_verification_run
+        assert '--cert-identity "$CERTIFICATE_IDENTITY"' in release_verification_run
+        assert '--cert-oidc-issuer "$CERTIFICATE_OIDC_ISSUER"' in release_verification_run
+        release_run = "\n".join(str(step.get("run", "")) for step in github_release["steps"])
+        assert "gh release create" in release_run and "--verify-tag" in release_run
+
+
+@pytest.mark.unit
+class TestReleaseContext:
+    """Release routing fails before any publication job receives credentials."""
+
+    def test_every_workspace_package_must_share_one_version(self, tmp_path: Path) -> None:
+        packages = tmp_path / "packages"
+        for name in sorted(release_context.CANONICAL_DISTRIBUTIONS):
+            version = "0.3.1" if name == "adopt-cli" else "0.3.0"
+            project = packages / name / "pyproject.toml"
+            project.parent.mkdir(parents=True)
+            project.write_text(
+                f'[project]\nname = "{name}"\nversion = "{version}"\n', encoding="utf-8"
+            )
+
+        with pytest.raises(ValueError, match="not lockstep"):
+            release_context.resolve_context(tmp_path)
+
+    @pytest.mark.parametrize(
+        ("event_name", "git_ref", "publish", "expected"),
+        [
+            (
+                "push",
+                "refs/tags/v0.3.1",
+                False,
+                ["tag v0.3.1 does not match workspace version 0.3.0; expected v0.3.0"],
+            ),
+            (
+                "push",
+                "refs/tags/v0.3.0",
+                True,
+                ["publish=true is permitted only on a manual workflow dispatch"],
+            ),
+            (
+                "workflow_dispatch",
+                "refs/heads/main",
+                True,
+                ["publish=true requires ref refs/tags/v0.3.0; received refs/heads/main"],
+            ),
+            (
+                "workflow_dispatch",
+                "refs/tags/v0.3.1",
+                True,
+                [
+                    "tag v0.3.1 does not match workspace version 0.3.0; expected v0.3.0",
+                    "publish=true requires ref refs/tags/v0.3.0; received refs/tags/v0.3.1",
+                ],
+            ),
+        ],
+    )
+    def test_only_a_manual_dispatch_on_the_exact_tag_can_publish(
+        self, event_name: str, git_ref: str, publish: bool, expected: list[str]
+    ) -> None:
+        context = release_context.Context(version="0.3.0", tag="v0.3.0", distribution_count=15)
+
+        violations = release_context.validate_route(
+            context, event_name=event_name, git_ref=git_ref, publish=publish
+        )
+
+        assert violations == expected
+
+    @pytest.mark.parametrize(
+        ("event_name", "git_ref", "publish"),
+        [
+            ("push", "refs/tags/v0.3.0", False),
+            ("workflow_dispatch", "refs/heads/main", False),
+            ("workflow_dispatch", "refs/tags/v0.3.0", False),
+            ("workflow_dispatch", "refs/tags/v0.3.0", True),
+        ],
+    )
+    def test_expected_diagnostic_and_publication_routes_are_allowed(
+        self, event_name: str, git_ref: str, publish: bool
+    ) -> None:
+        """The fail-closed route check must not make the intended release impossible."""
+        context = release_context.Context(version="0.3.0", tag="v0.3.0", distribution_count=15)
+
+        assert (
+            release_context.validate_route(
+                context, event_name=event_name, git_ref=git_ref, publish=publish
+            )
+            == []
+        )
 
 
 @pytest.mark.unit

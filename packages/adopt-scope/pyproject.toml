@@ -1,6 +1,6 @@
 [project]
 name = "adopt-scope"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "The firm-engagement-system-environment hierarchy, slugs, lifecycle events."
 requires-python = ">=3.12"
 # Storage is reached through the `ScopeRecords` port in `records.py`, never

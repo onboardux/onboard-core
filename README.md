@@ -1,89 +1,90 @@
 # `adopt-core`
 
-**The shared substrate for the Adoption-Phase Platform.** Apache-2.0.
+The Apache-2.0, local-first substrate for the Adoption-Phase Platform. `adopt`
+maps and initializes an engagement, maintains a portable SQLite knowledge store,
+and exports that knowledge without requiring an operated service.
 
-A run-where-the-code-is setup tool. Local-first, offline by default, **zero
-telemetry — permanently, with no opt-in switch to add later.**
+The CLI is offline by default and has no telemetry switch. Network access is an
+explicit per-invocation choice, and client content is structurally excluded from
+logs.
 
-> **Status: Build 0, sprint S0 complete.** Two repositories, sixteen packages,
-> every CI gate wired and proven by a planted violation — and no product code
-> yet. The schema arrives in S1. That order is deliberate: a gate added after
-> the code it guards starts life with exemptions.
+> **Status:** `0.3.0` release candidate. The implementation and release
+> machinery are complete enough for strict public validation, but no `0.3.0`
+> tag or PyPI release exists yet. See the repository's release and security
+> pages for published artifacts; do not treat a workflow artifact as a release.
 
-## What is here today
+## What is included
 
-| Package | State |
+The uv workspace contains 15 publishable packages:
+
+| Area | Packages |
 |---|---|
-| `adopt-const` | **Complete.** 41 tunables, one home, zero dependencies. |
-| `adopt-obs` | **Complete.** Structured logging, the error registry, prefixed ULIDs, the field deny-list, the injectable clock. |
-| `adopt-cli` | `adopt version`, `adopt doctor`. Config resolution with source reporting. |
-| everything else | Declared, importable, empty. Each `__init__` states which sprint fills it and which invariants it will carry. |
+| CLI and workflow | `adopt-cli`, `adopt-workflow` |
+| Store and schema | `adopt-store`, `adopt-schema`, `adopt-model`, `adopt-identity`, `adopt-scope` |
+| Analysis | `adopt-detect`, `adopt-coverage`, `adopt-freshness`, `adopt-policy`, `adopt-agent` |
+| Portability and operations | `adopt-export`, `adopt-obs`, `adopt-const` |
+
+The command surface includes `init`, `detect`, `boundary`, store migration and
+inspection, identity parsing, coverage and freshness evaluation, export/import,
+policy validation, adapter checks, `doctor`, and release provenance reporting.
 
 ## Quick start
 
+Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.
+
 ```sh
 uv sync --all-packages
-uv run adopt doctor --json     # every config key with its resolved value and source
+uv run adopt --help
+uv run adopt doctor --json
 uv run adopt version --json
 ```
 
-## The gates, and what each one exists to stop
+Development checkouts intentionally report `null` for `sbom_sha256` and
+`build_id`. A signed release wheel or binary embeds those immutable build facts.
 
-Run them exactly as CI does:
+## Validate a checkout
 
 ```sh
-uv run ruff check . && uv run ruff format --check .
-uv run mypy --strict packages/ scripts/ tools/
-uv run lint-imports --config importlinter.ini      # all twelve import contracts
-uv run python scripts/constants_sync.py --check
-uv run python scripts/error_registry_sync.py --check
-uv run python scripts/licence_gate.py --self-test  # proves the gate still rejects
+uv lock --check
+uv sync --frozen --all-packages
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy --strict packages/ scripts/ tools/ bench/
+uv run lint-imports --config importlinter.ini
+uv run pytest
 uv run python scripts/licence_gate.py --check
-uv run python scripts/ci_ratchet.py --budget unit -- uv run pytest -m unit
+uv run python scripts/packaged_artifact.py --check
 ```
 
-| Gate | Stops |
-|---|---|
-| `constants-sync` | A tunable inlined as a literal, a value drifting from its documented table, or one name declared in both constants modules. |
-| `error-registry-sync` | A documented error code with no implementation, or an undocumented code a client can receive. Checked in both directions. |
-| `licence-gate` | Copyleft linked into the distribution, a dependency denied by name, or a verification record missing any of its seven fields. Re-runs weekly, because dependencies relicense between our commits. |
-| `lint-imports` | All twelve import contracts, including the four that are source rules rather than graph rules — no `CREATE TABLE` outside migrations, no `UPDATE` on a `*_revision` table, no coverage-cache write outside `adopt_coverage`, no impurity in a `@workflow` body. |
-| `ci-ratchet` | A suite that grows past its runtime budget. A green suite over budget still fails. |
+Two maintainer-only consistency jobs compare this repository with private design
+and control-plane repositories. They are skipped for forks and are not required
+to build, test, or use `adopt-core`; all self-contained product gates continue to
+run on public contributions.
 
-Two constants-sync waivers are visible in every run by design: a number that
-genuinely differs from a tunable it happens to equal is waived inline with a
-reason, and the waiver is **reported**, never hidden.
+## Design invariants
 
-## Two repositories, and why
+- Tunables live in `adopt_const`; application code does not duplicate them as
+  literals.
+- Store and wire evolution is schema-first and additive-only from `0.3.0`.
+- Knowledge, bindings, identities, and probe definitions use append-only
+  revisions.
+- Offline mode opens no socket except a configured local model endpoint.
+- Stable structured events replace free-text logging, and deny-listed content
+  fields are dropped at the sink.
+- Every distributed dependency is licence-verified. The in-binary policy is
+  permissive-only.
+- A valid release includes 15 wheels, 15 source distributions, three onefile
+  binaries, a CycloneDX SBOM, SLSA provenance, and keyless cosign evidence.
 
-`adopt-core` is Apache-2.0 and public. `adopt-plane` — the Postgres realization,
-scope enforcement and the DBOS backend — is closed and private. They are
-separate repositories, not directories, and `adopt-plane` pins a *released*
-`adopt-core` rather than vendoring it.
+## Repository boundary
 
-The boundary is treated as irreversible because it is: **Apache-2.0 cannot be
-un-published.** A file pushed here is permissively licensed to the world from
-that moment, permanently, and no later commit withdraws it. Placement is decided
-before a file is created, not at review.
+Everything committed here is offered under Apache-2.0. The operated control
+plane is a separate private repository and is never vendored here. Contributions
+must not contain control-plane implementation, client material, credentials, or
+other non-redistributable content.
 
-## Conventions worth knowing before the first pull request
+## Licence and security
 
-- **Tunables live in `adopt_const` and nowhere else.** No number in prose, a
-  docstring, a prompt, or a non-test source literal.
-- **Schema-first, additive-only.** Every store or wire change starts in
-  `schema/canonical.yaml` and the contracts document, in the same change. From
-  the `0.3.0` tag, additive-only binds forever.
-- **Nothing is updated in place.** Knowledge, bindings, identities and probe
-  definitions are append-only revisions.
-- **There is no free-text log parameter.** Events are stable snake_case names
-  with structured fields, which is what makes "no client content in a log line"
-  a structural property rather than a habit.
-- **Every test passes the defect sentence** — *fails when ___ breaks; matters
-  because ___; no other instrument catches it because ___* — before it is
-  written. Test count and line coverage are banned as targets.
-
-## Licence
-
-Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
-Security posture and reporting: [`SECURITY.md`](SECURITY.md).
-Dependency records: [`licence-verifications.md`](licence-verifications.md).
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). Security reporting and
+release verification are documented in [SECURITY.md](SECURITY.md); dependency
+evidence is in [licence-verifications.md](licence-verifications.md).

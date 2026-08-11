@@ -1,6 +1,6 @@
 [project]
 name = "adopt-identity"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "The identity URI: build, parse, validate."
 requires-python = ">=3.12"
 # `adopt-scope` is a dependency because a URI is built from resolved scope

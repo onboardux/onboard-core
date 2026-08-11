@@ -1,6 +1,6 @@
 [project]
 name = "adopt-schema"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "Manifest loader, four emitters, the additive-only linter, and migrations."
 requires-python = ">=3.12"
 # `sqlite3` is deliberately absent: the `no-raw-sqlite` import contract names

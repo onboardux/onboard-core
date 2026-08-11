@@ -9,18 +9,13 @@ useless for the thing it exists for -- tying a binary in the field back to the
 artifact that was signed.
 """
 
-import os
-from collections.abc import Mapping
 from importlib import metadata
 from typing import Any, Final
 
+from adopt_cli._build_info import BUILD_ID, SBOM_SHA256
 from adopt_const import EXPORT_VERSION, SCHEMA_VERSION
 
 __all__ = ["build_payload"]
-
-#: Set by the release workflow, absent everywhere else.
-SBOM_DIGEST_ENV: Final[str] = "ADOPT_BUILD_SBOM_SHA256"
-BUILD_ID_ENV: Final[str] = "ADOPT_BUILD_ID"
 
 _DISTRIBUTION: Final[str] = "adopt-cli"
 
@@ -32,12 +27,11 @@ def _package_version() -> str:
         return "0.0.0+unknown"
 
 
-def build_payload(env: Mapping[str, str] | None = None) -> dict[str, Any]:
-    source = os.environ if env is None else env
+def build_payload() -> dict[str, Any]:
     return {
         "version": _package_version(),
         "schema_version": SCHEMA_VERSION,
         "export_version": EXPORT_VERSION,
-        "sbom_sha256": source.get(SBOM_DIGEST_ENV) or None,
-        "build_id": source.get(BUILD_ID_ENV) or None,
+        "sbom_sha256": SBOM_SHA256,
+        "build_id": BUILD_ID,
     }

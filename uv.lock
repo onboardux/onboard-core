@@ -39,7 +39,7 @@ dev = [
 
 [[package]]
 name = "adopt-agent"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-agent" }
 dependencies = [
     { name = "adopt-const" },
@@ -58,7 +58,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-cli"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-cli" }
 dependencies = [
     { name = "adopt-agent" },
@@ -99,12 +99,12 @@ requires-dist = [
 
 [[package]]
 name = "adopt-const"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-const" }
 
 [[package]]
 name = "adopt-coverage"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-coverage" }
 dependencies = [
     { name = "adopt-const" },
@@ -121,7 +121,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-detect"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-detect" }
 dependencies = [
     { name = "adopt-agent" },
@@ -144,7 +144,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-export"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-export" }
 dependencies = [
     { name = "adopt-const" },
@@ -163,7 +163,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-freshness"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-freshness" }
 dependencies = [
     { name = "adopt-const" },
@@ -180,7 +180,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-identity"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-identity" }
 dependencies = [
     { name = "adopt-const" },
@@ -199,7 +199,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-model"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-model" }
 dependencies = [
     { name = "pydantic" },
@@ -210,7 +210,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2,<3" }]
 
 [[package]]
 name = "adopt-obs"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-obs" }
 dependencies = [
     { name = "adopt-const" },
@@ -221,7 +221,7 @@ requires-dist = [{ name = "adopt-const", editable = "packages/adopt-const" }]
 
 [[package]]
 name = "adopt-policy"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-policy" }
 dependencies = [
     { name = "adopt-const" },
@@ -244,7 +244,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-schema"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-schema" }
 dependencies = [
     { name = "adopt-const" },
@@ -265,7 +265,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-scope"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-scope" }
 dependencies = [
     { name = "adopt-const" },
@@ -282,7 +282,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-store"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-store" }
 dependencies = [
     { name = "adopt-agent" },
@@ -309,7 +309,7 @@ requires-dist = [
 
 [[package]]
 name = "adopt-workflow"
-version = "0.3.0.dev0"
+version = "0.3.0"
 source = { editable = "packages/adopt-workflow" }
 dependencies = [
     { name = "adopt-const" },

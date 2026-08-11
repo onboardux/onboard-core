@@ -1,6 +1,6 @@
 [project]
 name = "adopt-policy"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "Capability-manifest validation, outbound-envelope validation, the signature interface. Implemented in S6."
 requires-python = ">=3.12"
 # `adopt-schema` is here for the reason implementation spec §4.10 already gives

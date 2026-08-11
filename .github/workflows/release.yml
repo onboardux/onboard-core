@@ -1,44 +1,15 @@
 name: release
 
-# WIRED, NOT PUBLISHING.
-#
-# Every step below runs against scripts that exist today. The two steps that put
-# bytes in front of a user -- the PyPI upload and the GitHub release -- are gated
-# on `inputs.publish`, which defaults to false and stays false until S9.
-#
-# Wiring it now rather than at S9 is deliberate. Supply-chain duties are the part
-# of a release most often discovered to be missing on the day of the release, and
-# a release missing an SBOM, provenance or a signature is not a release
-# (PRD F15.6, NFR N14). The machinery is proven months before it is needed.
-#
-# THE PACKER, decided at S9 (CR-51). The three single-file platform binaries are
-# built with **Nuitka (Apache-2.0)**, pinned inside an ephemeral build environment
-# so it never enters `uv.lock` -- the same isolation CR-49 chose for `pip-audit`,
-# and for the same reason: a build tool's ~4 transitive dependencies should not
-# each become a seven-field verification obligation (CR-54).
-#
-# **PyInstaller was rejected, and not on a technicality.** Its bootloader is
-# compiled into the shipped artefact, so it is `in-binary` by `03` §7.3's own
-# definition, and that mode is "permissive only. No copyleft, ever." The GPL-2.0
-# linking exception means the obligation never actually bites -- and CR-46 set
-# the precedent of refusing on the transitive licence rather than on whether an
-# obligation triggers, when it kept both official provider SDKs out over MPL-2.0
-# `certifi` and `tqdm`. Softening that here would widen the rule for every
-# future dependency, not just this one.
-#
-# !! THE PRIVATE DIAGNOSTIC HAS NOT YET PROVEN A RELEASE. !! Five dry runs
-# successively exposed missing package data, an editable-install metadata gap, a
-# onefile-only path-depth crash, a binary that exited 0 without invoking the CLI,
-# and finally GitHub's private-repository attestation boundary (CR-53 .. CR-57).
-# The fifth run proves all three binaries, licence verification and SBOM creation.
-# A private `publish=false` run may finish without remote provenance only to keep
-# exercising signatures/completeness; the final public dry run remains strict.
+# The private publish=false route is a diagnostic only: GitHub cannot persist
+# attestations for this user-owned private repository. Once adopt-core is public,
+# every route is strict. Publication is a separate manual dispatch on the exact
+# v<workspace-version> tag and is protected by the `release` environment.
 
 on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish the artefacts. Leave false until S9."
+        description: "Publish from the selected release tag"
         type: boolean
         default: false
   push:
@@ -46,52 +17,168 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  attestations: write
 
 jobs:
   build:
     name: build
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.context.outputs.version }}
+      tag: ${{ steps.context.outputs.tag }}
+      distribution_count: ${{ steps.context.outputs.distribution_count }}
+      distributions: ${{ steps.context.outputs.distributions }}
+      sbom_sha256: ${{ steps.facts.outputs.sbom_sha256 }}
+      build_id: ${{ steps.facts.outputs.build_id }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
+          version: "0.9.5"
 
-      - run: uv sync --all-packages
+      - name: The committed lock is authoritative
+        run: |
+          set -euo pipefail
+          uv lock --check
+          uv sync --frozen --all-packages --no-dev
 
-      - name: Build the wheels
+      - name: Validate the lockstep version, tag and publication route
+        id: context
+        env:
+          PUBLISH_REQUESTED: ${{ inputs.publish || false }}
+        run: >-
+          uv run --frozen --no-dev python -m scripts.release_context
+          --event-name "${{ github.event_name }}"
+          --ref "${{ github.ref }}"
+          --publish "$PUBLISH_REQUESTED"
+          --github-output "$GITHUB_OUTPUT"
+
+      # This constraints file makes every binary job install the exact runtime
+      # closure used to construct the SBOM, on all three operating systems.
+      - name: Freeze the runtime closure
+        run: >-
+          uv export --frozen --all-packages --no-dev --no-emit-workspace
+          --no-hashes --no-annotate --no-header
+          --output-file runtime-constraints.txt
+
+      # The release environment contains only the lock's runtime closure. The
+      # SBOM therefore describes what the wheels and binaries carry, not pytest,
+      # mypy or another development-only tool.
+      - name: CycloneDX SBOM
+        run: >-
+          uv run --frozen --no-dev python -m scripts.emit_sbom
+          --out dist/sbom.cdx.json
+          --name adopt-core
+          --version "${{ steps.context.outputs.version }}"
+
+      # Build facts are generated before any artifact. A runtime environment
+      # variable would disappear at process exit and leave an installed wheel
+      # reporting null, so the workflow stamps a tracked module in this
+      # ephemeral checkout and every later artifact receives the same bytes.
+      - name: Embed immutable build facts
+        id: facts
+        run: |
+          set -euo pipefail
+          build_id="github:${GITHUB_REPOSITORY}:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_SHA}"
+          uv run --frozen --no-dev python -m scripts.embed_build_info \
+            --sbom dist/sbom.cdx.json \
+            --build-id "$build_id"
+          sbom_sha256="$(sha256sum dist/sbom.cdx.json | cut -d ' ' -f 1)"
+          echo "sbom_sha256=$sbom_sha256" >> "$GITHUB_OUTPUT"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+
+      - name: Build all 15 Python distributions
         run: uv build --all-packages --out-dir dist/
 
-      # **The wheel that cannot create a store passes every test in the suite**,
-      # because the suite runs against an editable install where `parents[4]`
-      # still lands in the checkout (CR-53). Nothing in CI had ever installed a
-      # built wheel and used it, so `schema/` being absent from the artefact was
-      # invisible until a packed binary made it fatal at import.
-      #
-      # This installs the artefact into a clean environment -- no checkout on the
-      # path to fall back to -- and runs the two commands that must open a
-      # packaged file to answer. It is the wheel-side twin of the binaries smoke
-      # test, and it is the cheaper of the two: it needs no C toolchain and it
-      # fails in seconds.
-      - name: The installed wheel is self-contained
+      # Every source distribution and wheel is published together. Counting
+      # them here prevents a glob or a newly added package from silently
+      # producing a partial release artifact.
+      - name: Refuse a partial Python distribution set
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ steps.context.outputs.distribution_count }}"
+          wheels="$(find dist -maxdepth 1 -type f -name '*.whl' | wc -l)"
+          sdists="$(find dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)"
+          test "$wheels" -eq "$expected" || {
+            echo "::error::expected $expected wheels, found $wheels" >&2
+            exit 1
+          }
+          test "$sdists" -eq "$expected" || {
+            echo "::error::expected $expected source distributions, found $sdists" >&2
+            exit 1
+          }
+
+      - name: The installed wheel is self-contained and stamped
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.context.outputs.version }}
+          EXPECTED_DISTRIBUTION_COUNT: ${{ steps.context.outputs.distribution_count }}
+          FIRST_PARTY_DISTRIBUTIONS: ${{ steps.context.outputs.distributions }}
+          EXPECTED_SBOM_SHA256: ${{ steps.facts.outputs.sbom_sha256 }}
+          EXPECTED_BUILD_ID: ${{ steps.facts.outputs.build_id }}
         run: |
           set -euo pipefail
           work="$(mktemp -d)"
           uv venv "$work/venv"
-          uv pip install --python "$work/venv/bin/python" --find-links dist/ adopt-cli
-          cd "$work"          # nowhere near the checkout, so no fallback can hide a gap
-          "$work/venv/bin/adopt" version --json | grep -q '"schema_version": *3'
+          uv pip install \
+            --python "$work/venv/bin/python" \
+            --requirement runtime-constraints.txt
+          first_party=()
+          for distribution in $FIRST_PARTY_DISTRIBUTIONS; do
+            first_party+=("${distribution}==${EXPECTED_VERSION}")
+          done
+          test "${#first_party[@]}" -eq "$EXPECTED_DISTRIBUTION_COUNT"
+          uv pip install \
+            --python "$work/venv/bin/python" \
+            --no-index \
+            --find-links dist/ \
+            --no-deps \
+            "${first_party[@]}"
+          cd "$work"
+          version_json="$("$work/venv/bin/adopt" version --json)"
+          printf '%s\n' "$version_json"
+          VERSION_JSON="$version_json" "$work/venv/bin/python" - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["VERSION_JSON"])
+          expected = {
+              "version": os.environ["EXPECTED_VERSION"],
+              "schema_version": 3,
+              "export_version": 3,
+              "sbom_sha256": os.environ["EXPECTED_SBOM_SHA256"],
+              "build_id": os.environ["EXPECTED_BUILD_ID"],
+          }
+          assert payload == expected, (payload, expected)
+          PY
           "$work/venv/bin/adopt" detect "$work" --json > "$work/detect.json" || true
           grep -q '"scores"' "$work/detect.json"
           "$work/venv/bin/adopt" store migrate --store "$work/s.db" --json
-          "$work/venv/bin/adopt" store info --store "$work/s.db" --json | grep -q '"schema_version": *3'
+          "$work/venv/bin/adopt" store info --store "$work/s.db" --json \
+            | grep -q '"schema_version": *3'
 
-      - uses: actions/upload-artifact@v4
+      # PyPI accepts only Python distributions. This artifact must never contain
+      # the SBOM, binaries, signatures or provenance from release-bundle.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dist
-          path: dist/
+          name: pypi-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-sbom
+          path: dist/sbom.cdx.json
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtime-constraints
+          path: runtime-constraints.txt
+          if-no-files-found: error
 
   binaries:
     name: single-file binary (${{ matrix.os }})
@@ -108,83 +195,56 @@ jobs:
             artefact: adopt-windows-x86_64.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          name: dist
+          version: "0.9.5"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pypi-dist
           path: dist/
 
-      # **The binary is packed from the wheels we publish, not from the source
-      # tree** (CR-54). This job used to `uv sync --all-packages` and point
-      # Nuitka at `packages/adopt-cli/src/adopt_cli/main.py`, and that is an
-      # *editable* install: its `dist-info/RECORD` lists a single `.pth` shim and
-      # no `adopt_cli/` files at all. Two things follow, and the second is worse
-      # than the error that exposed it:
-      #
-      #   1. `--include-distribution-metadata=adopt-cli` failed outright --
-      #      *"including metadata for distribution 'adopt-cli' without including
-      #      related package 'adopt-cli'"*. Nuitka could not map the distribution
-      #      to a package, because nothing in the metadata names one, so it fell
-      #      back to the distribution name and looked for an importable
-      #      `adopt-cli`. There is no flag that fixes this; the install is the
-      #      problem.
-      #   2. `--include-package-data=adopt_schema` **could never have worked from
-      #      a checkout**, because `_assets/schema/` exists only inside a built
-      #      wheel. The packaging fix from CR-53 would have been silently absent
-      #      from every binary, and the smoke test would have caught it -- one
-      #      more round of a failure we had already diagnosed.
-      #
-      # Installing the artefact makes the binary a function of what we publish,
-      # which is what a supply chain requires anyway: the wheel is signed, and a
-      # binary compiled from a different tree is a second thing to trust.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: runtime-constraints
+          path: .
+
+      # Nuitka is deliberately isolated from uv.lock: it is a build tool, not a
+      # distributed dependency. The program itself is installed from the exact
+      # wheels and runtime constraints produced by the build job.
       - name: Install the published wheel into a clean environment
         shell: bash
+        env:
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+          EXPECTED_DISTRIBUTION_COUNT: ${{ needs.build.outputs.distribution_count }}
+          FIRST_PARTY_DISTRIBUTIONS: ${{ needs.build.outputs.distributions }}
         run: |
           set -euo pipefail
           uv venv build-env
           PY=build-env/bin/python
           [ -x "$PY" ] || PY=build-env/Scripts/python.exe
           echo "PY=$PY" >> "$GITHUB_ENV"
-          # Nuitka is installed *into this ephemeral environment* rather than
-          # run through `uvx`. The isolation CR-51 wanted is preserved -- it
-          # still never enters `uv.lock` -- but it must import the same packages
-          # it is compiling, which a separate tool environment cannot do.
-          # Pinned: this job produces a signed artefact, and the failure above
-          # was Nuitka-version-specific behaviour (CR-54).
-          uv pip install --python "$PY" --find-links dist/ adopt-cli nuitka==4.1.3
+          uv pip install --python "$PY" nuitka==4.1.3
+          uv pip install \
+            --python "$PY" \
+            --requirement runtime-constraints.txt
+          first_party=()
+          for distribution in $FIRST_PARTY_DISTRIBUTIONS; do
+            first_party+=("${distribution}==${EXPECTED_VERSION}")
+          done
+          test "${#first_party[@]}" -eq "$EXPECTED_DISTRIBUTION_COUNT"
+          uv pip install \
+            --python "$PY" \
+            --no-index \
+            --find-links dist/ \
+            --no-deps \
+            "${first_party[@]}"
 
-      # `--onefile` is the "single-file binary per platform" `03` §1.1 locks.
-      # `--assume-yes-for-downloads` keeps the job non-interactive; without it
-      # Nuitka blocks on a prompt for its C toolchain and the job times out
-      # rather than failing.
-      #
-      # **Nuitka ships no package data unless told, and the first run of this job
-      # proved it** (CR-53). It followed the import graph, compiled every module,
-      # and produced a binary that died on its first import: `adopt_agent.pricing`
-      # reads `prices.json` from beside itself at module scope. Three data sets
-      # have to be named, and they are named separately rather than by a wildcard
-      # so that a fourth is a build failure here rather than a `FileNotFoundError`
-      # in front of an operator:
-      #
-      #   * `adopt_agent`   -- `prices.json`, read at import.
-      #   * `adopt_detect`  -- `rules/*.yaml`, read lazily by `adopt detect`.
-      #   * `adopt_schema`  -- `_assets/schema/`, the manifest, the migrations and
-      #                        the annex DDL, placed there by `hatch_build.py`.
-      #
-      # `--include-distribution-metadata` is for `adopt version`: without it
-      # `importlib.metadata` finds nothing and the binary reports itself as
-      # `0.0.0+unknown`, which defeats the one job that command has -- tying an
-      # artefact in the field back to the one that was signed.
       - name: Pack
         shell: bash
         run: |
           set -euo pipefail
-          # The installed entry point, asked of the interpreter that will compile
-          # it. `adopt_cli/__init__.py` re-exports `main` as a *function*, so
-          # `adopt_cli.main.__file__` is an AttributeError -- `find_spec` asks
-          # about the module rather than about whatever the name is bound to.
           MAIN="$("$PY" -c 'import importlib.util as u; print(u.find_spec("adopt_cli.main").origin)')"
           echo "packing $MAIN"
           "$PY" -m nuitka \
@@ -198,18 +258,48 @@ jobs:
             --output-filename=${{ matrix.artefact }} \
             "$MAIN"
 
-      # **`version --json` alone is not a smoke test of a packed binary**, and
-      # CR-53 is the proof. It reads two constants and touches no data file, so
-      # it passes against a binary carrying none -- it only failed above because
-      # `prices.json` happens to be read at *import* time. Everything read
-      # lazily -- the detect rules, the migrations, the annex DDL -- stayed
-      # invisible to it. That is this build's recurring failure exactly: a check
-      # that passes by never reaching the thing it is meant to judge.
-      #
-      # So the smoke test runs one command per packaged data set, and each is
-      # chosen because it *must* open the file to answer at all.
-      - name: It runs, and reports schema version 3
+      - name: Enforce the governed binary size ceiling
         shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$PWD/packed/${{ matrix.artefact }}"
+          "$PY" - "$BIN" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import sys
+          from pathlib import Path
+
+          from adopt_const import BINARY_MAX_MB
+
+          bytes_per_mib = 1024 * 1024
+          binary = Path(sys.argv[1])
+          summary_path = Path(sys.argv[2])
+          size_bytes = binary.stat().st_size
+          limit_bytes = BINARY_MAX_MB * bytes_per_mib
+          result = "PASS" if size_bytes <= limit_bytes else "FAIL"
+          message = (
+              f"{binary.name}: {size_bytes} exact bytes "
+              f"({size_bytes / bytes_per_mib:.2f} MiB); "
+              f"limit {limit_bytes} bytes ({BINARY_MAX_MB} MiB): {result}"
+          )
+          print(message)
+          with summary_path.open("a", encoding="utf-8", newline="\n") as summary:
+              summary.write("### Single-file binary size\n\n")
+              summary.write("| Artifact | Exact bytes | MiB | Limit bytes | Result |\n")
+              summary.write("|---|---:|---:|---:|---|\n")
+              summary.write(
+                  f"| `{binary.name}` | {size_bytes} | "
+                  f"{size_bytes / bytes_per_mib:.2f} | {limit_bytes} | {result} |\n"
+              )
+          if size_bytes > limit_bytes:
+              print(f"::error::{message}", file=sys.stderr)
+              raise SystemExit(1)
+          PY
+
+      - name: It runs and reports the exact release build
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+          EXPECTED_SBOM_SHA256: ${{ needs.build.outputs.sbom_sha256 }}
+          EXPECTED_BUILD_ID: ${{ needs.build.outputs.build_id }}
         run: |
           set -euo pipefail
           BIN="$PWD/packed/${{ matrix.artefact }}"
@@ -218,101 +308,111 @@ jobs:
             echo "::error::packed binary version command exited $status" >&2
             exit "$status"
           }
-          if [ -z "$version_json" ]; then
+          test -n "$version_json" || {
             echo "::error::packed binary exited 0 but produced no version JSON" >&2
             exit 1
-          fi
+          }
           printf '%s\n' "$version_json"
-          printf '%s\n' "$version_json" | grep -q '"schema_version": *3' || {
-            echo "::error::packed binary did not report schema_version 3" >&2
-            exit 1
-          }
-          # Not `0.0.0+unknown`: the binary must know which artefact it is.
-          printf '%s\n' "$version_json" | grep -q '"version": *"[0-9]' || {
-            echo "::error::packed binary did not report a release version" >&2
-            exit 1
-          }
+          VERSION_JSON="$version_json" "$PY" - <<'PY'
+          import json
+          import os
 
-      - name: It carries its data -- detect rules, migrations, annex DDL
+          payload = json.loads(os.environ["VERSION_JSON"])
+          expected = {
+              "version": os.environ["EXPECTED_VERSION"],
+              "schema_version": 3,
+              "export_version": 3,
+              "sbom_sha256": os.environ["EXPECTED_SBOM_SHA256"],
+              "build_id": os.environ["EXPECTED_BUILD_ID"],
+          }
+          assert payload == expected, (payload, expected)
+          PY
+
+      - name: It carries its detect rules, migrations and annex DDL
         shell: bash
         run: |
           set -euo pipefail
           BIN="$PWD/packed/${{ matrix.artefact }}"
           work="$(mktemp -d)"
-
-          # adopt_detect/rules/*.yaml. `detect` exits 2 on an empty directory by
-          # design -- a proposal is never a decision -- so the assertion is on
-          # the payload, which only a loaded rule set can produce.
           "$BIN" detect "$work" --json > "$work/detect.json" || true
           grep -q '"scores"' "$work/detect.json"
-
-          # adopt_schema/_assets: the manifest and the sqlite migration. This is
-          # the one that was broken from a wheel as well as from a binary, and
-          # it failed as `no such table: firm` rather than as a missing file.
           "$BIN" store migrate --store "$work/s.db" --json
-          "$BIN" store info --store "$work/s.db" --json | grep -q '"schema_version": *3'
+          "$BIN" store info --store "$work/s.db" --json \
+            | grep -q '"schema_version": *3'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: binary-${{ matrix.artefact }}
           path: packed/${{ matrix.artefact }}
+          if-no-files-found: error
 
   supply-chain:
     name: SBOM, provenance, signatures
     needs: [build, binaries]
     runs-on: ubuntu-24.04
-    # GitHub Free/Pro/Team cannot persist attestations for a private repository.
-    # This exception is deliberately narrower than "publish=false": a public
-    # dry run can and must exercise provenance, as must every tag and every real
-    # publication. One value drives both the action and the completeness check
-    # so those two halves cannot acquire different definitions of "dry run".
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       ALLOW_MISSING_PROVENANCE: ${{ github.event_name == 'workflow_dispatch' && github.event.repository.private == true && inputs.publish == false }}
+      GH_TOKEN: ${{ github.token }}
+      CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+      CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync --all-packages
-
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          name: dist
+          version: "0.9.5"
+      - run: |
+          uv lock --check
+          uv sync --frozen --all-packages --no-dev
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pypi-dist
           path: dist/
 
-      # Every binary lands beside the wheel, so the SBOM, the provenance
-      # attestation, the signatures and the BINARY_MAX_MB assertion all cover
-      # them without a second code path.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-sbom
+          path: dist/
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: binary-*
           path: dist/
           merge-multiple: true
 
       - name: Licence gate at release strictness
-        # Blocks on any dependency still `pending-audit`, any lapsed
-        # re-verification date, and any installed distribution with no row.
-        # This is the gate that currently, correctly, refuses to ship.
-        run: uv run python scripts/licence_gate.py --check --strict-verify
-
-      - name: CycloneDX SBOM
-        run: >-
-          uv run python -m scripts.emit_sbom
-          --out dist/sbom.cdx.json
-          --name adopt-core
-          --version ${{ github.ref_name }}
+        run: uv run --frozen --no-dev python scripts/licence_gate.py --check --strict-verify
 
       - name: SLSA provenance
         id: provenance
         if: ${{ env.ALLOW_MISSING_PROVENANCE != 'true' }}
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "dist/*"
 
-      # `bundle-path` is under RUNNER_TEMP. Persisting the attestation in
-      # GitHub's API does not put evidence in the artefact directory that the
-      # completeness gate and release-bundle upload inspect.
       - name: Add SLSA provenance to the release bundle
         if: ${{ steps.provenance.outcome == 'success' }}
         run: cp "${{ steps.provenance.outputs.bundle-path }}" dist/provenance.intoto.jsonl
+
+      - name: Verify provenance covers every exact payload
+        if: ${{ env.ALLOW_MISSING_PROVENANCE != 'true' }}
+        run: |
+          set -euo pipefail
+          for artefact in dist/*; do
+            [ -f "$artefact" ] || continue
+            case "$artefact" in *.sig|*.pem|*.intoto.jsonl) continue;; esac
+            gh attestation verify "$artefact" \
+              --bundle dist/provenance.intoto.jsonl \
+              --limit 100 \
+              --repo "$GITHUB_REPOSITORY" \
+              --cert-identity "$CERTIFICATE_IDENTITY" \
+              --cert-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
+              --predicate-type https://slsa.dev/provenance/v1
+          done
 
       - name: Explain private dry-run provenance boundary
         if: ${{ env.ALLOW_MISSING_PROVENANCE == 'true' }}
@@ -322,9 +422,11 @@ jobs:
           provenance; make the repository public before the final strict release dry run."
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+        with:
+          cosign-release: "v2.6.3"
 
-      - name: Sign every artefact
+      - name: Sign every payload
         run: |
           set -euo pipefail
           for artefact in dist/*; do
@@ -336,50 +438,105 @@ jobs:
               "$artefact"
           done
 
+      - name: Verify every signature against this exact workflow
+        run: |
+          set -euo pipefail
+          for artefact in dist/*; do
+            [ -f "$artefact" ] || continue
+            case "$artefact" in *.sig|*.pem|*.intoto.jsonl) continue;; esac
+            cosign verify-blob \
+              --certificate "$artefact.pem" \
+              --signature "$artefact.sig" \
+              --certificate-identity "$CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
+              "$artefact"
+          done
+
       - name: Refuse to proceed unless the release is complete
-        # SBOM present and non-empty, a signature beside every artefact,
-        # provenance attested, and nothing over BINARY_MAX_MB. The flag expands
-        # only for the private, manually dispatched, non-publishing diagnostic
-        # defined once at job scope; every releasable path remains strict.
         run: >-
-          uv run python -m scripts.assert_release_complete --dir dist/
+          uv run --frozen --no-dev python -m scripts.assert_release_complete
+          --dir dist/
+          --version "${{ needs.build.outputs.version }}"
+          --python-distributions "${{ needs.build.outputs.distribution_count }}"
           ${{ env.ALLOW_MISSING_PROVENANCE == 'true' && '--allow-missing-provenance' || '' }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-bundle
           path: dist/
+          if-no-files-found: error
 
   publish:
-    name: publish (disabled until S9)
-    needs: supply-chain
-    if: ${{ inputs.publish == true }}
+    name: publish PyPI
+    needs: [build, supply-chain]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true && github.ref == format('refs/tags/{0}', needs.build.outputs.tag) }}
     runs-on: ubuntu-24.04
     environment: release
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pypi-dist
+          path: dist/
+
+      - name: Publish only wheels and source distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/
+          skip-existing: false
+
+  github-release:
+    name: publish GitHub Release
+    needs: [build, supply-chain, publish]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true && github.ref == format('refs/tags/{0}', needs.build.outputs.tag) }}
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      # This job deliberately does not check out the repository. Tell `gh`
+      # which remote to use instead of relying on a nonexistent local git remote.
+      GH_REPO: ${{ github.repository }}
+      CERTIFICATE_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+      CERTIFICATE_OIDC_ISSUER: https://token.actions.githubusercontent.com
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-bundle
           path: dist/
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+        with:
+          cosign-release: "v2.6.3"
 
-      - name: Verify every signature before publishing anything
+      - name: Verify downloaded release assets
         run: |
           set -euo pipefail
           for artefact in dist/*; do
+            [ -f "$artefact" ] || continue
             case "$artefact" in *.sig|*.pem|*.intoto.jsonl) continue;; esac
             cosign verify-blob \
               --certificate "$artefact.pem" \
               --signature "$artefact.sig" \
-              --certificate-identity-regexp '.*' \
-              --certificate-oidc-issuer-regexp '.*' \
+              --certificate-identity "$CERTIFICATE_IDENTITY" \
+              --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
               "$artefact"
+            gh attestation verify "$artefact" \
+              --bundle dist/provenance.intoto.jsonl \
+              --limit 100 \
+              --repo "$GITHUB_REPOSITORY" \
+              --cert-identity "$CERTIFICATE_IDENTITY" \
+              --cert-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
+              --predicate-type https://slsa.dev/provenance/v1
           done
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist/
-          skip-existing: false
+      - name: Create the release from the existing tag
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --verify-tag
+          --generate-notes
+          --title "adopt-core ${GITHUB_REF_NAME#v}"

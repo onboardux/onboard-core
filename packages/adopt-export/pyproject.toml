@@ -1,6 +1,6 @@
 [project]
 name = "adopt-export"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "Export bundle writer and reader; the byte-stable round trip."
 requires-python = ">=3.12"
 # `adopt-store` is deliberately **absent**, exactly as it is for `adopt-coverage`

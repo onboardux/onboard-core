@@ -20,10 +20,10 @@ Attribution note
 --------------------------------------------------------------------------------
 
 The copyright holder is recorded here as "The Adopt Authors" pending the legal
-entity name. This must be settled before the 0.3.0 tag publishes, on the same
-gate as handoff-index CR-01 (the `Adopt` codename), because both are baked into
-published package metadata and cannot be changed retroactively for a release
-that has already left the machine.
+entity name. The owner must settle that attribution before the 0.3.0 tag,
+because published package metadata cannot be changed retroactively for a
+release that has already left the machine. The product name itself is settled:
+handoff-index CR-50 keeps `Adopt` distinct from the `onboard` URI namespace.
 
 --------------------------------------------------------------------------------
 Third-party dependencies

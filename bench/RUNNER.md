@@ -1,11 +1,12 @@
-# Reference runner — the hardware every NFR number means
+# Reference runner — the hardware every performance number means
 
 **Status: private-runner capture retained; public release capture pending (CR-57,
 2026-08-11).** The figures below are what the private repository's runner reported
 about itself, captured by `.github/workflows/bench.yml` and recorded in
 `bench/RATIFICATION.md`. They remain truthful history, but Q6 is reopened because
-`adopt-core` becomes public before the final strict dry run. Rule 3 invalidates
-every Q4 ratification when that transition changes the runner class.
+`adopt-core` becomes public before the final strict dry run. CR-57 requires a
+fresh public evidence set for all twelve Q4 values; seven of those values are
+owned by this benchmark runner and five are owned by other workflows.
 
 A performance number without a machine attached is not a requirement, it is an
 anecdote. Every constant in implementation spec §2.3 — `SCHEMA_CREATE_P95_SECONDS`,
@@ -40,9 +41,10 @@ the one that runs them.
 > and becomes public before the final strict `0.3.0` dry run (`01` §9, CR-57).
 >
 > **The visibility transition changes the reference machine**, and rule 3 below
-> invalidates every ratified constant at once. After the repository is public,
-> capture what the runner actually reports and re-ratify all twelve before the
-> tag. Do not pre-fill this file from GitHub's advertised 4-core / 16-GB class;
+> invalidates every runner-dependent performance ratification. After the
+> repository is public, capture what the runner actually reports and collect
+> fresh evidence for all twelve Q4 values before the tag. Do not pre-fill this
+> file from GitHub's advertised 4-core / 16-GB class;
 > the first private capture already proved why published specifications are not
 > evidence. The connection between a repository setting and a performance gate
 > is recorded here because it is invisible from either end.
@@ -59,8 +61,8 @@ A benchmark green on a bigger machine tells us nothing about the constant.
    optimistic. Changing the number is a decision with a date and an owner,
    recorded in `bench/RATIFICATION.md` at S9.
 3. **The runner class changes only by a recorded decision.** Changing it
-   invalidates every ratified constant simultaneously, so it is a re-ratification
-   of all twelve, not a CI tweak.
+   invalidates every runner-dependent ratification simultaneously; it is a
+   measurement event, not a CI tweak.
 4. **The benchmark job runs nightly and at release**, not on every pull request.
    Per-PR benchmarking on shared runners measures the neighbours.
 
@@ -74,6 +76,11 @@ after visibility changes, append the actual public capture to
 PRD Q4 is open for all twelve constants. The two readings below remain useful
 history, but rule 3 prevents them from being release ratifications after the
 runner-class transition:
+
+`bench.all` supplies seven of those readings. Conformance duration, unit/PR CI
+duration, the coverage floor, and binary size come from their owning workflows;
+they must be linked in the same ratification record rather than attributed to
+this benchmark job.
 
 | Measurement | p95 | Budget |
 |---|---|---|

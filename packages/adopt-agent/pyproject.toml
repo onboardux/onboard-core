@@ -1,6 +1,6 @@
 [project]
 name = "adopt-agent"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "The single model seam: budget, tracing, idempotency, adapters. Implemented in S7."
 requires-python = ">=3.12"
 # `no-provider-sdk` import contract: only `adopt_agent.adapters.*` may import a

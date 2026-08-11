@@ -1,6 +1,6 @@
 [project]
 name = "adopt-detect"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "Archetype detection, tier negotiation, the observability boundary. Implemented in S6."
 requires-python = ">=3.12"
 # `adopt-store` is deliberately **absent**. This package declares its own storage

@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Bring a fresh Codespace to the point where every S1 command runs.
+# Bring a fresh public clone to the point where every self-contained gate runs.
 #
-# The two-repository rule is preserved exactly: `adopt-core` and `adopt-plane`
-# are separate git repositories checked out as **siblings** under /workspaces,
-# never a monorepo and never vendored into one another. The handoff pack is a
-# third sibling, because the constants table and the error registry live there
-# and both sync gates read them.
+# Maintainers may name private sibling repositories with ADOPT_PACK_REPO and
+# ADOPT_PLANE_REPO. They are optional: a public contributor does not need access
+# to either repository to build, test or use adopt-core.
 #
 # When a sibling repository is not named, this script says so and moves on
 # rather than failing the container build: a developer who cannot open a
@@ -52,7 +50,7 @@ uv sync --all-packages
 
 cat <<'EOF'
 
-Codespace ready. The S1 commands:
+Codespace ready. The self-contained validation commands:
 
   uv sync --all-packages
   uv run ruff check . && uv run ruff format --check .

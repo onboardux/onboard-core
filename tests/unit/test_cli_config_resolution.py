@@ -117,11 +117,32 @@ def test_doctor_reports_a_finding_when_an_adapter_has_no_model() -> None:
 
 
 @pytest.mark.unit
-def test_version_reports_null_build_provenance_outside_a_release_build() -> None:
+def test_version_build_facts_are_immutable_artifact_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Fabricating a build id would break the one thing the field is for:
-    tying a binary in the field back to the artifact that was signed."""
-    payload = version_command.build_payload(env={})
+    tying a binary in the field back to the artifact that was signed.
+
+    Runtime environment variables were the original defect: the release job set
+    them while compiling, but an installed wheel or later binary process did not
+    inherit them and therefore reported null. Only bytes stamped into the
+    artifact may supply these fields.
+    """
+    monkeypatch.setenv("ADOPT_BUILD_SBOM_SHA256", "runtime-must-not-win")
+    monkeypatch.setenv("ADOPT_BUILD_ID", "runtime-must-not-win")
+
+    payload = version_command.build_payload()
 
     assert payload["sbom_sha256"] is None
     assert payload["build_id"] is None
-    assert payload["schema_version"] == payload["export_version"]
+    assert payload["schema_version"] == 3
+    assert payload["export_version"] == 3
+
+    monkeypatch.setattr(version_command, "SBOM_SHA256", "a" * 64)
+    build_id = f"github:owner/repo:1:1:{'b' * 40}"
+    monkeypatch.setattr(version_command, "BUILD_ID", build_id)
+
+    stamped = version_command.build_payload()
+
+    assert stamped["sbom_sha256"] == "a" * 64
+    assert stamped["build_id"] == build_id

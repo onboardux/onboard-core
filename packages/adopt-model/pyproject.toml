@@ -1,6 +1,6 @@
 [project]
 name = "adopt-model"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "GENERATED typed models, one per table, enum and wire shape. Never hand-edited."
 requires-python = ">=3.12"
 # `generated-purity` import contract: this package may import only `pydantic`

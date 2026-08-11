@@ -1,6 +1,6 @@
 [project]
 name = "adopt-workflow"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "The Workflow facade, the in-process test backend, the purity checker."
 requires-python = ">=3.12"
 # `no-dbos` import contract: no DBOS symbol appears in this package. The only

@@ -1,4 +1,4 @@
-"""Every NFR harness, one run, one verdict. `05` S9 Final Output Validation item 3.
+"""Every dedicated performance harness, one run, one verdict.
 
     uv run python -m bench.all --assert
 
@@ -9,13 +9,10 @@ measurement: every number below is produced by the harness that owns it, and thi
 file adds no timing of its own. Two homes for one measurement is one of them
 drifting.
 
-**What it is for.** PRD Q4 ratifies twelve provisional NFR constants at S9 exit
-against `bench/` results on the reference runner. Ratifying them one command at a
-time invites a partial answer -- five green, two forgotten, and a table that
-records the five. This runs all of them and **reports every breach rather than
-stopping at the first**, because "which constants are wrong" is the question a
-ratification asks, and a runner that aborts on the first failure answers a
-different one.
+**What it is for.** Seven of PRD Q4's twelve constants have dedicated benchmark
+harnesses. Ratifying those one command at a time invites a partial answer --
+five green, two forgotten, and a table that records the five. This runs all
+seven and **reports every breach rather than stopping at the first**.
 
 **Asserts only on the reference runner.** Each harness already enforces
 `bench/RUNNER.md` rule 1 for itself; this runner does not second-guess them, it
@@ -24,9 +21,12 @@ runner every harness reports and returns 0, so this command exits 0 there too --
 **which is not evidence that a budget holds.** The nightly `perf` job is where
 the assertion lives.
 
-**Not run here:** nothing. `schema_bench`'s Postgres half degrades to SQLite-only
-when `ADOPT_BENCH_PG_DSN` is unset, which the harness itself reports; that is its
-own decision and this runner does not paper over it.
+**Not run here:** `BINARY_MAX_MB`, the hosted conformance duration, the unit/PR
+CI ratchets, and the coverage floor. Those are measured by the release,
+conformance, ordinary CI, and coverage workflows respectively. Calling those
+benchmark results would make this command claim evidence it never observed.
+`schema_bench`'s Postgres half degrades to SQLite-only when
+`ADOPT_BENCH_PG_DSN` is unset, which the harness itself reports.
 """
 
 import argparse
@@ -40,10 +40,8 @@ from bench import REFERENCE_ENV, is_reference_runner
 
 __all__ = ["HARNESSES", "Result", "main", "run_one"]
 
-#: Every harness, in the order the NFR table lists them (PRD §5). Adding an NFR
-#: means adding a row here; a harness this runner does not know about is a
-#: constant nobody ratifies, which is how `CLI_COLD_START_MS` reached S9 with no
-#: measurement at all.
+#: Every dedicated benchmark harness, in the order the NFR table lists them.
+#: NFRs measured by other workflows deliberately do not appear here.
 HARNESSES: Final[tuple[tuple[str, str], ...]] = (
     ("N1", "bench.schema_bench"),
     ("N3", "bench.store_bench"),
@@ -119,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         for result in breached:
             print(f"::error::bench.all: {result.nfr} ({result.module}) breached its budget")
         return 1
-    print(f"\nbench.all: OK -- all {len(results)} NFR budgets hold on the reference runner")
+    print(f"\nbench.all: OK -- all {len(results)} benchmark budgets hold on the reference runner")
     return 0
 
 

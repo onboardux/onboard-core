@@ -13,14 +13,7 @@
   "containerEnv": {
     // Offline is the product's default posture, and the development
     // environment should not be the one place that quietly is not.
-    "ADOPT_OFFLINE": "1",
-    // The constants table and the error registry live in the handoff pack,
-    // which is a separate repository. `postCreate.sh` clones it as a sibling
-    // when ADOPT_PACK_REPO names it, and both sync gates read it from here.
-    "ADOPT_PACK_REPO": "onboardux/adopt-pack",
-    "ADOPT_PLANE_REPO": "onboardux/adopt-plane",
-    "ADOPT_IMPL_SPEC_PATH": "/workspaces/pack/builds/build_0/03-implementation-spec-build0.md",
-    "ADOPT_CONTRACTS_PATH": "/workspaces/pack/builds/build_0/02-contracts-build0.md"
+    "ADOPT_OFFLINE": "1"
   },
 
   "onCreateCommand": "bash .devcontainer/install-tools.sh",
@@ -37,20 +30,6 @@
       "settings": {
         "python.defaultInterpreterPath": "/workspaces/adopt-core/.venv/bin/python",
         "files.eol": "\n"
-      }
-    },
-    "codespaces": {
-      // Codespaces only issues a token for another repository when it is named
-      // here. Read-only on both: this Codespace develops `adopt-core` and needs
-      // the other two to compare against, never to write to. The two-repository
-      // rule is a boundary, and a token is one of the ways boundaries leak.
-      "repositories": {
-        "onboardux/adopt-pack": {
-          "permissions": { "contents": "read" }
-        },
-        "onboardux/adopt-plane": {
-          "permissions": { "contents": "read" }
-        }
       }
     }
   },

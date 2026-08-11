@@ -1,6 +1,6 @@
 [project]
 name = "adopt-freshness"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "resolve_freshness: multi-level, load-bearing propagation, sensor override. Implemented in S4."
 requires-python = ">=3.12"
 # `adopt-const` for `SENSOR_MISSED_CADENCE_MULTIPLIER`, which is the one number

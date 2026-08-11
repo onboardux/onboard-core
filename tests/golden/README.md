@@ -38,11 +38,14 @@ At each release tag:
    proves the round trip for a schema nobody is shipping.
 2. **Extend `fixture.py` for every table added since the last tag.** The coverage
    test names them; do not weaken it to make the suite pass.
-3. **Cut the reference bundle:**
+3. **Cut the reference bundle with the downloaded, verified release binary.**
+   The walkthrough may prepare the populated store from source, but source is
+   not the subject of release evidence:
 
    ```sh
    uv run python scripts/s5_validation_walkthrough.py --store /tmp/g0-vN.db
-   ADOPT_STORE_PATH=/tmp/g0-vN.db uv run adopt export /tmp/golden-vN --json
+   RELEASE_ADOPT=/path/to/verified/adopt-linux-x86_64
+   ADOPT_STORE_PATH=/tmp/g0-vN.db "$RELEASE_ADOPT" export /tmp/golden-vN --json
    ```
 
 4. **Attach `/tmp/golden-vN` to the release** as the version's reference bundle,

@@ -217,24 +217,39 @@ seven values, not twelve.
 evidence** (`bench/RUNNER.md` rule 1 — Windows, OneDrive-synced tree, so I/O is
 not comparable):
 
-| NFR | Reading | Budget |
-|---|---|---|
-| N1 schema create | inside | 10 s |
-| N3 store open | inside | 200 ms |
-| N4 export | inside | 30 s |
-| N5 URI build | inside | 50,000/s |
-| N6 coverage recompute | inside | 20 s |
-| N7 freshness resolve | 0.41 ms | 25 ms |
-| CLI cold start | **962 ms p95** | **400 ms** |
+| NFR | Reading | Re-run 2026-08-11 | Budget |
+|---|---|---|---|
+| N1 schema create | inside | 2.6 s wall | 10 s |
+| N3 store open | inside | 6.1 s wall | 200 ms |
+| N4 export | inside | **14.84 s p95** | 30 s |
+| N5 URI build | inside | **32,971/s** ⚠ | 50,000/s |
+| N6 coverage recompute | inside | **6.49 s p95** | 20 s |
+| N7 freshness resolve | 0.41 ms | 0.34 ms p95 | 25 ms |
+| CLI cold start | **962 ms p95** | **1,276 ms p95** ⚠ | **400 ms** |
 
-**The CLI reading is over budget here and is not a breach.** The empty-interpreter
-floor on this machine is 138 ms p95 against roughly 20–30 ms on a Linux runner,
-so the measurement is dominated by process start rather than by our imports.
-`bench/cli_bench.py` reports that floor beside the figure for exactly this
-reason — `RUNNER.md` rule 2 says the first question on a failure is whether the
-*code* regressed, and one number cannot answer it. **This is the first constant
-to check on the first reference run**, and it is the only one whose developer
-reading is outside budget.
+**Two readings are outside budget on this machine, not one.** The earlier text
+said the CLI cold start was the only one; a full `bench.all` re-run on
+2026-08-11 put **N5 URI build at 32,971/s against a 50,000/s floor** as well, on
+its slowest shape (the multi-byte symbol path — the ASCII endpoint shape reports
+110,515/s). Both are reported, neither is asserted, and neither is a breach:
+`RUNNER.md` rule 1 means a developer laptop cannot breach anything.
+
+**Watch both on the first public reference run.** They fail differently and the
+distinction matters:
+
+* **CLI cold start** is dominated by process start. The empty-interpreter floor
+  on this machine is 276 ms p95 in this re-run (138 ms in the earlier one)
+  against roughly 20–30 ms on a Linux runner, so most of the number is the
+  machine. `bench/cli_bench.py` prints that floor beside the figure for exactly
+  this reason — `RUNNER.md` rule 2 asks first whether the *code* regressed, and
+  one number cannot answer it. An import profile taken the same day found no
+  module-scope I/O on the startup path: the cost is pydantic's first import
+  plus click/typer, which is the floor of what the CLI can be.
+* **N5 URI build** is pure CPU with no I/O, so a slow filesystem does not
+  explain it and the reference reading may land closer to this one than the
+  earlier *inside* would suggest. If it breaches on the public runner, `RUNNER.md`
+  rule 2 applies: establish whether the multi-byte path regressed before
+  proposing the constant move.
 
 **`BINARY_MAX_MB` now has private-diagnostic artefacts but no release
 ratification.** The fifth dry run built and smoke-tested all three binaries, but

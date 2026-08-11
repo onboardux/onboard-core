@@ -30,6 +30,12 @@ dist/
 adopt-plane/
 plane_*/
 
+# The exported locked runtime closure the release job derives the SBOM from.
+# `release.yml` generates it in an ephemeral checkout, so CI never sees this
+# file; a local release rehearsal does, in the repository root, and a generated
+# artefact one `git add -A` away from the first public commit is worth one line.
+runtime-constraints.txt
+
 # CI metrics, written per run and uploaded as an artefact (PRD §6)
 ci-metrics.jsonl
 .coverage

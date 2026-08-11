@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://adopt.dev/schema/export.schema.json",
+  "$id": "https://onboardux.com/schema/export.schema.json",
   "title": "adopt export bundle rows",
   "description": "GENERATED FROM schema/canonical.yaml -- DO NOT EDIT.\nRegenerate with `adopt-schema generate`. A hand edit is SCHEMA_GENERATED_DRIFT\nand CI fails on it, because a hand-edited realization means the manifest has\nsilently stopped being the single source of truth.",
   "x-schema-version": 3,

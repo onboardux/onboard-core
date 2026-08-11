@@ -67,7 +67,12 @@ def _table_schema(
 def emit(manifest: Manifest) -> str:
     document: dict[str, Any] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://adopt.dev/schema/export.schema.json",
+        # Owner-decided 2026-08-12 (CR-60). `adopt.dev` was never controlled and
+        # resolved to a parked page; `onboardux.com` is the product's own domain.
+        # This is a published contract identifier, so it is settled *before* the
+        # 0.3.0 tag rather than after: an $id that names a domain someone else can
+        # register is an identifier a stranger can serve a different schema at.
+        "$id": "https://onboardux.com/schema/export.schema.json",
         "title": "adopt export bundle rows",
         "description": GENERATED_NOTICE,
         "x-schema-version": SCHEMA_VERSION,

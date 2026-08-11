@@ -26,12 +26,13 @@ name: release
 # `certifi` and `tqdm`. Softening that here would widen the rule for every
 # future dependency, not just this one.
 #
-# !! THIS JOB HAS EXECUTED, BUT HAS NOT YET COMPLETED GREEN. !! Four dry runs
+# !! THE PRIVATE DIAGNOSTIC HAS NOT YET PROVEN A RELEASE. !! Five dry runs
 # successively exposed missing package data, an editable-install metadata gap, a
-# onefile-only path-depth crash, and finally a binary that exited 0 without ever
-# invoking the CLI (CR-53 .. CR-56). If it fails, drop `binaries` from
-# `supply-chain.needs` to ship the wheel while it is fixed -- the wheel path is
-# proven and the binaries are additive.
+# onefile-only path-depth crash, a binary that exited 0 without invoking the CLI,
+# and finally GitHub's private-repository attestation boundary (CR-53 .. CR-57).
+# The fifth run proves all three binaries, licence verification and SBOM creation.
+# A private `publish=false` run may finish without remote provenance only to keep
+# exercising signatures/completeness; the final public dry run remains strict.
 
 on:
   workflow_dispatch:
@@ -260,6 +261,13 @@ jobs:
     name: SBOM, provenance, signatures
     needs: [build, binaries]
     runs-on: ubuntu-24.04
+    # GitHub Free/Pro/Team cannot persist attestations for a private repository.
+    # This exception is deliberately narrower than "publish=false": a public
+    # dry run can and must exercise provenance, as must every tag and every real
+    # publication. One value drives both the action and the completeness check
+    # so those two halves cannot acquire different definitions of "dry run".
+    env:
+      ALLOW_MISSING_PROVENANCE: ${{ github.event_name == 'workflow_dispatch' && github.event.repository.private == true && inputs.publish == false }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -293,9 +301,25 @@ jobs:
           --version ${{ github.ref_name }}
 
       - name: SLSA provenance
-        uses: actions/attest-build-provenance@v2
+        id: provenance
+        if: ${{ env.ALLOW_MISSING_PROVENANCE != 'true' }}
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: "dist/*"
+
+      # `bundle-path` is under RUNNER_TEMP. Persisting the attestation in
+      # GitHub's API does not put evidence in the artefact directory that the
+      # completeness gate and release-bundle upload inspect.
+      - name: Add SLSA provenance to the release bundle
+        if: ${{ steps.provenance.outcome == 'success' }}
+        run: cp "${{ steps.provenance.outputs.bundle-path }}" dist/provenance.intoto.jsonl
+
+      - name: Explain private dry-run provenance boundary
+        if: ${{ env.ALLOW_MISSING_PROVENANCE == 'true' }}
+        run: >-
+          echo "::notice::GitHub cannot persist SLSA provenance while adopt-core is a
+          private user-owned repository. This publish=false diagnostic continues without
+          provenance; make the repository public before the final strict release dry run."
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
@@ -314,8 +338,12 @@ jobs:
 
       - name: Refuse to proceed unless the release is complete
         # SBOM present and non-empty, a signature beside every artefact,
-        # provenance attested, and nothing over BINARY_MAX_MB.
-        run: uv run python -m scripts.assert_release_complete --dir dist/
+        # provenance attested, and nothing over BINARY_MAX_MB. The flag expands
+        # only for the private, manually dispatched, non-publishing diagnostic
+        # defined once at job scope; every releasable path remains strict.
+        run: >-
+          uv run python -m scripts.assert_release_complete --dir dist/
+          ${{ env.ALLOW_MISSING_PROVENANCE == 'true' && '--allow-missing-provenance' || '' }}
 
       - uses: actions/upload-artifact@v4
         with:

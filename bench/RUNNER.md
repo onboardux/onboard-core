@@ -1,10 +1,11 @@
 # Reference runner — the hardware every NFR number means
 
-**Status: measured and ratified (PRD Q6, 2026-08-02).** The figures below are no
-longer a published specification copied from documentation — they are what the
-runner reported about itself, captured by `.github/workflows/bench.yml` and
-recorded in `bench/RATIFICATION.md`. The twelve NFR gate constants themselves
-remain **provisional** until S9 exit (PRD Q4).
+**Status: private-runner capture retained; public release capture pending (CR-57,
+2026-08-11).** The figures below are what the private repository's runner reported
+about itself, captured by `.github/workflows/bench.yml` and recorded in
+`bench/RATIFICATION.md`. They remain truthful history, but Q6 is reopened because
+`adopt-core` becomes public before the final strict dry run. Rule 3 invalidates
+every Q4 ratification when that transition changes the runner class.
 
 A performance number without a machine attached is not a requirement, it is an
 anecdote. Every constant in implementation spec §2.3 — `SCHEMA_CREATE_P95_SECONDS`,
@@ -36,15 +37,15 @@ the one that runs them.
 >
 > GitHub gives a **private** repository a 2-core / 7 GB standard runner and a
 > **public** one a 4-core / 16 GB standard runner. `adopt-core` is private today
-> and is planned to go public at the `0.3.0` tag (`01` §9).
+> and becomes public before the final strict `0.3.0` dry run (`01` §9, CR-57).
 >
-> **Publishing therefore doubles the reference machine**, and rule 3 below says
-> that invalidates every ratified constant at once. This is not a reason to stay
-> private; it is a reason that the S9 ratification must happen on whichever
-> visibility the release ships with, and that flipping visibility after S9 is a
-> re-ratification rather than a settings change. Recorded here because the
-> connection between a repository setting and a performance gate is invisible
-> from either end.
+> **The visibility transition changes the reference machine**, and rule 3 below
+> invalidates every ratified constant at once. After the repository is public,
+> capture what the runner actually reports and re-ratify all twelve before the
+> tag. Do not pre-fill this file from GitHub's advertised 4-core / 16-GB class;
+> the first private capture already proved why published specifications are not
+> evidence. The connection between a repository setting and a performance gate
+> is recorded here because it is invisible from either end.
 
 Larger runners, self-hosted runners and ARM runners are **not** the reference.
 A benchmark green on a bigger machine tells us nothing about the constant.
@@ -65,12 +66,14 @@ A benchmark green on a bigger machine tells us nothing about the constant.
 
 ## What is still open
 
-**Nothing about the machine.** PRD Q6 is closed: `bench/RATIFICATION.md` holds the
-capture, and the table above was corrected to match it.
+**The public release machine is open.** PRD Q6 was closed against the private
+capture and is reopened by CR-57. Keep the table above as historical evidence;
+after visibility changes, append the actual public capture to
+`bench/RATIFICATION.md` and then update this pin.
 
-What remains open is PRD Q4 — the twelve NFR gate constants are still provisional
-and are ratified at S9 exit against measurements on this machine. The first two
-readings, both far inside budget:
+PRD Q4 is open for all twelve constants. The two readings below remain useful
+history, but rule 3 prevents them from being release ratifications after the
+runner-class transition:
 
 | Measurement | p95 | Budget |
 |---|---|---|

@@ -5,6 +5,12 @@ Captured automatically by `.github/workflows/bench.yml` on the
 Nobody pasted this in by hand, which is the point: PRD Q6 asks what
 machine the twelve NFR constants mean, and only the machine can answer.
 
+> **CR-57 transition — 2026-08-11.** This is the truthful private-repository
+> capture and is not overwritten. `adopt-core` becomes public before the final
+> strict release dry run, which changes the reference runner class and reopens
+> Q6. Append the actual public-runner capture and re-ratify all twelve constants
+> after that transition; do not infer its values from GitHub's advertised class.
+
 | Property | Value |
 |---|---|
 | Workflow run | `30682635772` attempt `1` |
@@ -222,6 +228,7 @@ reason — `RUNNER.md` rule 2 says the first question on a failure is whether th
 to check on the first reference run**, and it is the only one whose developer
 reading is outside budget.
 
-**`BINARY_MAX_MB` cannot be ratified until a binary is built** — see the packer
-decision in `00` §4 CR-51. `scripts/assert_release_complete.py` enforces it and
-has never had an artefact to enforce it against.
+**`BINARY_MAX_MB` now has private-diagnostic artefacts but no release
+ratification.** The fifth dry run built and smoke-tested all three binaries, but
+CR-57 requires the final evidence on the public release runner. The strict
+`scripts/assert_release_complete.py` result from that run closes this value.

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 from scripts import (
+    assert_release_complete,
     ci_ratchet,
     conformance_matrix,
     constants_sync,
@@ -750,6 +751,74 @@ class TestWorkflowsAreRunnable:
             )
             return
         raise AssertionError("the binaries job is not declared in any workflow")
+
+    def test_release_provenance_has_one_fail_closed_private_dry_run_exception(
+        self, tmp_path: Path
+    ) -> None:
+        """The unsupported private dry run is the only provenance exception.
+
+        *Fails when* release-mode routing lets any path except a private manual
+        non-publishing run omit provenance, fails to carry a successful action
+        bundle into ``dist/``, or treats that bundle as an unsigned payload.
+        *Matters because* the first failure permanently blocks the supported dry
+        run, while either latter failure blocks or weakens a real release. *No
+        other instrument catches it because* no existing test joins the action
+        condition, action output, and release checker's CLI contract.
+        """
+        import yaml
+
+        release = yaml.safe_load((self.WORKFLOWS / "release.yml").read_text(encoding="utf-8"))
+        supply_chain = release["jobs"]["supply-chain"]
+        private_dry_run = supply_chain.get("env", {}).get("ALLOW_MISSING_PROVENANCE")
+        assert private_dry_run == (
+            "${{ github.event_name == 'workflow_dispatch' && "
+            "github.event.repository.private == true && inputs.publish == false }}"
+        )
+
+        steps = supply_chain["steps"]
+        provenance = next(step for step in steps if step.get("name") == "SLSA provenance")
+        assert provenance.get("id") == "provenance"
+        assert provenance.get("if") == "${{ env.ALLOW_MISSING_PROVENANCE != 'true' }}"
+        assert provenance.get("uses") == "actions/attest-build-provenance@v4"
+        assert provenance.get("with", {}).get("subject-path") == "dist/*"
+        assert "continue-on-error" not in provenance
+
+        staged = next(
+            step
+            for step in steps
+            if step.get("name") == "Add SLSA provenance to the release bundle"
+        )
+        assert staged.get("if") == "${{ steps.provenance.outcome == 'success' }}"
+        assert "${{ steps.provenance.outputs.bundle-path }}" in staged["run"]
+        assert "dist/provenance.intoto.jsonl" in staged["run"]
+
+        complete = next(
+            step
+            for step in steps
+            if step.get("name") == "Refuse to proceed unless the release is complete"
+        )
+        assert (
+            "${{ env.ALLOW_MISSING_PROVENANCE == 'true' && '--allow-missing-provenance' || '' }}"
+        ) in complete["run"]
+
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "adopt_cli-0.3.0-py3-none-any.whl").write_bytes(b"wheel")
+        (dist / "adopt_cli-0.3.0-py3-none-any.whl.sig").write_text("signature", encoding="utf-8")
+        (dist / "sbom.cdx.json").write_text(
+            '{"components": [{"name": "adopt-core"}]}', encoding="utf-8"
+        )
+
+        missing = assert_release_complete.check(dist)
+        assert not missing.ok
+        assert any("no SLSA provenance" in violation for violation in missing.violations)
+        assert assert_release_complete.main(["--dir", str(dist), "--allow-missing-provenance"]) == 0
+
+        (dist / "provenance.intoto.jsonl").write_text(
+            '{"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}', encoding="utf-8"
+        )
+        report = assert_release_complete.check(dist)
+        assert report.ok, report.violations
 
 
 @pytest.mark.unit

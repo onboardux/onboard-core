@@ -5,6 +5,10 @@ not a release.** Asserting it here means the failure arrives before anything is
 published rather than after, which is the difference between a delayed release
 and a withdrawn one.
 
+`--allow-missing-provenance` exists solely for a private, non-publishing
+diagnostic where GitHub's attestation service is unavailable. It never certifies
+a release; every public dry run, tag and publication remains provenance-strict.
+
 Also enforces `BINARY_MAX_MB`, read from the constants module rather than
 written here.
 """
@@ -38,7 +42,11 @@ class Report:
 
 
 def _is_payload(path: Path) -> bool:
-    return path.is_file() and path.suffix not in EVIDENCE_SUFFIXES and path.name != SBOM_NAME
+    return (
+        path.is_file()
+        and not any(path.name.endswith(suffix) for suffix in EVIDENCE_SUFFIXES)
+        and path.name != SBOM_NAME
+    )
 
 
 def check(directory: Path, *, require_provenance: bool = True) -> Report:
@@ -91,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--allow-missing-provenance",
         action="store_true",
-        help="for local dry runs, where no attestation service is reachable",
+        help="for non-publishing diagnostic runs where no attestation service is reachable",
     )
     args = parser.parse_args(argv)
 

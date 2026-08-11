@@ -3,6 +3,9 @@ name = "adopt-scope"
 version = "0.3.0"
 description = "The firm-engagement-system-environment hierarchy, slugs, lifecycle events."
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
 # Storage is reached through the `ScopeRecords` port in `records.py`, never
 # through a driver: `adopt_store` and `plane_store` each implement it, which is
 # what lets one facade serve both realizations.
@@ -12,9 +15,22 @@ dependencies = [
     "adopt-obs",
 ]
 
+[project.urls]
+Homepage = "https://github.com/onboardux/adopt-core"
+Source = "https://github.com/onboardux/adopt-core"
+Issues = "https://github.com/onboardux/adopt-core/issues"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/adopt_scope"]
+
+# Apache-2.0 4(a) and 4(d): the licence and the NOTICE travel with every
+# redistribution. `uv build` builds the wheel from the sdist, so placing the
+# repository root's single authored copy here puts it in both artefacts and
+# leaves nothing to drift.
+[tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"

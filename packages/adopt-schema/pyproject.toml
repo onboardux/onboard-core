@@ -3,6 +3,9 @@ name = "adopt-schema"
 version = "0.3.0"
 description = "Manifest loader, four emitters, the additive-only linter, and migrations."
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
 # `sqlite3` is deliberately absent: the `no-raw-sqlite` import contract names
 # this package as a source module, so `migrate.apply` drives an injected
 # `MigrationTarget` rather than opening a connection of its own.
@@ -16,6 +19,11 @@ dependencies = [
 
 [project.scripts]
 adopt-schema = "adopt_schema.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/onboardux/adopt-core"
+Source = "https://github.com/onboardux/adopt-core"
+Issues = "https://github.com/onboardux/adopt-core/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -31,4 +39,6 @@ packages = ["src/adopt_schema"]
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"
 "../../schema" = "src/adopt_schema/_assets/schema"

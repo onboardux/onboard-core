@@ -109,6 +109,12 @@ jobs:
             exit 1
           }
 
+      # PyPI accepts an upload once. A wheel published with no licence cannot be
+      # recalled, so the last place this can be caught is here -- before the
+      # `pypi-dist` artifact exists, not in the job that uploads it.
+      - name: Every distribution carries the licence it is published under
+        run: uv run --frozen --no-dev python -m scripts.artifact_licence --dir dist/
+
       - name: The installed wheel is self-contained and stamped
         shell: bash
         env:

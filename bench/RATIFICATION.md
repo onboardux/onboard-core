@@ -214,8 +214,8 @@ The release record must link all five sources. A green `perf` job alone proves
 seven values, not twelve.
 
 **Developer-machine readings, recorded as context and explicitly not as
-evidence** (`bench/RUNNER.md` rule 1 — Windows, OneDrive-synced tree, so I/O is
-not comparable):
+evidence** (`bench/RUNNER.md` rule 1 — Windows, on a file-sync-backed working
+tree, so I/O is not comparable):
 
 | NFR | Reading | Re-run 2026-08-11 | Budget |
 |---|---|---|---|

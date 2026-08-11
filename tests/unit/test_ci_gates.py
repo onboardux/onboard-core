@@ -657,6 +657,14 @@ class TestWorkflowsAreRunnable:
             # against an editable install, where the `parents[N]` walk to
             # `schema/` still lands in the checkout and the defect is invisible.
             "packaged-artifact",
+            # `artifact-licence` landed after the CR-58 audit found that all
+            # fifteen distributions were built with no `License-Expression`, no
+            # `License-File` and neither LICENSE nor NOTICE inside them. It is on
+            # this list because its subject is irreversible: a wheel published
+            # without its licence cannot be recalled from PyPI, and the gate that
+            # would have caught it is the cheapest thing to drop when a build
+            # slows down.
+            "artifact-licence",
         }
     )
 

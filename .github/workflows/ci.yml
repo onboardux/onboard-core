@@ -232,6 +232,29 @@ jobs:
       - name: The installed artefact carries its own data
         run: uv run python scripts/packaged_artifact.py --check
 
+  artifact-licence:
+    name: artifact-licence (the licence ships inside what we publish)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      # Fifteen Apache-2.0 distributions were one dispatch from PyPI carrying no
+      # licence at all: no `License-Expression`, no `License-File`, and neither
+      # the Apache text nor the NOTICE inside the wheel or the sdist. Fifteen
+      # PyPI pages would have read "License: UNKNOWN".
+      #
+      # `licence-gate` above holds 32 **third-party** distributions to seven
+      # audited fields each and never looked at ours -- the same
+      # wrong-subject failure `packaged-artifact` exists for (CR-53), which is
+      # why this is its own gate rather than a step in that one.
+      - name: Prove the gate still fails on a stripped manifest
+        run: uv run python -m scripts.artifact_licence --self-test
+      - name: Every artefact carries the licence it is published under
+        run: uv run python -m scripts.artifact_licence --check
+
   unit:
     name: unit (ratcheted to CI_UNIT_MAX_MINUTES)
     runs-on: ubuntu-24.04

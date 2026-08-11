@@ -3,6 +3,9 @@ name = "adopt-export"
 version = "0.3.0"
 description = "Export bundle writer and reader; the byte-stable round trip."
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
 # `adopt-store` is deliberately **absent**, exactly as it is for `adopt-coverage`
 # and `adopt-freshness`. This package declares its own storage ports and is
 # handed a realization that satisfies them structurally; depending on
@@ -19,9 +22,22 @@ dependencies = [
     "adopt-schema",
 ]
 
+[project.urls]
+Homepage = "https://github.com/onboardux/adopt-core"
+Source = "https://github.com/onboardux/adopt-core"
+Issues = "https://github.com/onboardux/adopt-core/issues"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/adopt_export"]
+
+# Apache-2.0 4(a) and 4(d): the licence and the NOTICE travel with every
+# redistribution. `uv build` builds the wheel from the sdist, so placing the
+# repository root's single authored copy here puts it in both artefacts and
+# leaves nothing to drift.
+[tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"

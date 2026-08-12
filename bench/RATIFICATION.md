@@ -5,11 +5,97 @@ Captured automatically by `.github/workflows/bench.yml` on the
 Nobody pasted this in by hand, which is the point: PRD Q6 asks what
 machine the twelve NFR constants mean, and only the machine can answer.
 
-> **CR-57 transition — 2026-08-11.** This is the truthful private-repository
-> capture and is not overwritten. `adopt-core` becomes public before the final
-> strict release dry run, which changes the reference runner class and reopens
-> Q6. Append the actual public-runner capture and re-ratify all twelve constants
-> after that transition; do not infer its values from GitHub's advertised class.
+---
+
+# PUBLIC RUNNER — PRD Q6 CLOSED, ALL TWELVE Q4 CONSTANTS RATIFIED
+
+**2026-08-12.** `adopt-core` became public, which changed the runner class and,
+by `RUNNER.md` rule 3, invalidated every ratification below simultaneously. This
+section is the replacement. **The private capture that follows is kept as
+history and is not evidence for any release.**
+
+## The machine — Q6
+
+| Property | Value |
+|---|---|
+| Workflow run | `31605693290` attempt `1` (`bench.yml`) |
+| Commit | `3ff9aa9674155be4692d68408f2e199b4ab94465` |
+| Runner label | `ubuntu-24.04`, GitHub-hosted, **public** standard class |
+| Runner image | `ubuntu24` `20260810.271.1` |
+| Architecture | `x86_64`, AMD EPYC 9V74 |
+| vCPU | **4** *(was 2 private)* |
+| Memory | **15 GiB** *(was 7.8 GiB private)* |
+| Python | `Python 3.12.3` |
+
+The full `lscpu`, `free -h` and `/etc/os-release` capture is in the run's
+`runner-profile` artifact and is reproduced in the historical section's format.
+**It was read from the machine, never from GitHub's advertised specification** —
+the private capture already proved published specifications are not evidence.
+
+## The twelve — Q4
+
+**All twelve hold at their current values. Nothing is retuned, so no threshold
+changed and `RUNNER.md` rule 2 never engages.** `03` §2.3's provisional marking
+is lifted.
+
+| # | Constant | Budget | Public reading | Headroom | Evidence |
+|---|---|---|---:|---|---|
+| 1 | `SCHEMA_CREATE_P95_SECONDS` | 10 s | 0.027 s SQLite · 0.296 s PG16 | 34× | `bench.all` run `31605693290` |
+| 2 | `STORE_OPEN_P95_MS` | 200 ms | 1.8 ms over 40 opens at 50k rows | 111× | same |
+| 3 | `EXPORT_P95_SECONDS` | 30 s | 3.80 s over 7 exports at 50k items | 7.9× | same |
+| 4 | `URI_BUILD_MIN_PER_SECOND` | 50,000/s | **104,085/s** slowest shape | 2.1× | same |
+| 5 | `COVERAGE_RECOMPUTE_P95_SECONDS` | 20 s | 1.47 s at 50k identities | 13.6× | same |
+| 6 | `FRESHNESS_RESOLVE_P95_MS` | 25 ms | 0.14 ms | 178× | same |
+| 7 | `CLI_COLD_START_MS` | 400 ms | **319 ms** | **1.25×** ⚠ | same |
+| 8 | `BINARY_MAX_MB` | 120 MiB | **20.39 MiB** largest of three | 5.9× | strict release run `31606311714` |
+| 9 | `CONFORMANCE_CI_MAX_MINUTES` | 8 min | 42 s, both vendors 13/13 | 11.4× | `ci` run `31605874618` |
+| 10 | `CI_UNIT_MAX_MINUTES` | 2 min | 23.2 s, 622 passed 1 skipped | 5.2× | same, `ci_ratchet` |
+| 11 | `CI_PR_MAX_MINUTES` | 10 min | 110 s whole run, 20/20 green | 5.5× | same |
+| 12 | `COVERAGE_FLOOR_CORE` | 0.80 | tightest judged `adopt-schema` **86.1%** | 6.1 pts | same, `coverage-floor` |
+
+Binary sizes in full: `adopt-linux-x86_64` 21,383,384 B (20.39 MiB) ·
+`adopt-windows-x86_64.exe` 19,840,000 B (18.92 MiB) · `adopt-macos-arm64`
+18,204,176 B (17.36 MiB).
+
+### The two readings this file told you to watch, and what happened
+
+`RUNNER.md` and the historical section below both flagged `CLI_COLD_START_MS` and
+`URI_BUILD_MIN_PER_SECOND` as outside budget on the developer machine. **Both
+clear on the reference runner, and the reason is the machine in each case.**
+
+* **CLI cold start: 962 ms developer → 319 ms reference, against 400 ms.** The
+  empty-interpreter floor is **17 ms** here against 138–276 ms there, so most of
+  the developer number was process start on a file-sync-backed Windows tree.
+  `bench/cli_bench.py` printing that floor beside the figure is what made this
+  answerable rather than arguable — `RUNNER.md` rule 2 asks whether the *code*
+  regressed, and one number cannot answer it.
+* **URI build: 32,971/s developer → 104,085/s reference, against 50,000/s.** This
+  one is pure CPU with no I/O, so the historical note reasoned it *might* land
+  near the developer reading. It did not — 3.2× higher. **That reasoning was
+  sound and its conclusion was wrong**, which is the argument for rule 1 rather
+  than against it: a developer machine is not evidence even when the mechanism
+  suggests it should be.
+
+**`CLI_COLD_START_MS` is the tightest of the twelve at 1.25×, and it is the one
+to watch.** 302 ms of the 319 is our own imports. A single dependency added to
+the startup path can breach it, and unlike the others there is no order of
+magnitude absorbing the mistake. That is exactly what the constant is for — CR-51
+records that it had no harness at all until S9, so the one constant whose purpose
+is keeping imports off the startup path was the one nobody could breach visibly.
+
+### What this ratification does not cover
+
+`AGENT_DETECT_LISTING_MAX_ENTRIES` is a `03` §2.2 golden-set limit, **not** one of
+Q4's twelve; it was ratified separately on 2026-08-10 and that section stands
+unchanged.
+
+---
+
+# HISTORICAL — private-repository capture, 2026-08-11
+
+> **Superseded for release purposes by the public capture above** (`RUNNER.md`
+> rule 3). Kept because it is truthful history and because the delta between the
+> two runner classes is itself the evidence for rule 3.
 
 | Property | Value |
 |---|---|
@@ -193,7 +279,13 @@ pathological tree, which is both halves of what `04` §4 step 4 asks for.
 monorepo is larger, and a cap tuned to our corpus would start truncating on the
 first real system. The bound exists for the pathological case, not the median.
 
-## Public release evidence still open — all twelve Q4 constants
+## Public release evidence — CLOSED 2026-08-12, see the top of this file
+
+> **This section stated what was outstanding and how to close it. It is closed.**
+> All twelve values are ratified against the public runner in the first section,
+> and PRD Q6 is closed with it. The text below is kept because it names the five
+> evidence owners correctly and that division still governs any future
+> re-ratification — not because anything here is still open.
 
 `SCHEMA_CREATE_P95_SECONDS` · `STORE_OPEN_P95_MS` · `EXPORT_P95_SECONDS` ·
 `URI_BUILD_MIN_PER_SECOND` · `COVERAGE_RECOMPUTE_P95_SECONDS` ·
@@ -255,3 +347,14 @@ distinction matters:
 ratification.** The fifth dry run built and smoke-tested all three binaries, but
 CR-57 requires the final evidence on the public release runner. The strict
 `scripts/assert_release_complete.py` result from that run closes this value.
+
+> **Closed 2026-08-12** by strict public run `31606311714`, `publish=false` with
+> `ALLOW_MISSING_PROVENANCE: false`. Largest binary 20.39 MiB of 120. The same
+> run recorded `release completeness: OK` over 34 artefacts and 103 files, an
+> SBOM of 15 components, SLSA provenance persisted to the repository
+> (attestation `40291662`, Rekor `2437724071`), and every payload signature
+> `Verified OK` against the exact workflow identity. **This is the first
+> execution of the strict public supply-chain path in the project's history** —
+> CR-57 recorded that GitHub would not persist an attestation while the
+> repository was private, and that boundary is now gone rather than worked
+> around.

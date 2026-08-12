@@ -111,6 +111,6 @@ no reason to look, and that failure is silent in the permissive direction.
 
 - **Build DoD conditions 1, 3, 4 and 6 are open** at the time of writing. See the
   sprint plan's definition of done and `BACKLOG.md`.
-- **`BACKLOG.md` B-03** — `adopt-plane` realizes one of the twelve `*Records`
-  ports `adopt-core` declares. This does not affect the OSS store, which realizes
-  all twelve; it affects the Postgres realization only.
+- **`BACKLOG.md` B-03** — `adopt-plane` realizes one of the thirteen store-records
+  ports `adopt-core` declares, 11 of 66 query paths. This does not affect the OSS
+  store, which realizes all thirteen; it affects the Postgres realization only.

@@ -8,10 +8,12 @@ The CLI is offline by default and has no telemetry switch. Network access is an
 explicit per-invocation choice, and client content is structurally excluded from
 logs.
 
-> **Status:** `0.3.0` release candidate. The implementation and release
-> machinery are complete enough for strict public validation, but no `0.3.0`
-> tag or PyPI release exists yet. See the repository's release and security
-> pages for published artifacts; do not treat a workflow artifact as a release.
+> **Status: not yet released.** The implementation and release machinery are
+> complete enough for strict public validation, but no `0.3.0` tag, GitHub
+> Release or PyPI release exists. **Do not install from PyPI yet** — the
+> distribution names are reserved and any version below `0.3.0` there is an
+> empty placeholder, not this software. Do not treat a workflow artifact as a
+> release either. Install from source until the first signed release lands.
 
 ## What is included
 
@@ -28,16 +30,61 @@ The command surface includes `init`, `detect`, `boundary`, store migration and
 inspection, identity parsing, coverage and freshness evaluation, export/import,
 policy validation, adapter checks, `doctor`, and release provenance reporting.
 
-## Quick start
+## Install
 
-Python 3.12 and [uv](https://docs.astral.sh/uv/) are required.
+**Once `0.3.0` is released** — one package pulls in the other fourteen:
+
+```sh
+pip install adopt-cli          # or: uv tool install adopt-cli
+adopt version --json
+```
+
+Or download a single-file binary — `adopt-linux-x86_64`, `adopt-macos-arm64` or
+`adopt-windows-x86_64.exe` — from the GitHub Release. It needs no Python.
+**Verify it before you run it**; [SECURITY.md](SECURITY.md) has the exact
+`cosign` and attestation commands.
+
+**Until then**, run from a checkout — Python 3.12 and
+[uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv sync --all-packages
 uv run adopt --help
-uv run adopt doctor --json
-uv run adopt version --json
 ```
+
+## First run
+
+`adopt` reads a tree, classifies it, and records what it may observe. Nothing is
+sent anywhere: the CLI is offline unless you pass `--allow-network`.
+
+```sh
+# 1. What kind of system is this? Detection refuses rather than guesses.
+adopt detect ./myproject --json
+
+# 2. Answer the three qualification questions.
+cat > answers.json <<'JSON'
+{"artifact_access": true, "deploy_signal": true, "safe_interaction": true}
+JSON
+
+# 3. Create the store, resolve the scope, declare the boundary.
+adopt init ./myproject \
+  --scope northwind/acme-erp/support-agent/prod \
+  --answers answers.json --json
+
+# 4. Look at what you have. Looking never repairs.
+adopt store info --json
+adopt doctor --json
+```
+
+`--scope` is four immutable slugs — firm, engagement, system, environment — and
+all four are required, because a boundary is declared for one environment of one
+system. `init` reports the archetype, the negotiated tier and a `boundary_id`.
+
+**If `detect` exits non-zero with `DETECT_AMBIGUOUS`, that is the design.** A
+wrong archetype is a different set of extractors, not a slightly wrong answer, so
+detection refuses and ranks instead of guessing. Narrow the path to one system,
+or accept an archetype yourself with `adopt init --archetype <a>`. A proposal is
+never a decision: nothing is written until a human names it.
 
 Development checkouts intentionally report `null` for `sbom_sha256` and
 `build_id`. A signed release wheel or binary embeds those immutable build facts.

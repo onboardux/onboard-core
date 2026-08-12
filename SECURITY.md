@@ -31,11 +31,11 @@ revert, not a review comment.
 ## Verifying a release
 
 Download the complete asset set from the GitHub Release. For example, to verify
-the Linux binary from `onboardux/adopt-core`:
+the Linux binary from `onboardux/onboard-core`:
 
 ```sh
 asset=adopt-linux-x86_64
-identity='https://github.com/onboardux/adopt-core/.github/workflows/release.yml@refs/tags/v0.3.0'
+identity='https://github.com/onboardux/onboard-core/.github/workflows/release.yml@refs/tags/v0.3.0'
 issuer='https://token.actions.githubusercontent.com'
 
 cosign verify-blob \
@@ -53,7 +53,7 @@ cosign verify-blob \
   sbom.cdx.json
 
 gh attestation verify "$asset" \
-  --repo onboardux/adopt-core \
+  --repo onboardux/onboard-core \
   --bundle provenance.intoto.jsonl \
   --limit 100 \
   --cert-identity "$identity" \

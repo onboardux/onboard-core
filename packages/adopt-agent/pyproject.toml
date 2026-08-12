@@ -22,9 +22,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/onboardux/adopt-core"
-Source = "https://github.com/onboardux/adopt-core"
-Issues = "https://github.com/onboardux/adopt-core/issues"
+Homepage = "https://github.com/onboardux/onboard-core"
+Source = "https://github.com/onboardux/onboard-core"
+Issues = "https://github.com/onboardux/onboard-core/issues"
 
 [build-system]
 requires = ["hatchling"]

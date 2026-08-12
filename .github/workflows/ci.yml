@@ -8,6 +8,14 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Four of PRD Q4's twelve constants are read from this workflow -- the unit and
+  # PR duration ratchets, the coverage floor, and the conformance matrix's
+  # elapsed time. `bench/RUNNER.md` rule 3 invalidates every runner-dependent
+  # ratification when the runner class changes, and a repository's visibility
+  # changes it silently. Without this trigger the only way to re-read those four
+  # is to push a commit, which makes the measurement a side effect of an
+  # unrelated change. A ratification gate needs to be re-runnable on demand.
+  workflow_dispatch:
 
 permissions:
   contents: read

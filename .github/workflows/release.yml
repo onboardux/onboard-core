@@ -135,7 +135,14 @@ jobs:
             first_party+=("${distribution}==${EXPECTED_VERSION}")
           done
           test "${#first_party[@]}" -eq "$EXPECTED_DISTRIBUTION_COUNT"
+          # --no-cache is load-bearing. A first-party wheel's (name, version) does
+          # not determine its bytes: `Embed immutable build facts` stamps this
+          # run's SBOM digest and build id into a tracked module *before*
+          # `uv build`, so every run produces a different `adopt_*-0.3.0` wheel
+          # under the same name. Any cache keyed on identity therefore serves a
+          # previous run's artifact, and uv's is. See CR-66.
           uv pip install \
+            --no-cache \
             --python "$work/venv/bin/python" \
             --no-index \
             --find-links dist/ \
@@ -240,12 +247,64 @@ jobs:
             first_party+=("${distribution}==${EXPECTED_VERSION}")
           done
           test "${#first_party[@]}" -eq "$EXPECTED_DISTRIBUTION_COUNT"
+          # --no-cache is load-bearing; see the identical note in the build job.
+          # A first-party wheel's (name, version) does not determine its bytes,
+          # so a cache keyed on identity serves a previous run's artifact. This
+          # is what CR-66 found: the v0.3.0 tag run packed binaries carrying the
+          # *preceding* run's build id and SBOM digest.
           uv pip install \
+            --no-cache \
             --python "$PY" \
             --no-index \
             --find-links dist/ \
             --no-deps \
             "${first_party[@]}"
+          ADOPT=build-env/bin/adopt
+          [ -x "$ADOPT" ] || ADOPT=build-env/Scripts/adopt.exe
+          echo "ADOPT=$ADOPT" >> "$GITHUB_ENV"
+
+      # Before Nuitka, not only after it. The packed-binary smoke test below
+      # asserts the same facts, and it is kept -- its subject is the artefact we
+      # ship rather than the environment it was packed from, which is the
+      # distinction `packaged-artifact` exists to make. But it runs on the far
+      # side of a twenty-minute pack, and when the environment is wrong it
+      # reports a mismatch without naming the cause. This step is seconds and
+      # names it.
+      - name: The environment about to be packed is this run's
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+          EXPECTED_SBOM_SHA256: ${{ needs.build.outputs.sbom_sha256 }}
+          EXPECTED_BUILD_ID: ${{ needs.build.outputs.build_id }}
+        run: |
+          set -euo pipefail
+          version_json="$("$ADOPT" version --json)"
+          printf '%s\n' "$version_json"
+          VERSION_JSON="$version_json" "$PY" - <<'PY'
+          import json
+          import os
+          import sys
+
+          payload = json.loads(os.environ["VERSION_JSON"])
+          expected_id = os.environ["EXPECTED_BUILD_ID"]
+          expected_sbom = os.environ["EXPECTED_SBOM_SHA256"]
+          actual_id = payload.get("build_id")
+          actual_sbom = payload.get("sbom_sha256")
+          if actual_id == expected_id and actual_sbom == expected_sbom:
+              print("installed environment carries this run's build facts")
+              sys.exit(0)
+          print(
+              "::error::the installed first-party distributions are NOT from this "
+              "run. Expected build_id "
+              f"{expected_id!r} and sbom_sha256 {expected_sbom!r}; the environment "
+              f"reports {actual_id!r} and {actual_sbom!r}. A first-party wheel's "
+              "name and version do not determine its bytes, so a package cache "
+              "keyed on identity will serve a previous run's artifact -- check "
+              "that every first-party install on the release path passes "
+              "--no-cache."
+          )
+          sys.exit(1)
+          PY
 
       - name: Pack
         shell: bash

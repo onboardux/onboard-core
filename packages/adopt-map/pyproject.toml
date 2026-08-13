@@ -1,0 +1,39 @@
+[project]
+name = "adopt-map"
+version = "0.3.0"
+description = "`adopt map` -- the system surface map. Build 1: scope resolution, URI minting, the revision-aware writer."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
+# `adopt-store` is deliberately **absent**, exactly as it is from `adopt-coverage`
+# and `adopt-export`. This package declares its own storage ports and is handed a
+# realization that satisfies them structurally (`docs/pack/OPEN-DECISIONS.md`
+# OD-1/OD-2). Depending on `adopt-store` would drag `sqlite3` into the import
+# graph and break `no-raw-sqlite`, which names `adopt_map` as a source module.
+dependencies = [
+    "adopt-const",
+    "adopt-identity",
+    "adopt-model",
+    "adopt-obs",
+    "adopt-scope",
+    "pydantic>=2.8,<3",
+]
+
+[project.urls]
+Homepage = "https://github.com/onboardux/onboard-core"
+Source = "https://github.com/onboardux/onboard-core"
+Issues = "https://github.com/onboardux/onboard-core/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_map"]
+
+# Apache-2.0 4(a) and 4(d): the licence and the NOTICE travel with every
+# redistribution.
+[tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"

@@ -38,6 +38,7 @@ ITERATIONS: Final[int] = 40
 STORE_OPEN_ITEM_COUNT: Final[int] = 50_000
 
 _MILLISECONDS_PER_SECOND: Final[float] = 1000.0
+# const-sync: ok -- the 95th percentile, a statistic, not MAP_CONF_GRAMMAR.
 _P95: Final[float] = 0.95
 
 

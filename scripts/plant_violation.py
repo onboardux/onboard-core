@@ -129,6 +129,23 @@ DETECT_MODULE: Final[Path] = (
     REPO_ROOT / "packages" / "adopt-detect" / "src" / "adopt_detect" / "detect.py"
 )
 
+#: Where `uri-construction` plants its literal: Build 1's minting module.
+#:
+#: **This is the one place the violation would actually be written**, for the
+#: same reason `DETECT_MODULE` is. `minting.py` is the module whose whole job is
+#: turning a fact into a URI, so a contributor taking the short way -- an
+#: f-string instead of `build_uri()` -- writes it here, not in a scratch file.
+#:
+#: The planted literal is **built from `adopt_const.URI_SCHEME` rather than
+#: spelled out** (B1-CR-26). Spelling it out would reproduce, inside the proof
+#: itself, exactly the defect the rule exists to prevent: the two audits this
+#: replaces hard-coded `adopt://`, which CR-06 had already made unreachable, so
+#: they scanned for a string that could never appear and reported clean forever.
+#: A proof that hard-codes the value goes blind on the same day the rule does.
+MINTING_MODULE: Final[Path] = (
+    REPO_ROOT / "packages" / "adopt-map" / "src" / "adopt_map" / "minting.py"
+)
+
 #: The provider module named in the planted import. One of the six
 #: `no-provider-sdk` forbids, and deliberately the one PRD F13.2 names first --
 #: so the proof is against a module the pack actually expects someone to reach
@@ -189,11 +206,37 @@ def plant_covered_cache_write() -> str:
     return f"added a coverage-cache write to {IDENTITY_RECORDS.name}"
 
 
+def plant_uri_construction() -> str:
+    """Mint a URI by f-string -- PRD F2's acceptance signal, `02` §1.2's rule.
+
+    `identity.uri` is `UNIQUE` and is written into every exported bundle a client
+    keeps. A hand-assembled URI differs from `build_uri()`'s output by one
+    normalization or one escape, and the store then holds the same referent twice
+    under two names -- with no way afterwards to say which row anything meant.
+
+    The literal is composed from `URI_SCHEME` at plant time, so this proof
+    follows the constant the day `onboard-v2` is ratified. See `MINTING_MODULE`.
+    """
+    if not MINTING_MODULE.exists():  # pragma: no cover -- layout change
+        raise SystemExit(
+            f"{MINTING_MODULE.relative_to(REPO_ROOT)} does not exist, so nothing was "
+            "planted. Update this script rather than leaving the gate unproven."
+        )
+    from adopt_const import URI_SCHEME
+
+    forged = f"{URI_SCHEME}://northwind/acme-erp/orders-api/prod/symbol/python/x"
+    _backup(MINTING_MODULE)
+    with MINTING_MODULE.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(f'\n\n_PLANTED_VIOLATION = "{forged}"\n')
+    return f"added a hand-assembled URI literal to {MINTING_MODULE.name}"
+
+
 KINDS: Final[dict[str, Callable[[], str]]] = {
     "covered-cache-write": plant_covered_cache_write,
     "drop-column": plant_drop_column,
     "provider-sdk": plant_provider_sdk,
     "revision-update": plant_revision_update,
+    "uri-construction": plant_uri_construction,
 }
 
 

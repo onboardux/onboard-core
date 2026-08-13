@@ -49,6 +49,7 @@ COVERAGE_IDENTITY_COUNT: Final[int] = 50_000
 # const-sync: ok -- a population shape for this harness, not a tunable.
 BOUND_FRACTION: Final[int] = 10
 
+# const-sync: ok -- the 95th percentile, a statistic, not MAP_CONF_GRAMMAR.
 _P95: Final[float] = 0.95
 
 

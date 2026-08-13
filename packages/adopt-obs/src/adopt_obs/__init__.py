@@ -23,11 +23,14 @@ from adopt_obs.clock import (
 from adopt_obs.errors import (
     CATEGORY_EXIT_CODES,
     ERROR_CATEGORIES,
+    MAP_EXIT_CODES,
     AdoptError,
     ErrorCategory,
     ErrorCode,
     ExitCode,
+    MapExitCode,
     exit_code_for,
+    map_exit_code_for,
 )
 from adopt_obs.ids import PREFIX_REGISTRY, UnknownPrefixError, new_id, split_id
 from adopt_obs.log import Logger, LogLevel, get_logger, new_run_id, set_sink
@@ -37,6 +40,7 @@ __all__ = [
     "CATEGORY_EXIT_CODES",
     "DENIED_FIELDS",
     "ERROR_CATEGORIES",
+    "MAP_EXIT_CODES",
     "PREFIX_REGISTRY",
     "REDACTED",
     "AdoptError",
@@ -47,12 +51,14 @@ __all__ = [
     "LogLevel",
     "Logger",
     "ManualClock",
+    "MapExitCode",
     "RedactionResult",
     "SystemClock",
     "UnknownPrefixError",
     "exit_code_for",
     "format_timestamp",
     "get_logger",
+    "map_exit_code_for",
     "new_id",
     "new_run_id",
     "now",

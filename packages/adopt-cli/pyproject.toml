@@ -18,6 +18,12 @@ dependencies = [
     "adopt-export",
     "adopt-freshness",
     "adopt-identity",
+    # Build 1: `adopt map` composes `adopt_map`'s scope resolver and writer, and
+    # runs `common.stub` until S1.3's plugin framework lands. Declared rather
+    # than left to arrive transitively -- the defect the `adopt-model` note below
+    # records is the same one, one sprint earlier.
+    "adopt-map",
+    "adopt-extractors-common",
     # `adopt_model._enums` is imported directly by `commands/init.py` and
     # `commands/boundary.py`. It arrived transitively through `adopt-store` until
     # someone installed a subset that did not include it, which is why an

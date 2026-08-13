@@ -24,6 +24,9 @@ adopt-policy = { workspace = true }
 adopt-agent = { workspace = true }
 adopt-workflow = { workspace = true }
 adopt-cli = { workspace = true }
+# Build 1 (`adopt map`). Added by S1.1; `03-implementation-spec.md` §4.
+adopt-map = { workspace = true }
+adopt-extractors-common = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -53,5 +56,17 @@ markers = [
     "conformance: adapter conformance suite",
     "durability: workflow kill-and-resume drill",
     "bench: performance harness for an NFR gate constant",
+    # Build 1's five hard gates -- `03-implementation-spec.md` §8. Registered
+    # here because `--strict-markers` makes an unregistered marker an error, so
+    # a Final Output Validation line naming one would fail as a *usage* error
+    # rather than as the assertion it is.
+    "append_only: zero UPDATEs on *_revision, zero DELETEs, across a full run",
+    "idempotence: an unchanged re-run writes zero revisions",
+    "env_isolation: a staging run cannot emit a production URI",
+    "determinism: identical URI set and source_versions across repeated runs",
+    "evals: the DeepEval suites E1-E9 (S1.7)",
+    # `03` §7's suite matrix names an integration suite -- a full run against a
+    # real store, fault injection, the read-only tree and the network guard.
+    "integration: a full run against a real store",
 ]
 filterwarnings = ["error"]

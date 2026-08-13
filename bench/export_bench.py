@@ -58,6 +58,7 @@ BATCH_SIZE: Final[int] = 5_000
 # const-sync: ok -- a synthetic payload size for this harness, not a tunable.
 BODY_CHARS: Final[int] = 400
 
+# const-sync: ok -- the 95th percentile, a statistic, not MAP_CONF_GRAMMAR.
 _P95: Final[float] = 0.95
 
 

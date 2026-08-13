@@ -24,11 +24,14 @@ from typing import Final
 __all__ = [
     "CATEGORY_EXIT_CODES",
     "ERROR_CATEGORIES",
+    "MAP_EXIT_CODES",
     "AdoptError",
     "ErrorCategory",
     "ErrorCode",
     "ExitCode",
+    "MapExitCode",
     "exit_code_for",
+    "map_exit_code_for",
 ]
 
 
@@ -132,6 +135,25 @@ class ErrorCode(StrEnum):
 
     LICENCE_POLICY_VIOLATION = "LICENCE_POLICY_VIOLATION"
 
+    # -- Build 1 (`adopt map`), `builds/build_1/02-contracts.md` §1.4 ----------
+    # One registry, several declaring documents (B1-CR-24). These are here
+    # rather than in a second registry because the category is what the rest of
+    # the programme branches on, and two registries is two answers.
+    MAP_USAGE = "MAP_USAGE"
+    MAP_SCOPE_UNRESOLVED = "MAP_SCOPE_UNRESOLVED"
+    MAP_ENVIRONMENT_AMBIGUOUS = "MAP_ENVIRONMENT_AMBIGUOUS"
+    MAP_BOUNDARY_MISSING = "MAP_BOUNDARY_MISSING"
+    MAP_TIER_DECLINED = "MAP_TIER_DECLINED"
+    MAP_NO_ARCHETYPE = "MAP_NO_ARCHETYPE"
+    MAP_EXPORT_BUNDLE_MISSING = "MAP_EXPORT_BUNDLE_MISSING"
+    MAP_STORE_LOCKED = "MAP_STORE_LOCKED"
+    MAP_STORE_INCOMPATIBLE = "MAP_STORE_INCOMPATIBLE"
+    MAP_COVERAGE_CACHE_DRIFT = "MAP_COVERAGE_CACHE_DRIFT"
+    MAP_URI_CONSTRUCTION_BYPASS = "MAP_URI_CONSTRUCTION_BYPASS"
+    MAP_BUDGET_EXHAUSTED = "MAP_BUDGET_EXHAUSTED"
+    MAP_AGENT_BUDGET_EXHAUSTED = "MAP_AGENT_BUDGET_EXHAUSTED"
+    MAP_EXTRACTOR_FAILED = "MAP_EXTRACTOR_FAILED"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -184,7 +206,94 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     ErrorCode.WORKFLOW_BODY_IMPURE: ErrorCategory.POLICY,
     ErrorCode.WORKFLOW_DUPLICATE_START: ErrorCategory.USAGE,
     ErrorCode.LICENCE_POLICY_VIOLATION: ErrorCategory.POLICY,
+    # -- Build 1, `builds/build_1/02-contracts.md` §1.4 -----------------------
+    ErrorCode.MAP_USAGE: ErrorCategory.USAGE,
+    ErrorCode.MAP_SCOPE_UNRESOLVED: ErrorCategory.POLICY,
+    ErrorCode.MAP_ENVIRONMENT_AMBIGUOUS: ErrorCategory.POLICY,
+    ErrorCode.MAP_BOUNDARY_MISSING: ErrorCategory.POLICY,
+    ErrorCode.MAP_TIER_DECLINED: ErrorCategory.POLICY,
+    ErrorCode.MAP_NO_ARCHETYPE: ErrorCategory.POLICY,
+    ErrorCode.MAP_EXPORT_BUNDLE_MISSING: ErrorCategory.POLICY,
+    ErrorCode.MAP_STORE_LOCKED: ErrorCategory.TRANSIENT,
+    ErrorCode.MAP_STORE_INCOMPATIBLE: ErrorCategory.INTEGRITY,
+    ErrorCode.MAP_COVERAGE_CACHE_DRIFT: ErrorCategory.INTEGRITY,
+    ErrorCode.MAP_URI_CONSTRUCTION_BYPASS: ErrorCategory.INTEGRITY,
+    ErrorCode.MAP_BUDGET_EXHAUSTED: ErrorCategory.POLICY,
+    ErrorCode.MAP_AGENT_BUDGET_EXHAUSTED: ErrorCategory.POLICY,
+    ErrorCode.MAP_EXTRACTOR_FAILED: ErrorCategory.INTERNAL,
 }
+
+
+class MapExitCode:
+    """`adopt map`'s process exit codes -- `builds/build_1/02-contracts.md` §8.
+
+    Not an enum, for the same reason `ExitCode` is not: these are compared by
+    integrators in shell scripts and must stay plain integers at every boundary.
+    """
+
+    COMPLETE: Final[int] = 0
+    USAGE: Final[int] = 2
+    # const-sync: ok -- a contracts §8 exit code, fixed by contract, not a tunable.
+    PARTIAL_BUDGET_EXHAUSTED: Final[int] = 3
+    DECLINED: Final[int] = 4
+    # const-sync: ok -- a contracts §8 exit code, fixed by contract, not a tunable.
+    STORE_ERROR: Final[int] = 5
+    AGENT_BUDGET_EXHAUSTED: Final[int] = 6
+
+
+#: `MAP_*` code -> the `02` §8 exit code, which is **not** the category default.
+#:
+#: **Why this table exists (B1-CR-35 / OD-3).** B1-CR-24 introduced categories on
+#: the Build 1 codes with the sentence *"the category is normative, because it is
+#: what decides the process exit code"*. That is true of Build 0's surface and
+#: false of `adopt map`'s: `CATEGORY_EXIT_CODES` maps `policy -> 3` and
+#: `integrity -> 1`, while `02` §8 and PRD N17 require `MAP_SCOPE_UNRESOLVED -> 4`
+#: (declined), `MAP_STORE_INCOMPATIBLE -> 5` (store) and
+#: `MAP_AGENT_BUDGET_EXHAUSTED -> 6`. Six of the fourteen codes disagree.
+#:
+#: `02` §8 wins: it is the narrower statement and it is the surface an integrator
+#: scripts against. The table lives **here**, beside the mapping it refines,
+#: because a second copy in `adopt_cli` is exactly the second-place-to-get-it-wrong
+#: this module's own docstring rules out. Build 0's `CATEGORY_EXIT_CODES` is
+#: untouched and still governs every pre-existing code.
+#:
+#: The categories are not decorative even so: they still decide the envelope's
+#: `category` field, which is what a caller reads to know whether a failure is
+#: retriable.
+MAP_EXIT_CODES: Final[dict[ErrorCode, int]] = {
+    ErrorCode.MAP_USAGE: MapExitCode.USAGE,
+    ErrorCode.MAP_SCOPE_UNRESOLVED: MapExitCode.DECLINED,
+    ErrorCode.MAP_ENVIRONMENT_AMBIGUOUS: MapExitCode.DECLINED,
+    ErrorCode.MAP_BOUNDARY_MISSING: MapExitCode.DECLINED,
+    ErrorCode.MAP_TIER_DECLINED: MapExitCode.DECLINED,
+    ErrorCode.MAP_NO_ARCHETYPE: MapExitCode.DECLINED,
+    ErrorCode.MAP_EXPORT_BUNDLE_MISSING: MapExitCode.DECLINED,
+    ErrorCode.MAP_STORE_LOCKED: MapExitCode.STORE_ERROR,
+    ErrorCode.MAP_STORE_INCOMPATIBLE: MapExitCode.STORE_ERROR,
+    ErrorCode.MAP_COVERAGE_CACHE_DRIFT: MapExitCode.STORE_ERROR,
+    ErrorCode.MAP_URI_CONSTRUCTION_BYPASS: MapExitCode.STORE_ERROR,
+    ErrorCode.MAP_BUDGET_EXHAUSTED: MapExitCode.PARTIAL_BUDGET_EXHAUSTED,
+    ErrorCode.MAP_AGENT_BUDGET_EXHAUSTED: MapExitCode.AGENT_BUDGET_EXHAUSTED,
+    # Zero, and deliberately so. `02` §7 obligation 8 makes an extractor failure
+    # **failure-local**: it is caught, recorded and the run continues. So this
+    # code never terminates the process, and the run it happened inside is a
+    # complete run with one extractor's facts missing and a gap saying so. It is
+    # in the table rather than absent from it because a caller asking for its
+    # exit code should get the true answer, not a `KeyError`.
+    ErrorCode.MAP_EXTRACTOR_FAILED: MapExitCode.COMPLETE,
+}
+
+
+def map_exit_code_for(code: ErrorCode) -> int:
+    """`adopt map`'s exit code for an error code (`02` §8).
+
+    Raises:
+        KeyError: the code is not a Build 1 `MAP_*` code. Deliberately loud: a
+            Build 0 code reaching this table means a caller took the wrong exit
+            mapping, and answering with a plausible default would hide it.
+    """
+    return MAP_EXIT_CODES[code]
+
 
 #: `AGENT_BUDGET_EXHAUSTED` is returned as `AgentResult.status` and is **never
 #: raised** (contracts §13). Constructing it as an exception is a programming

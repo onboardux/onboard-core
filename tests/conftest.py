@@ -196,3 +196,20 @@ def set_binding_freshness(s4_store: SqliteStoreHandle) -> Callable[..., None]:
             )
 
     return _set
+
+
+# --------------------------------------------------------------------------
+# Build 1 (`adopt map`) fixtures -- S1.1.
+#
+# Imported rather than declared in a second `conftest.py` so there is one
+# fixture namespace: a Build 1 test and a Build 0 test that both need a store
+# must get the *same* store fixture, or "zero writes" is being asserted against
+# a different database from the one under test.
+# --------------------------------------------------------------------------
+from tests.build1_conftest import (  # noqa: E402
+    aux_records,
+    scope_records,
+    store_fingerprint,
+)
+
+__all__ = ["aux_records", "scope_records", "store_fingerprint"]

@@ -27,6 +27,7 @@ from adopt_cli.commands import freshness as freshness_commands
 from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import init as init_command
 from adopt_cli.commands import interchange as interchange_commands
+from adopt_cli.commands import map_command as map_commands
 from adopt_cli.commands import policy as policy_commands
 from adopt_cli.commands import store as store_commands
 from adopt_cli.commands import version as version_command
@@ -55,6 +56,9 @@ app.add_typer(agent_commands.app)
 app.command("init")(init_command.init)
 app.command("detect")(detect_command.detect)
 app.command("boundary")(boundary_command.boundary)
+
+# `adopt map` is a bare command, matching `builds/build_1/02-contracts.md` §8.
+app.command("map")(map_commands.map_command)
 
 # Registered as bare commands rather than a group: contracts §14 names them
 # `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the

@@ -8,6 +8,20 @@ from pathlib import Path
 from typing import Final
 
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+#: Every distribution the workspace publishes, in lockstep at one version.
+#:
+#: Build 1 adds `adopt-map` and `adopt-extractors-common` here in S1.1 rather
+#: than at release time, because everything downstream is *derived* from this
+#: set -- `EXPECTED_DISTRIBUTION_COUNT`, the licence sweep's expected count, and
+#: the release-completeness inventory. A package that builds a wheel but is
+#: absent from this set is reported as an unexpected payload, so the set has to
+#: move in the same change as the package.
+#:
+#: Consequence, recorded so it is not rediscovered at the tag: this is **two
+#: more PyPI names to claim**. Build 0's DoD condition 6 is already blocked on
+#: eleven outstanding names, and `05-sprint-plan.md` prerequisite 8 is explicit
+#: that publication is *not* a Build 1 prerequisite -- so this changes the size
+#: of that queue and nothing about whether S1.1 can close.
 CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
     {
         "adopt-agent",
@@ -16,8 +30,10 @@ CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
         "adopt-coverage",
         "adopt-detect",
         "adopt-export",
+        "adopt-extractors-common",
         "adopt-freshness",
         "adopt-identity",
+        "adopt-map",
         "adopt-model",
         "adopt-obs",
         "adopt-policy",

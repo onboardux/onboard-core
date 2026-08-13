@@ -174,7 +174,11 @@ def test_release_context_requires_the_canonical_lockstep_workspace(tmp_path: Pat
         project.write_text(f'[project]\nname = "{name}"\nversion = "0.3.0"\n', encoding="utf-8")
 
     context = release_context.resolve_context(tmp_path)
-    assert context.distribution_count == 15
+    # Derived, never restated. The count moved from 15 to 17 when Build 1 added
+    # `adopt-map` and `adopt-extractors-common`, and a hard-coded 15 here would
+    # have failed for the *right* reason with the *wrong* message -- "the
+    # workspace is not canonical" rather than "the canonical set grew".
+    assert context.distribution_count == len(release_context.CANONICAL_DISTRIBUTIONS)
     assert context.distributions == tuple(sorted(release_context.CANONICAL_DISTRIBUTIONS))
 
     github_output = tmp_path / "github-output.txt"
@@ -235,14 +239,15 @@ def test_build_info_hashes_exact_bytes_and_validates_github_identity(tmp_path: P
 @pytest.mark.unit
 def test_complete_release_requires_exact_names_and_versions(tmp_path: Path) -> None:
     dist = _complete_release(tmp_path)
+    expected = len(release_context.CANONICAL_DISTRIBUTIONS)
     valid = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=15
+        dist, expected_version="0.3.0", expected_python_distributions=expected
     )
     assert valid.ok, valid.violations
     wrong_count = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=14
+        dist, expected_version="0.3.0", expected_python_distributions=expected - 1
     )
-    assert any("count must be 15" in violation for violation in wrong_count.violations)
+    assert any(f"count must be {expected}" in violation for violation in wrong_count.violations)
 
     wheel = dist / "adopt_cli-0.3.0-py3-none-any.whl"
     wheel.unlink()
@@ -252,7 +257,9 @@ def test_complete_release_requires_exact_names_and_versions(tmp_path: Path) -> N
     _write_payload_evidence(spoof)
 
     report = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=15
+        dist,
+        expected_version="0.3.0",
+        expected_python_distributions=len(release_context.CANONICAL_DISTRIBUTIONS),
     )
     assert not report.ok
     assert any("carries version 9.9.9" in violation for violation in report.violations)
@@ -265,7 +272,9 @@ def test_malformed_sbom_and_provenance_are_reported_without_crashing(tmp_path: P
     (dist / "provenance.intoto.jsonl").write_text("{not-json}\n", encoding="utf-8")
 
     report = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=15
+        dist,
+        expected_version="0.3.0",
+        expected_python_distributions=len(release_context.CANONICAL_DISTRIBUTIONS),
     )
 
     assert not report.ok
@@ -282,7 +291,9 @@ def test_binary_ceiling_does_not_apply_to_python_distributions(
     (dist / "adopt_cli-0.3.0-py3-none-any.whl").write_bytes(b"x" * (2 * 1024 * 1024))
 
     report = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=15
+        dist,
+        expected_version="0.3.0",
+        expected_python_distributions=len(release_context.CANONICAL_DISTRIBUTIONS),
     )
 
     assert report.ok, report.violations

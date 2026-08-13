@@ -32,7 +32,13 @@ from scripts import (
 )
 from tools.contracts import source_rules
 
+from adopt_obs.errors import ERROR_CATEGORIES
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+#: What a Build 1 error code is called. Every code in `builds/build_1`'s
+#: contracts §1.4 carries it, and no Build 0 code does.
+_BUILD_1_CODE_PREFIX = "MAP_"
 
 SPEC_STUB = """
 ### 2.1 -- schema, format, identity
@@ -442,11 +448,27 @@ class TestErrorRegistrySync:
     def test_an_unimplemented_code_in_a_pending_document_does_not_fail_the_gate(
         self, tmp_path: Path
     ) -> None:
-        """Specified-not-yet-built is a printed count, not a failure and not a silence."""
+        """Specified-not-yet-built is a printed count, not a failure and not a silence.
+
+        The stand-in document carries **every implemented Build 1 code plus one
+        that is not**, derived from the registry rather than restated. Listing
+        only the unbuilt row was enough while Build 1 had implemented nothing;
+        the moment S1.1 registered the fourteen real codes, that construction
+        made all fourteen "implemented but documented nowhere" and the test
+        failed for a reason that had nothing to do with what it asserts.
+        """
         build1 = tmp_path / "b1.md"
+        implemented = sorted(
+            code for code in ERROR_CATEGORIES if str(code).startswith(_BUILD_1_CODE_PREFIX)
+        )
+        rows = "".join(
+            f"| `{code}` | {ERROR_CATEGORIES[code].value} | see contracts §1.4 |\n"
+            for code in implemented
+        )
         build1.write_text(
             "### 1.4 Errors\n\n"
             "| Code | Category | Raised when |\n|---|---|---|\n"
+            f"{rows}"
             "| `MAP_NOT_BUILT_YET` | policy | never, so far |\n",
             encoding="utf-8",
         )

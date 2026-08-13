@@ -38,6 +38,7 @@ ITERATIONS: Final[int] = 20
 
 def _percentile_95(samples: list[float]) -> float:
     ordered = sorted(samples)
+    # const-sync: ok -- the 95th percentile, a statistic, not MAP_CONF_GRAMMAR.
     index = max(0, round(0.95 * len(ordered)) - 1)
     return ordered[index]
 

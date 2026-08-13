@@ -114,7 +114,10 @@ def main(argv: list[str] | None = None) -> int:
         handle.bindings().retire(binding_id=drifting_binding, reason="endpoint withdrawn")
 
         sensor = handle.sensors().register(
-            scope=scope, kind="webhook", expected_cadence_seconds=900
+            scope=scope,
+            kind="webhook",
+            # const-sync: ok -- a fixture sensor's cadence, not MAP_STAGE1_BUDGET_S.
+            expected_cadence_seconds=900,
         )
         handle.sensors().heartbeat(sensor_id=sensor.id, outcome="success")
         handle.sensors().degrade(

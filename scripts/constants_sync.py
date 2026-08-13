@@ -152,6 +152,9 @@ PROSE_INTEGER_FLOOR: Final[int] = 1000
 
 WAIVER: Final[str] = "const-sync: ok"
 
+#: How a string-sequence tunable renders in a table cell (see `render_sequence`).
+SEQUENCE_SEPARATOR: Final[str] = ","
+
 #: `### 2.1 -- ...` (build_0) and `## 3. Constants` (build_1) both declare a
 #: section. Each pack numbers its own sections, so the gate reads the number and
 #: lets the caller say which numbers carry constants.
@@ -270,8 +273,33 @@ def parse_spec(text: str, sections: tuple[str, ...]) -> list[Declaration]:
 # ---------------------------------------------------------------------------
 
 
+def render_sequence(value: tuple[str, ...]) -> str:
+    """A string-sequence tunable's canonical table form: bare, comma-joined.
+
+    Bare rather than bracketed because that is Build 0's own table convention --
+    ``SLUG_PATTERN`` and ``URI_SCHEME`` both appear unquoted -- and the point of
+    a canonical rendering is that the document and the module have exactly one
+    spelling between them. Order is part of the value: `MAP_STAGE1_REQUIRED_FAMILIES`
+    is what a stage-1 map must contain, and a reordering is a real change.
+    """
+    return SEQUENCE_SEPARATOR.join(value)
+
+
 def parse_module(path: Path) -> dict[str, ScalarValue]:
-    """Read every module-level ``NAME: Final[...] = literal`` declaration."""
+    """Read every module-level ``NAME: Final[...] = literal`` declaration.
+
+    **A tuple of strings is a comparable value** (B1-CR-38). It previously was
+    not: `literal_eval` handled it and the `isinstance` filter then dropped it,
+    so a sequence tunable read as "declared in the document, absent from the
+    module" *whatever the module said* -- a row that could never leave `pending:`
+    however correctly it was implemented. Build 1's
+    `MAP_STAGE1_REQUIRED_FAMILIES` is the first such tunable. It is rendered to
+    the canonical table form rather than compared structurally, so one spelling
+    serves the document, the module and this gate.
+
+    A tuple, not a list: a mutable module-level constant is a constant only by
+    convention, and `Final` does not make a list's contents immutable.
+    """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     found: dict[str, ScalarValue] = {}
     for node in tree.body:
@@ -286,7 +314,9 @@ def parse_module(path: Path) -> dict[str, ScalarValue]:
             value = ast.literal_eval(node.value)
         except ValueError:
             continue
-        if isinstance(value, (int, float, str)) and not isinstance(value, bool):
+        if isinstance(value, tuple) and value and all(isinstance(item, str) for item in value):
+            found[node.target.id] = render_sequence(value)
+        elif isinstance(value, (int, float, str)) and not isinstance(value, bool):
             found[node.target.id] = value
     return found
 

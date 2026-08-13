@@ -214,3 +214,100 @@ CI_PR_MAX_MINUTES: Final[int] = 10
 #: A floor **alarm** on core packages, never a target. Banned as a target
 #: alongside test count: a rise is not a goal, a drop is a signal.
 COVERAGE_FLOOR_CORE: Final[float] = 0.80
+
+# ---------------------------------------------------------------------------
+# Build 1 (`adopt map`) -- `builds/build_1/03-implementation-spec.md` §3
+#
+# One constants home, many declaring documents (B1-CR-12). These land here
+# rather than in a `map_const` module because a second home is a second place
+# for a value to drift, and `constants_sync` reads both documents against this
+# one module.
+#
+# `MAP_CONF_*`, the two ADR-0.1 ratios and `MAP_STAGE1_REQUIRED_FAMILIES` are
+# **provisional**: S1.8 ratifies or revises them against the labeled corpus, and
+# any revision is a logged clarification row, never a silent edit. Provisional
+# does not mean advisory -- they gate CI today at the values below.
+# ---------------------------------------------------------------------------
+
+#: G3 stage-1 deadline. A usable `surface.md` exists by here or the north-star
+#: metric is not met, whatever the full run later produces.
+MAP_STAGE1_BUDGET_S: Final[int] = 900
+
+#: G3 total deadline. Exhaustion is exit 3 -- a successful run with less output.
+MAP_TOTAL_BUDGET_S: Final[int] = 3600
+
+#: An unchanged re-run must finish inside this. CUJ-2's whole claim.
+MAP_INCREMENTAL_BUDGET_S: Final[int] = 300
+
+#: Per-extractor watchdog, and the variant for a `heavy = true` manifest. A
+#: timeout degrades to the declared fallback and is recorded; it never fails the
+#: run (PRD F7.3).
+MAP_EXTRACTOR_TIMEOUT_S: Final[int] = 120
+MAP_EXTRACTOR_TIMEOUT_LARGE_S: Final[int] = 300
+
+#: Process-pool ceiling. **The tunable is the ceiling, not the pool size**: the
+#: call site takes `min(MAP_MAX_WORKERS_CEILING, os.cpu_count() or 1)`, because
+#: the machine's core count is discovered rather than chosen and a computed
+#: value cannot be compared against the specification table at all.
+MAP_MAX_WORKERS_CEILING: Final[int] = 8
+
+#: File-index skip threshold, and the tree size above which sampling engages.
+#: Sampling is always disclosed -- a sampled map that does not say so is a map
+#: claiming completeness it does not have.
+MAP_MAX_FILE_BYTES: Final[int] = 2_000_000
+MAP_MAX_TREE_FILES: Final[int] = 250_000
+MAP_SAMPLING_MODE_RATIO: Final[float] = 0.25
+
+#: Confidence by evidence method (PRD F9.1). The **framework** assigns these; an
+#: extractor that sets its own confidence is rejected by the plugin audit, which
+#: is what keeps the ladder honest.
+MAP_CONF_GRAMMAR: Final[float] = 0.95
+MAP_CONF_REFLECTION: Final[float] = 0.92
+MAP_CONF_DECLARED: Final[float] = 0.80
+MAP_CONF_CTAGS: Final[float] = 0.70
+MAP_CONF_REGEX: Final[float] = 0.45
+MAP_CONF_AGENT_REVIEWED: Final[float] = 0.90
+
+#: The writer's floor. Below this a fact becomes a recorded **gap**, not
+#: knowledge -- silence beats guessing (PRD §1.6).
+MAP_MIN_EMIT_CONFIDENCE: Final[float] = 0.40
+
+#: The `source_version` projection digest. Named rather than inlined because
+#: both projections and every stored composite depend on one answer.
+MAP_DIGEST_ALGO: Final[str] = "blake2b-128"
+
+#: Above this a diagram collapses into kind-level clusters, with a notice.
+MAP_DIAGRAM_MAX_NODES: Final[int] = 300
+
+#: What "usable map" means for the north-star metric: stage-1 covers every one
+#: of these families that is actually present. Order is part of the value.
+MAP_STAGE1_REQUIRED_FAMILIES: Final[tuple[str, ...]] = (
+    "endpoint",
+    "db_field",
+    "job",
+    "config_key",
+    "prompt",
+)
+
+#: The two arms of ADR-0.1's reversal trigger. Deterministic share below the
+#: floor, or glue rewrite rate above the alert, and the bet is failing.
+MAP_PLUGIN_COVERAGE_FLOOR: Final[float] = 0.60
+MAP_GLUE_REWRITE_ALERT: Final[float] = 0.40
+
+#: Glue-pass budgets, per run. Exhausting any one aborts the pass at exit 6 with
+#: the deterministic map intact (04 §7).
+MAP_AGENT_MAX_COST_USD: Final[float] = 2.00
+MAP_AGENT_MAX_WALL_S: Final[int] = 600
+MAP_AGENT_MAX_FILES_SAMPLED: Final[int] = 40
+MAP_AGENT_MAX_FILE_BYTES: Final[int] = 120_000
+
+#: SQLite busy timeout for a map run. Distinct from `STORE_BUSY_TIMEOUT_MS`:
+#: that is the store adapter's, this is how long one run waits for another to
+#: release the store before raising `MAP_STORE_LOCKED`.
+MAP_RUN_LOCK_TIMEOUT_S: Final[int] = 30
+
+#: Build 1's run-artifact and front-matter format versions. Both start at 1 and
+#: move independently of `SCHEMA_VERSION` and `EXPORT_VERSION`; `surface.json`
+#: is a run artifact and **not** an interchange contract (02 §9.2).
+SURFACE_REPORT_VERSION: Final[int] = 1
+SURFACE_ATTRS_VERSION: Final[int] = 1

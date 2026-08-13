@@ -21,6 +21,13 @@ dependencies = [
     "adopt-agent",
     "adopt-const",
     "adopt-coverage",
+    # `adopt_store.facades.identity` imports `build_uri` and `parse_uri`. This
+    # was undeclared and invisible: every test runs against `uv sync
+    # --all-packages`, where all fifteen distributions are present whatever any
+    # one of them declares, and the `packaged-artifact` gate installs
+    # `adopt-cli`, which declares `adopt-identity` itself. The gap only appears
+    # to a consumer installing a *subset* -- `adopt-plane` was the first.
+    "adopt-identity",
     "adopt-model",
     "adopt-obs",
     "adopt-schema",

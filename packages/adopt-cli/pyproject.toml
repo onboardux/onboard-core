@@ -18,6 +18,11 @@ dependencies = [
     "adopt-export",
     "adopt-freshness",
     "adopt-identity",
+    # `adopt_model._enums` is imported directly by `commands/init.py` and
+    # `commands/boundary.py`. It arrived transitively through `adopt-store` until
+    # someone installed a subset that did not include it, which is why an
+    # undeclared dependency is a defect even while it happens to resolve.
+    "adopt-model",
     "adopt-obs",
     "adopt-policy",
     "adopt-scope",

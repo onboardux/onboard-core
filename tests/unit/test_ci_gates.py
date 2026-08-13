@@ -13,12 +13,14 @@ identical CI output.
 """
 
 import os
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 import pytest
 from scripts import (
     assert_release_complete,
+    build0_untouched,
     ci_ratchet,
     conformance_matrix,
     constants_sync,
@@ -45,6 +47,24 @@ SPEC_STUB = """
 | Name | Value | Consumer |
 |---|---|---|
 | `GAMMA_FLOOR` | `0.85` | classifier |
+"""
+
+#: A later pack's constants table. Two-level heading and a different section
+#: number on purpose -- each pack numbers its own sections, and the gate must
+#: read the number rather than assume build_0's depth.
+BUILD1_STUB = """
+## 3. Constants
+
+| Name | Value | Unit | Consumer |
+|---|---|---|---|
+| `DELTA_BUDGET_S` | `900` | s | orchestrator |
+| `DELTA_RATIO` | `0.6` | ratio | ladder |
+
+## 4. Repo layout
+
+| Name | Value | Unit | Consumer |
+|---|---|---|---|
+| `NOT_A_CONSTANT` | `13` | — | in section 4 |
 """
 
 
@@ -131,6 +151,198 @@ class TestConstantsSync:
 
         assert violations == []
 
+    def test_a_two_level_section_heading_declares_a_section_and_the_next_one_ends_it(
+        self,
+    ) -> None:
+        """Each pack numbers its own sections: build_0 uses `### 2.n`, build_1 `## 3`.
+
+        *Fails when* the parser only recognises one heading depth. *Matters
+        because* a document whose constants table it cannot see contributes
+        nothing and reports nothing -- the same silent-zero failure as CR-67.
+        """
+        declared = {d.name: d.value for d in constants_sync.parse_spec(BUILD1_STUB, ("3",))}
+
+        assert declared == {"DELTA_BUDGET_S": 900, "DELTA_RATIO": 0.6}, (
+            "§3's own rows, and only those"
+        )
+        assert "NOT_A_CONSTANT" not in declared, "§4's table must not bleed into §3"
+
+
+@pytest.mark.unit
+class TestConstantsSyncAcrossDocuments:
+    """`adopt_const` is one home with several declaring documents (B1-CR-12).
+
+    *Fails when* the gate stops accepting a constant that a later pack document
+    declares. *Matters because* Build 1 adds 28 constants to this same module,
+    and a gate that rejects them forces a second constants home -- the exact
+    drift B1-CR-12 forbids. *No other instrument catches it because* the gate
+    passes today with zero Build 1 constants implemented: its working state and
+    its broken state are currently identical.
+    """
+
+    @staticmethod
+    def _documents(tmp_path: Path, *, build1_text: str) -> tuple[constants_sync.SpecDocument, ...]:
+        build0 = tmp_path / "b0.md"
+        build0.write_text(SPEC_STUB, encoding="utf-8")
+        build1 = tmp_path / "b1.md"
+        build1.write_text(build1_text, encoding="utf-8")
+        return (
+            constants_sync.SpecDocument(
+                path=build0,
+                label="build_0 §2",
+                core_sections=("2.1",),
+                relative_hint=Path("build_0") / "b0.md",
+                plane_sections=("2.4",),
+            ),
+            constants_sync.SpecDocument(
+                path=build1,
+                label="build_1 §3",
+                core_sections=("3",),
+                relative_hint=Path("build_1") / "b1.md",
+                enforce_completeness=False,
+                required=False,
+            ),
+        )
+
+    @staticmethod
+    def _with_module(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str) -> None:
+        module = tmp_path / "const.py"
+        module.write_text(body, encoding="utf-8")
+        monkeypatch.setattr(constants_sync, "CORE_MODULE", module)
+
+    def test_a_constant_declared_only_in_the_second_document_is_documented(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The whole point: one module, many declaring documents."""
+        self._with_module(
+            monkeypatch,
+            tmp_path,
+            "from typing import Final\n"
+            "ALPHA_LIMIT: Final[int] = 4096\n"
+            "BETA_BASE_MS: Final[int] = 250\n"
+            "BETA_MAX_MS: Final[int] = 30000\n"
+            "DELTA_BUDGET_S: Final[int] = 900\n"
+            "DELTA_RATIO: Final[float] = 0.6\n",
+        )
+
+        report = constants_sync.run(
+            self._documents(tmp_path, build1_text=BUILD1_STUB),
+            tmp_path / "absent-plane.py",
+            scan_prose=False,
+            scan_roots=[tmp_path],
+        )
+
+        assert report.ok, report.violations
+
+    def test_a_constant_in_no_document_is_still_rejected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The floor. Widening to a list must not become "documented anywhere or nowhere"."""
+        self._with_module(
+            monkeypatch,
+            tmp_path,
+            "from typing import Final\n"
+            "ALPHA_LIMIT: Final[int] = 4096\n"
+            "BETA_BASE_MS: Final[int] = 250\n"
+            "BETA_MAX_MS: Final[int] = 30000\n"
+            "STOWAWAY: Final[int] = 7\n",
+        )
+
+        report = constants_sync.run(
+            self._documents(tmp_path, build1_text=BUILD1_STUB),
+            tmp_path / "absent-plane.py",
+            scan_prose=False,
+            scan_roots=[tmp_path],
+        )
+
+        assert any("STOWAWAY" in v and "appears in no" in v for v in report.violations), (
+            report.violations
+        )
+
+    def test_a_declared_but_unbuilt_row_is_pending_rather_than_failing_or_silent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A build in progress is a visible count, not a passing silence.
+
+        Failing would make the gate unrunnable until Build 1 finishes; ignoring
+        would make "specified but never built" indistinguishable from "nobody
+        declared it". It is reported and counted instead.
+        """
+        self._with_module(
+            monkeypatch,
+            tmp_path,
+            "from typing import Final\n"
+            "ALPHA_LIMIT: Final[int] = 4096\n"
+            "BETA_BASE_MS: Final[int] = 250\n"
+            "BETA_MAX_MS: Final[int] = 30000\n",
+        )
+
+        report = constants_sync.run(
+            self._documents(tmp_path, build1_text=BUILD1_STUB),
+            tmp_path / "absent-plane.py",
+            scan_prose=False,
+            scan_roots=[tmp_path],
+        )
+
+        assert report.ok, report.violations
+        assert any("DELTA_BUDGET_S" in p for p in report.pending), report.pending
+
+    def test_overriding_one_documents_path_relocates_the_whole_pack(self, tmp_path: Path) -> None:
+        """CI checks the pack out at `pack/`, not as a sibling of the repo.
+
+        *Fails when* an override moves build_0's document and leaves build_1's
+        pointing at a sibling path that does not exist there. *Matters because*
+        the gate would then resolve build_0, silently skip build_1, and enforce
+        a **different rule in CI than on a developer's machine** — a Build 1
+        constant would pass locally and fail in CI as documented nowhere. *No
+        other instrument catches it because* the skip is a `note:`, not a
+        violation, so CI stays green while checking less than it reports.
+        """
+        relocated = tmp_path / "pack" / "builds"
+        (relocated / "build_0").mkdir(parents=True)
+        (relocated / "build_1").mkdir(parents=True)
+        (relocated / "build_0" / "03-implementation-spec-build0.md").write_text(
+            SPEC_STUB, encoding="utf-8"
+        )
+        (relocated / "build_1" / "03-implementation-spec.md").write_text(
+            BUILD1_STUB, encoding="utf-8"
+        )
+
+        resolved = constants_sync.resolve_documents(
+            constants_sync.DEFAULT_SPEC_DOCUMENTS,
+            [relocated / "build_0" / "03-implementation-spec-build0.md"],
+        )
+
+        assert all(d.path.exists() for d in resolved), (
+            f"every document must relocate with the pack: {[str(d.path) for d in resolved]}"
+        )
+        assert resolved[1].path.parent.parent == relocated
+
+    def test_a_value_that_drifts_from_the_second_document_is_still_caught(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Not-yet-complete relaxes completeness only -- never value agreement."""
+        self._with_module(
+            monkeypatch,
+            tmp_path,
+            "from typing import Final\n"
+            "ALPHA_LIMIT: Final[int] = 4096\n"
+            "BETA_BASE_MS: Final[int] = 250\n"
+            "BETA_MAX_MS: Final[int] = 30000\n"
+            "DELTA_BUDGET_S: Final[int] = 42\n",
+        )
+
+        report = constants_sync.run(
+            self._documents(tmp_path, build1_text=BUILD1_STUB),
+            tmp_path / "absent-plane.py",
+            scan_prose=False,
+            scan_roots=[tmp_path],
+        )
+
+        assert any("DELTA_BUDGET_S" in v and "42" in v for v in report.violations), (
+            report.violations
+        )
+
 
 @pytest.mark.unit
 class TestErrorRegistrySync:
@@ -192,9 +404,117 @@ class TestErrorRegistrySync:
                 "CI job is the authoritative instrument for this comparison"
             )
 
-        report = error_registry_sync.run(contracts)
+        documents = tuple(
+            replace(document, path=contracts) if index == 0 else document
+            for index, document in enumerate(error_registry_sync.DEFAULT_REGISTRY_DOCUMENTS)
+        )
+
+        report = error_registry_sync.run(documents)
 
         assert report.ok, report.violations
+
+    def test_a_second_document_declares_into_the_same_registry(self, tmp_path: Path) -> None:
+        """One `ErrorCode` enum, many declaring documents.
+
+        *Fails when* the gate cannot read a later pack's section. *Matters
+        because* Build 1 registers 14 codes into `adopt_obs.errors`, and a gate
+        that cannot see them would force a second registry -- an error a client
+        can receive with no published meaning, which is the failure this gate
+        exists to prevent.
+        """
+        build1 = tmp_path / "b1.md"
+        build1.write_text(
+            "### 1.4 Errors\n\n"
+            "| Code | Category | Raised when |\n|---|---|---|\n"
+            "| `MAP_STUB_FAILED` | policy | a stub declined |\n\n"
+            "### 1.5 Next\n\n"
+            "| Code | Category | Raised when |\n|---|---|---|\n"
+            "| `NOT_A_CODE` | usage | in section 1.5 |\n",
+            encoding="utf-8",
+        )
+
+        parsed = error_registry_sync.parse_registry(
+            build1.read_text(encoding="utf-8"), section="1.4"
+        )
+
+        assert parsed == {"MAP_STUB_FAILED": "policy"}, "§1.5 must not bleed into §1.4"
+
+    def test_an_unimplemented_code_in_a_pending_document_does_not_fail_the_gate(
+        self, tmp_path: Path
+    ) -> None:
+        """Specified-not-yet-built is a printed count, not a failure and not a silence."""
+        build1 = tmp_path / "b1.md"
+        build1.write_text(
+            "### 1.4 Errors\n\n"
+            "| Code | Category | Raised when |\n|---|---|---|\n"
+            "| `MAP_NOT_BUILT_YET` | policy | never, so far |\n",
+            encoding="utf-8",
+        )
+        documents = (
+            replace(
+                error_registry_sync.DEFAULT_REGISTRY_DOCUMENTS[0],
+                path=Path(
+                    os.environ.get(
+                        "ADOPT_CONTRACTS_PATH", error_registry_sync.DEFAULT_CONTRACTS_PATH
+                    )
+                ),
+            ),
+            replace(error_registry_sync.DEFAULT_REGISTRY_DOCUMENTS[1], path=build1),
+        )
+        if not documents[0].path.exists():
+            pytest.skip("handoff pack not reachable; the CI job is the authoritative instrument")
+
+        report = error_registry_sync.run(documents)
+
+        assert report.ok, report.violations
+        assert any("MAP_NOT_BUILT_YET" in p for p in report.pending), report.pending
+
+
+@pytest.mark.unit
+class TestBuild0Untouched:
+    """The gate refuses to watch a subject that does not exist.
+
+    *Fails when* a protected package is renamed or removed and the gate keeps
+    reporting OK. *Matters because* this gate replaces a sprint-plan line that
+    was already vacuous -- `git diff --stat -- <nonexistent>` exits 0 and prints
+    nothing forever. *No other instrument catches it because* a gate watching
+    nothing and a gate watching a clean tree produce identical output.
+    """
+
+    def test_a_protected_package_that_does_not_resolve_is_a_violation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(
+            build0_untouched.PROTECTED, "adopt-does-not-exist", "planted by this test"
+        )
+
+        violations = build0_untouched.check_subjects_resolve()
+
+        assert any("adopt-does-not-exist" in v for v in violations), violations
+        assert any("passes vacuously" in v for v in violations), (
+            "the message must say why a missing subject is worse than a failing one"
+        )
+
+    def test_every_protected_package_resolves_today(self) -> None:
+        assert build0_untouched.check_subjects_resolve() == []
+
+    def test_an_unclassified_package_at_the_baseline_is_a_violation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A new Build 0 package must not silently escape classification."""
+        monkeypatch.delitem(build0_untouched.PROTECTED, "adopt-store")
+
+        violations = build0_untouched.check_classification(build0_untouched.baseline("main"))
+
+        assert any("adopt-store" in v for v in violations), violations
+
+    def test_the_protected_and_editable_sets_are_disjoint(self) -> None:
+        """A package in both would make the reason it carries meaningless."""
+        assert set(build0_untouched.PROTECTED) & set(build0_untouched.EDITABLE) == set()
+
+    def test_every_classification_carries_a_reason(self) -> None:
+        for name, reason in {**build0_untouched.PROTECTED, **build0_untouched.EDITABLE}.items():
+            assert reason.strip(), f"{name} is classified with no stated reason"
 
 
 @pytest.mark.unit

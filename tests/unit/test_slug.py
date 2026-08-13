@@ -21,8 +21,14 @@ from pathlib import Path
 import pytest
 
 from adopt_const import SLUG_MAX_CHARS, SLUG_MIN_CHARS
+from adopt_identity import build_uri
 from adopt_obs import AdoptError, ErrorCode, ManualClock
-from adopt_scope import ensure_slug_available, ensure_slug_unchanged, validate_slug
+from adopt_scope import (
+    Scope,
+    ensure_slug_available,
+    ensure_slug_unchanged,
+    validate_slug,
+)
 from adopt_store import open_store
 
 _MAX = "a" * SLUG_MAX_CHARS
@@ -99,3 +105,30 @@ def test_an_archived_systems_slug_cannot_be_reissued(tmp_path: Path) -> None:
             )
 
     assert raised.value.code is ErrorCode.SCOPE_SLUG_REUSED
+
+
+@pytest.mark.unit
+def test_two_environments_on_one_system_mint_distinct_uri_segments(
+    s4_scope: Scope, s4_scope_staging: Scope
+) -> None:
+    """Build 1's prerequisite 9, asserted rather than assumed.
+
+    *Fails when* the fixture stops producing two distinct environments on one
+    system. *Matters because* Build 1's environment-isolation gate (contracts
+    C9, PRD N6) asserts a staging run emits zero production URIs, and with one
+    environment in the store that assertion passes without testing anything --
+    the same vacuity as a tenant-escape case run against a database with no
+    second tenant. *No other instrument catches it because* every existing test
+    uses a single environment and would stay green.
+    """
+    assert s4_scope.environment is not None
+    assert s4_scope_staging.environment is not None
+    assert s4_scope.environment.slug != s4_scope_staging.environment.slug
+    assert s4_scope.system is not None and s4_scope_staging.system is not None
+    assert s4_scope.system.id == s4_scope_staging.system.id, "one system, two environments"
+
+    prod = build_uri(s4_scope, "endpoint", "http", "GET /v1/orders")
+    staging = build_uri(s4_scope_staging, "endpoint", "http", "GET /v1/orders")
+
+    assert prod != staging, "the environment segment must separate the two URIs"
+    assert "/prod/" in prod and "/staging/" in staging

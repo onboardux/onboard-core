@@ -71,6 +71,27 @@ def s4_scope(s4_store: SqliteStoreHandle) -> Scope:
 
 
 @pytest.fixture
+def s4_scope_staging(s4_store: SqliteStoreHandle, s4_scope: Scope) -> Scope:
+    """A **second** environment on the same system: `.../orders-api/staging`.
+
+    Deliberately a separate fixture rather than a second row inside `s4_scope`,
+    so that every existing single-environment test keeps the data it was written
+    against and this one is opt-in.
+
+    **Why it exists.** Build 1's environment-isolation gate (contracts C9, PRD
+    N6) asserts that a staging run emits zero production URIs. With one
+    environment in the store that assertion passes without testing anything --
+    the same shape as an escape case run against a database with no second
+    tenant. The second row is what gives the gate something to be wrong about,
+    which is why Build 1's prerequisite check names it explicitly.
+    """
+    assert s4_scope.system is not None, "s4_scope resolves all four levels"
+    facade = s4_store.scope()
+    facade.create_environment(system_id=s4_scope.system.id, slug="staging", name="Staging")
+    return facade.resolve("northwind/acme-erp/orders-api/staging")
+
+
+@pytest.fixture
 def add_boundary(s4_store: SqliteStoreHandle) -> Callable[..., str]:
     """Declare one `observability_boundary` through the facade. Input 5 of contracts §6.
 

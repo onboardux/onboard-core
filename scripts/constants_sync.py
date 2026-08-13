@@ -35,7 +35,7 @@ import contextlib
 import os
 import re
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Final
 
@@ -45,6 +45,13 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 #: In CI both are checked out side by side; `ADOPT_IMPL_SPEC_PATH` overrides.
 DEFAULT_SPEC_PATH: Final[Path] = (
     REPO_ROOT.parent / "builds" / "build_0" / "03-implementation-spec-build0.md"
+)
+
+#: Build 1 appends its constants to **this same module** (Build 1 B1-CR-12): one
+#: constants home, many declaring documents. Its table is `## 3`, not `### 2.n`,
+#: because each pack numbers its own sections.
+DEFAULT_BUILD1_SPEC_PATH: Final[Path] = (
+    REPO_ROOT.parent / "builds" / "build_1" / "03-implementation-spec.md"
 )
 
 CORE_MODULE: Final[Path] = (
@@ -63,6 +70,80 @@ DEFAULT_PLANE_MODULE: Final[Path] = (
 CORE_SECTIONS: Final[tuple[str, ...]] = ("2.1", "2.2", "2.3")
 PLANE_SECTIONS: Final[tuple[str, ...]] = ("2.4",)
 
+
+@dataclass(frozen=True)
+class SpecDocument:
+    """One pack's implementation spec, and which of its tables declare constants.
+
+    **Why a list rather than one document.** `adopt_const` is the single home for
+    every tunable in the open repository, and later build items add to it rather
+    than starting a second module. The *declaring documents* therefore multiply
+    while the *code home* stays singular, and this gate has to hold both facts at
+    once: a constant is documented when **any** listed document declares it, and
+    a constant is undocumented when none of them does.
+
+    `enforce_completeness` is the direction that differs between a finished build
+    and one in progress. Build 0 is built, so a row with no constant behind it is
+    a defect. Build 1 is specified and not yet implemented, so its rows are
+    *pending* -- reported on every run with a count, never silently ignored, and
+    flipped to `True` by its own Definition of Done.
+    """
+
+    path: Path
+    label: str
+    core_sections: tuple[str, ...]
+    #: Where this document sits under the pack's `builds/` root. When the pack is
+    #: relocated -- CI checks it out at `pack/`, not as a sibling -- every
+    #: document moves with it, so overriding one must relocate the rest. Without
+    #: this, CI would resolve build_0 and silently skip build_1, enforcing a
+    #: different rule than a developer's machine.
+    relative_hint: Path
+    plane_sections: tuple[str, ...] = ()
+    enforce_completeness: bool = True
+    required: bool = True
+
+
+DEFAULT_SPEC_DOCUMENTS: Final[tuple[SpecDocument, ...]] = (
+    SpecDocument(
+        path=DEFAULT_SPEC_PATH,
+        label="build_0 §2",
+        core_sections=CORE_SECTIONS,
+        relative_hint=Path("build_0") / "03-implementation-spec-build0.md",
+        plane_sections=PLANE_SECTIONS,
+    ),
+    SpecDocument(
+        path=DEFAULT_BUILD1_SPEC_PATH,
+        label="build_1 §3",
+        core_sections=("3",),
+        relative_hint=Path("build_1") / "03-implementation-spec.md",
+        enforce_completeness=False,
+        required=False,
+    ),
+)
+
+
+def resolve_documents(
+    documents: tuple[SpecDocument, ...], overrides: list[Path]
+) -> tuple[SpecDocument, ...]:
+    """Apply path overrides positionally, relocating the rest with the pack.
+
+    An override names where **that** document is; the pack it belongs to moves
+    as a unit. So the first override also fixes the `builds/` root, and every
+    document without its own override is re-derived from it.
+    """
+    if not overrides:
+        return documents
+
+    builds_root = overrides[0].resolve().parent.parent
+    resolved: list[SpecDocument] = []
+    for index, document in enumerate(documents):
+        if index < len(overrides):
+            resolved.append(replace(document, path=overrides[index]))
+        else:
+            resolved.append(replace(document, path=builds_root / document.relative_hint))
+    return tuple(resolved)
+
+
 #: Values too structurally common to flag. See the module docstring.
 STRUCTURAL_VALUES: Final[frozenset[int]] = frozenset({-1, 0, 1, 2})
 
@@ -71,7 +152,10 @@ PROSE_INTEGER_FLOOR: Final[int] = 1000
 
 WAIVER: Final[str] = "const-sync: ok"
 
-_SECTION_RE: Final[re.Pattern[str]] = re.compile(r"^###\s+(\d+\.\d+)\s")
+#: `### 2.1 -- ...` (build_0) and `## 3. Constants` (build_1) both declare a
+#: section. Each pack numbers its own sections, so the gate reads the number and
+#: lets the caller say which numbers carry constants.
+_SECTION_RE: Final[re.Pattern[str]] = re.compile(r"^#{2,3}\s+(\d+(?:\.\d+)?)[.\s]")
 _HEADING_RE: Final[re.Pattern[str]] = re.compile(r"^#{1,6}\s")
 _BACKTICK_RE: Final[re.Pattern[str]] = re.compile(r"`([^`]+)`")
 _NUMBER_RE: Final[re.Pattern[str]] = re.compile(r"(?<![\w.])(\d[\d_]*\.\d+|\d[\d_]*)(?![\w.])")
@@ -92,6 +176,9 @@ class Report:
     violations: list[str] = field(default_factory=list)
     waivers: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    #: Rows in a not-yet-complete document with no constant behind them. Printed
+    #: on every run: a build in progress is a visible count, never a silence.
+    pending: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -369,54 +456,118 @@ def _is_prose_line(raw: str) -> bool:
     return "#" in raw and not stripped.startswith(('"', "'"))
 
 
-def run(spec_path: Path, plane_module_path: Path, *, scan_prose: bool) -> Report:
-    report = Report()
-    if not spec_path.exists():
-        report.violations.append(
-            f"implementation spec not found at {spec_path}. "
-            "Set ADOPT_IMPL_SPEC_PATH or pass --spec: the §2 tables are the source of truth "
-            "and this gate cannot run without them."
+def _collect(
+    documents: tuple[SpecDocument, ...],
+    core_module: dict[str, ScalarValue],
+    plane_module: dict[str, ScalarValue],
+    report: Report,
+) -> tuple[list[Declaration], list[Declaration]]:
+    """Merge every reachable document's declarations into one core and one plane set.
+
+    Merging **before** comparing is what lets the bidirectional check stay a
+    single comparison. Checking each document independently would make every
+    other document's constants look undocumented, which is the obvious
+    implementation and is wrong in a way that only shows up once a second
+    document exists.
+
+    A document that does not enforce completeness contributes only the rows that
+    already have a constant behind them; the rest are counted as pending and
+    printed, so "specified but not yet built" is visible on every run instead of
+    being indistinguishable from "nobody declared it".
+    """
+    core: list[Declaration] = []
+    plane: list[Declaration] = []
+
+    for document in documents:
+        if not document.path.exists():
+            if document.required:
+                report.violations.append(
+                    f"implementation spec not found at {document.path}. "
+                    "Set ADOPT_IMPL_SPEC_PATH or pass --spec: the constants tables are the "
+                    "source of truth and this gate cannot run without them."
+                )
+            else:
+                report.notes.append(
+                    f"{document.label}: not present at {document.path}; skipped. "
+                    "Its constants, if any reach a module, will be reported as undocumented."
+                )
+            continue
+
+        text = document.path.read_text(encoding="utf-8")
+        core_declared = parse_spec(text, document.core_sections)
+        plane_declared = parse_spec(text, document.plane_sections)
+
+        if document.enforce_completeness:
+            core += core_declared
+            plane += plane_declared
+        else:
+            pending = [d for d in core_declared if d.name not in core_module]
+            pending += [d for d in plane_declared if d.name not in plane_module]
+            core += [d for d in core_declared if d.name in core_module]
+            plane += [d for d in plane_declared if d.name in plane_module]
+            report.pending += [
+                f"{document.label}: {d.name}" for d in sorted(pending, key=lambda d: d.name)
+            ]
+
+        report.notes.append(
+            f"{document.label}: declares {len(core_declared)} core and "
+            f"{len(plane_declared)} plane constants."
         )
+
+    return core, plane
+
+
+def default_scan_roots() -> list[Path]:
+    """The trees whose source is scanned for inlined tunables."""
+    return [
+        REPO_ROOT / "packages",
+        REPO_ROOT / "scripts",
+        REPO_ROOT / "tools",
+        REPO_ROOT / "bench",
+    ]
+
+
+def run(
+    documents: tuple[SpecDocument, ...],
+    plane_module_path: Path,
+    *,
+    scan_prose: bool,
+    scan_roots: list[Path] | None = None,
+) -> Report:
+    report = Report()
+    core_module = parse_module(CORE_MODULE)
+    plane_module = parse_module(plane_module_path) if plane_module_path.exists() else {}
+
+    core_spec, plane_spec = _collect(documents, core_module, plane_module, report)
+    if report.violations:
         return report
 
-    text = spec_path.read_text(encoding="utf-8")
-    core_spec = parse_spec(text, CORE_SECTIONS)
-    plane_spec = parse_spec(text, PLANE_SECTIONS)
-    report.notes.append(
-        f"§2.1-2.3 declares {len(core_spec)} constants; §2.4 declares {len(plane_spec)}."
-    )
-
     report.violations += check_uniqueness(core_spec, plane_spec)
-    report.violations += check_module_matches_spec(
-        core_spec, parse_module(CORE_MODULE), "adopt_const"
-    )
+    report.violations += check_module_matches_spec(core_spec, core_module, "adopt_const")
 
     if plane_module_path.exists():
-        plane_module = parse_module(plane_module_path)
         report.violations += check_module_matches_spec(plane_spec, plane_module, "plane_const")
-        shared_modules = set(parse_module(CORE_MODULE)) & set(plane_module)
+        shared_modules = set(core_module) & set(plane_module)
         report.violations += [
             f"{name} exists in both constants modules." for name in sorted(shared_modules)
         ]
     else:
         report.notes.append(
             f"plane_const not present at {plane_module_path}; skipped its module comparison. "
-            "Cross-module uniqueness was still enforced against the §2 tables."
+            "Cross-module uniqueness was still enforced against the constants tables."
         )
 
-    core_values = {d.value for d in core_spec}
-    scan_roots = [
-        REPO_ROOT / "packages",
-        REPO_ROOT / "scripts",
-        REPO_ROOT / "tools",
-        REPO_ROOT / "bench",
-    ]
-    literal_violations, waivers = check_inlined_literals(core_values, scan_roots)
+    # Only implemented constants can be inlined: there is nothing to import for a
+    # row that has no constant behind it yet, so a not-yet-built tunable must not
+    # turn every coincidental literal in the tree into a violation.
+    core_values = {d.value for d in core_spec if d.name in core_module}
+    roots = default_scan_roots() if scan_roots is None else scan_roots
+    literal_violations, waivers = check_inlined_literals(core_values, roots)
     report.violations += literal_violations
     report.waivers += waivers
 
     if scan_prose:
-        report.violations += check_prose(core_values, scan_roots)
+        report.violations += check_prose(core_values, roots)
 
     return report
 
@@ -427,16 +578,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--spec",
         type=Path,
-        default=Path(os.environ.get("ADOPT_IMPL_SPEC_PATH", DEFAULT_SPEC_PATH)),
+        action="append",
+        help=(
+            "override a declaring document's path, positionally against the default "
+            "list (build_0, then build_1). Repeatable."
+        ),
     )
     parser.add_argument("--plane-module", type=Path, default=DEFAULT_PLANE_MODULE)
     parser.add_argument("--no-prose", action="store_true", help="skip the prose duplication scan")
     args = parser.parse_args(argv)
 
-    report = run(args.spec, args.plane_module, scan_prose=not args.no_prose)
+    overrides: list[Path] = list(args.spec or [])
+    if not overrides and "ADOPT_IMPL_SPEC_PATH" in os.environ:
+        overrides = [Path(os.environ["ADOPT_IMPL_SPEC_PATH"])]
+    documents = resolve_documents(DEFAULT_SPEC_DOCUMENTS, overrides)
+
+    report = run(documents, args.plane_module, scan_prose=not args.no_prose)
 
     for note in report.notes:
         print(f"note: {note}")
+    for entry in report.pending:
+        print(f"pending: {entry}")
+    if report.pending:
+        print(f"note: {len(report.pending)} declared constant(s) not yet implemented.")
     for waiver in report.waivers:
         print(f"waived: {waiver}")
     for violation in report.violations:

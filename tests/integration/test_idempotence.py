@@ -220,3 +220,150 @@ def test_a_new_commit_alone_does_not_write_a_revision(
     """
     run(vcs_revision="a" * 40)
     assert run(vcs_revision="b" * 40).revisions_written == _ZERO
+
+
+# --------------------------------------------------------------------------- #
+# S1.4: two extractors describing one referent.
+#
+# The table above was written when every referent had exactly one extractor. It
+# does not cover the case S1.4 created, and that case broke F4 outright.
+# --------------------------------------------------------------------------- #
+
+
+def test_two_extractors_describing_one_endpoint_do_not_churn_the_chain(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """`02` §10 C1 and `01` F4 are in tension, and this is where they meet.
+
+    *Fails when* one identity receives facts from two extractors and the writer
+    treats them as two observations to append in turn.
+
+    *Matters because* satisfying C1 is what creates the failure. `01` F2.3
+    requires two extractors describing one referent to mint *"byte-identical
+    URIs"*; S1.4 ships the first pair that genuinely does -- `web.django.routes`
+    reads the route a service serves, `web.openapi` reads the contract it
+    publishes about the same route -- and their attributes differ, so the chain
+    **alternates between them forever**. Measured before the repair: six
+    revisions in all three tables on *every* run after the first, on a tree
+    nobody touched.
+
+    *No other instrument catches it because* every earlier idempotence case has
+    one extractor per referent, so the second observation it needs does not
+    exist; the URI set, the fact count, the extractor attribution and the
+    per-extractor determinism are all identical across runs, and the only visible
+    symptom is a revision count nobody was comparing to zero.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "tests")
+    from adopt_extractors_common import pack as common_pack
+    from adopt_extractors_web import pack as web_pack
+    from adopt_map.orchestrator import run as run_map
+    from adopt_map.plugins import DEFAULT_ENABLED_PACKS, ExtractorRegistry
+
+    from build1_conftest import build_scoped_store, surface_writer_for
+
+    work = tmp_path_factory.mktemp("reconcile")
+    handle, scopes = build_scoped_store(work)
+    registry = ExtractorRegistry(enabled_packs=DEFAULT_ENABLED_PACKS)
+    registry.register_all(common_pack())
+    registry.register_all(web_pack())
+    writer = surface_writer_for(handle)
+    fixture = Path("fixtures/repos/django-orders")
+
+    try:
+        first = run_map(
+            resolved=scopes["prod"],
+            root=fixture,
+            registry=registry,
+            adopt_version="test",
+            writer=writer,
+            out_dir=work / "out1",
+            sequential=True,
+        )
+        # One fact per identity, which is the precondition rather than the point:
+        # a duplicate here would make the zero below unreachable.
+        uris = [entry.uri for entry in first.minted()]
+        assert len(uris) == len(set(uris)), "one referent reached the writer twice"
+
+        for index in (2, 3):
+            again = run_map(
+                resolved=scopes["prod"],
+                root=fixture,
+                registry=registry,
+                adopt_version="test",
+                writer=writer,
+                out_dir=work / f"out{index}",
+                sequential=True,
+            )
+            assert again.write_result is not None
+            assert dict(again.write_result.revisions_written) == {
+                "identity": 0,
+                "knowledge": 0,
+                "binding": 0,
+            }, f"run {index} wrote revisions on an unchanged tree"
+    finally:
+        handle.close()
+
+
+def test_the_merged_fact_carries_what_only_the_contract_artifact_saw(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Reconciliation **merges**; it does not pick a winner and discard the rest.
+
+    *Fails when* the losing observation's fields are dropped.
+
+    *Matters because* `02` §4.2's `endpoint` semantic projection names both
+    *"request/response schema digest"* -- which only the OpenAPI document
+    supplies -- and *"framework, handler symbol"* -- which only the route parse
+    supplies. A "strongest evidence wins" rule would satisfy idempotence while
+    silently deleting a field the contract asks the digest to cover.
+
+    *No other instrument catches it because* the run stays idempotent either way,
+    and a smaller attribute set still validates against a model whose fields are
+    all optional.
+    """
+    import time
+    from pathlib import Path
+
+    from adopt_extractors_web import DjangoRoutesExtractor, OpenapiExtractor
+    from adopt_map.context import Budget, ExtractorContext
+    from adopt_map.fileindex import build_index
+    from adopt_map.orchestrator import reconcile_batches
+    from adopt_map.writer import FactBatch
+
+    fixture = Path("fixtures/repos/django-orders")
+    ctx = ExtractorContext(
+        root=str(fixture),
+        index=build_index(fixture),
+        budget=Budget.starting_at(time.time(), stage1_s=900.0, total_s=3600.0),
+        archetype="web",
+        tier="T2",
+    )
+    import sys
+
+    sys.path.insert(0, "tests")
+    from build1_conftest import build_scoped_store
+
+    handle, scopes = build_scoped_store(tmp_path_factory.mktemp("merge"))
+    handle.close()
+
+    django, openapi = DjangoRoutesExtractor(), OpenapiExtractor()
+    batches = (
+        FactBatch(manifest=django.manifest(), facts=tuple(django.extract(ctx))),
+        FactBatch(manifest=openapi.manifest(), facts=tuple(openapi.extract(ctx))),
+    )
+    reconciled = reconcile_batches(batches, scopes["prod"])
+
+    merged = [
+        fact
+        for batch in reconciled
+        for fact in batch.facts
+        if fact.attributes.get("framework") == "django"
+        and fact.attributes.get("operation_name") is not None
+    ]
+    assert merged, "no endpoint carried both the route parse and the contract"
+    sample = merged[0]
+    assert sample.attributes["handler_symbol"] is not None, "the route parse's field survived"
+    assert sample.attributes["status_codes"], "the contract's field was merged in"

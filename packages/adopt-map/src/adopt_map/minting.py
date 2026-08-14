@@ -32,6 +32,7 @@ from adopt_obs import AdoptError, ErrorCode
 from adopt_scope import Scope
 
 __all__ = [
+    "ANY_METHOD",
     "PARAMETER_PLACEHOLDER",
     "mint",
     "normalize_local_key",
@@ -98,8 +99,22 @@ _PATH_SHAPED_KINDS: Final[frozenset[str]] = frozenset({"endpoint"})
 #: `endpoint` key, because `02` §3.1 fixes that key's form as
 #: ``<METHOD> <normalized-path>`` -- uppercasing the whole key would destroy the
 #: case of a language-declared identifier, which rule 3 explicitly preserves.
+#: `ANY` is a method token this build mints and no RFC does: a Django `path()`
+#: and an Express `app.use` route *every* method to their handler, so `ANY` is a
+#: statement about what the framework declares rather than a guess at `GET`.
+#:
+#: **It lives here, in the module that owns the key grammar**, because it has to
+#: appear in the pattern below -- and it was not here first. S1.4 defined it in
+#: the extractor pack instead, where the normalizer could not see it, and the
+#: consequence was `ANY admin` escaping rule 4's leading-slash canonicalization
+#: while `GET /admin` received it: **B1-CR-66's own fork, reintroduced by a token
+#: the normalizer did not know**. Found by scoring a real run against a labeled
+#: set that spelled the route with a slash.
+ANY_METHOD: Final[str] = "ANY"
+
 _HTTP_METHOD_RE: Final[re.Pattern[str]] = re.compile(
-    r"^(get|put|post|head|patch|trace|delete|connect|options)(\s+)", re.IGNORECASE
+    rf"^(get|put|post|head|patch|trace|delete|connect|options|{ANY_METHOD})(\s+)",
+    re.IGNORECASE,
 )
 
 
@@ -142,10 +157,29 @@ def normalize_local_key(kind: str, local_key: str) -> str:
     value = _collapse_parameters(value)
 
     # 4. Repeated separators collapse; one trailing slash is stripped unless the
-    #    path is exactly "/".
+    #    path is exactly "/"; and the path carries exactly one **leading** slash.
+    #
+    #    The leading half is B1-CR-66, and it is rule 2's own argument one
+    #    character to the left. Django's `path("api/v1/orders/")` has no leading
+    #    slash because Django strips it before matching; FastAPI's
+    #    `@app.get("/api/v1/orders")` has one; an OpenAPI document's `paths` keys
+    #    always have one. Without this, `GET api/v1/orders` and
+    #    `GET /api/v1/orders` are two URIs for one endpoint -- exactly the fork
+    #    §3.2's own note on rule 2 says the normalization exists to prevent, and
+    #    it double-counts in every coverage figure downstream.
+    #
+    #    Applied only where the key **has** an HTTP method prefix, because that is
+    #    what identifies an http-namespace key. A grpc key
+    #    (`orders.OrderService.GetOrder`), a graphql key (`Query.orders`) and an
+    #    event topic are all `endpoint` too, and none of them is a URL path.
     value = _REPEATED_SLASH_RE.sub("/", value)
     head, separator, path = value.partition(" ")
-    if separator and path.endswith("/") and path != "/":
+    if separator and _HTTP_METHOD_RE.match(value):
+        path = "/" + path.lstrip("/")
+        if path.endswith("/") and path != "/":
+            path = path.rstrip("/")
+        value = f"{head}{separator}{path}"
+    elif separator and path.endswith("/") and path != "/":
         value = f"{head}{separator}{path.rstrip('/')}"
     elif not separator and value.endswith("/") and value != "/":
         value = value.rstrip("/")

@@ -31,6 +31,7 @@ CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
         "adopt-detect",
         "adopt-export",
         "adopt-extractors-common",
+        "adopt-extractors-web",
         "adopt-freshness",
         "adopt-identity",
         "adopt-map",

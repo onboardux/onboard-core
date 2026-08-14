@@ -181,3 +181,71 @@ def test_a_secret_smuggled_through_a_free_text_field_is_the_extractors_defect_no
                 assert secret not in str(row.model_dump(mode="json")), (
                     f"the planted secret reached {table}, which the extractor never wrote to"
                 )
+
+
+#: The two canaries planted in `fixtures/repos/django-orders/deploy/.env.example`.
+#: Distinctive on purpose: a bland placeholder would make the assertion below pass
+#: by luck rather than by the extractors doing the right thing.
+_FIXTURE_CANARIES = (
+    "PLANTED-SECRET-DO-NOT-EMIT-a1b2c3d4",
+    "sk-live-PLANTED-DO-NOT-EMIT-9f8e7d6c",
+)
+
+
+def test_no_canary_from_the_django_orders_fixture_reaches_the_store_or_an_artifact(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """`05` S1.4: *"Planted-secret property suite green across the fixture."*
+
+    *Fails when* an extractor records a credential **value** rather than a
+    reference -- a `default` on a `config_key`, a `title`, a prose line, or a
+    source-ref that quotes the line.
+
+    *Matters because* the S1.4 fixture is the first one carrying a realistic
+    `.env` with credential-shaped keys beside ordinary ones, so it is the first
+    subject where `common.config`'s "record the default" behaviour and
+    `common.secrets`' "mint a reference" behaviour meet on one file. `01` N9 is
+    zero secret values in store, outputs, logs **or report**, and this asserts all
+    four surfaces.
+
+    *No other instrument catches it because* the structural half only proves the
+    `secret:*` model has nowhere to put a value -- it cannot see a secret smuggled
+    through a **different kind's** `default` field, which is exactly what a
+    credential key under the ordinary `env` namespace would do.
+    """
+    from adopt_extractors_common import pack as common_pack
+    from adopt_extractors_web import pack as web_pack
+    from adopt_map.emit.json_report import render_surface_json
+    from adopt_map.orchestrator import run as run_map
+    from adopt_map.plugins import DEFAULT_ENABLED_PACKS, ExtractorRegistry
+    from adopt_map.report import RUN_REPORT_NAME, write_run_report
+
+    writer, resolved, root = _prepare(tmp_path_factory.mktemp("canary"))
+    registry = ExtractorRegistry(enabled_packs=DEFAULT_ENABLED_PACKS)
+    registry.register_all(common_pack())
+    registry.register_all(web_pack())
+
+    result = run_map(
+        resolved=resolved,  # type: ignore[arg-type]
+        root=Path("fixtures/repos/django-orders"),
+        registry=registry,
+        adopt_version="test",
+        writer=writer,
+        out_dir=root / "out",
+        sequential=True,
+    )
+
+    write_run_report(result, root / "out")
+    haystacks = {
+        "store": _store_text(root),
+        "surface.json": render_surface_json(result),
+        "run_report.json": (root / "out" / RUN_REPORT_NAME).read_text(encoding="utf-8"),
+    }
+    for name, text in haystacks.items():
+        for canary in _FIXTURE_CANARIES:
+            assert canary not in text, f"a planted credential value reached {name}"
+
+    # The keys themselves *are* recorded -- as references under `secret:*`, which
+    # is `02` §3.1 rule 2. Asserting their presence keeps this from passing
+    # because extraction quietly stopped reading the file at all.
+    assert "DJANGO_SECRET_KEY" in haystacks["surface.json"]

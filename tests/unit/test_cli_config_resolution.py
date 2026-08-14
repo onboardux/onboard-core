@@ -15,12 +15,14 @@ holds strings and the type checker sees them all as equivalent.
 """
 
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 from adopt_cli.commands import doctor as doctor_command
 from adopt_cli.commands import version as version_command
 from adopt_cli.config import REGISTRY, Source, load_config_file, resolve_all
+from adopt_obs import AdoptError, ErrorCode
 
 KEY = "ADOPT_LOG_LEVEL"
 
@@ -191,3 +193,91 @@ def test_no_scope_id_carries_a_default(key: str) -> None:
     resolved = {r.key: r for r in resolve_all(env={})}
     assert resolved[key].value is None
     assert resolved[key].source is Source.DEFAULT
+
+
+# --------------------------------------------------------------------------- #
+# The four `.adopt/config.toml` sections -- `05` S1.1's checkbox, built in S1.4.
+#
+# S1.1 marked *"strict config parsing; unknown keys under
+# `[map]`/`[extractors]`/`[emit]`/`[agent]` reject"* complete with nothing behind
+# it: `load_config_file` drops every table (`if not isinstance(v, dict)`), so an
+# unknown key under one of those sections was accepted by being ignored. These
+# cases are the evidence the checkbox never had.
+# --------------------------------------------------------------------------- #
+
+
+def _config(tmp_path: Path, text: str) -> Path:
+    path = tmp_path / "config.toml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_an_absent_config_file_yields_the_defaults(tmp_path: Path) -> None:
+    """A missing file is normal; only a malformed one is an error."""
+    from adopt_cli.map_config import load_map_config
+
+    configuration = load_map_config(tmp_path / "nothing.toml")
+    assert configuration.agent.enabled is False
+    assert configuration.extractors.web is None
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        ("[nonsense]\nx = 1\n", "an unknown section"),
+        ("[extractors]\nwbe.enabled = true\n", "a typo'd pack name"),
+        ("[extractors]\nweb.enable = true\n", "a typo'd key under a valid pack"),
+        ("[agent]\nenabled = 'yes'\n", "a value of the wrong type"),
+        ("[emit]\nformats = ['pdf']\n", "a format outside `02` §8's closed set"),
+        ("[map]\nmoves.enabled = true\nmoves.extra = 1\n", "an extra key on a toggle"),
+    ],
+    ids=[
+        "unknown-section",
+        "typo-pack",
+        "typo-key",
+        "wrong-type",
+        "bad-format",
+        "extra-toggle-key",
+    ],
+)
+def test_a_bad_setting_is_refused_by_name(tmp_path: Path, text: str, reason: str) -> None:
+    """*Defect sentence.* Fails when the four sections stop being closed; matters
+    because a setting nobody reads has no effect and *looks like it worked* --
+    the "it works on my machine" report this module exists to answer, and the
+    exact state `05` S1.1's checkbox claimed to prevent; no other instrument
+    catches it because an ignored key raises nothing and changes nothing."""
+    from adopt_cli.map_config import load_map_config
+
+    with pytest.raises(AdoptError) as caught:
+        load_map_config(_config(tmp_path, text))
+    assert caught.value.code is ErrorCode.MAP_USAGE, reason
+
+
+def test_a_pack_toggle_overrides_the_sprint_default_in_both_directions(tmp_path: Path) -> None:
+    """`01` §9's flag table, as an operator reaches it.
+
+    Both directions, because a configuration that can only turn packs *on* leaves
+    an operator no way to disable a pack that is misbehaving on their tree --
+    which is `03` §9's first rollback surface.
+    """
+    from adopt_map.plugins import DEFAULT_ENABLED_PACKS
+
+    from adopt_cli.map_config import load_map_config
+
+    configuration = load_map_config(
+        _config(tmp_path, "[extractors]\nai.enabled = true\nweb.enabled = false\n")
+    )
+    enabled = configuration.extractors.enabled_packs(defaults=DEFAULT_ENABLED_PACKS)
+    assert "ai" in enabled
+    assert "web" not in enabled
+    assert "common" in enabled, "a pack the file does not mention keeps its default"
+
+
+def test_the_pack_names_are_read_from_the_manifest_not_restated() -> None:
+    """A second copy of the six pack names is a second thing to keep in step."""
+    from adopt_map.schemas import ExtractorManifest
+
+    from adopt_cli.map_config import PACK_NAMES
+
+    declared = get_args(ExtractorManifest.model_fields["pack"].annotation)
+    assert set(PACK_NAMES) == set(declared)

@@ -27,6 +27,8 @@ adopt-cli = { workspace = true }
 # Build 1 (`adopt map`). Added by S1.1; `03-implementation-spec.md` §4.
 adopt-map = { workspace = true }
 adopt-extractors-common = { workspace = true }
+# S1.4's web/service pack. `03` §4, §5.10.
+adopt-extractors-web = { workspace = true }
 
 [dependency-groups]
 dev = [

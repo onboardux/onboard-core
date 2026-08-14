@@ -1,0 +1,2131 @@
+{
+  "labels_version": 1,
+  "fixture": "django-orders",
+  "method": "Derived from the fixture's own specification -- the route, table and task declarations the tree is generated from -- and never from extractor output. A labeled set read back from what the extractors found would make recall 1.0 by construction.",
+  "identities": [
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "ALLOWED_HOSTS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "BILLING_API_BASE",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "CACHE_TTL_SECONDS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "CELERY_BROKER_URL",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "CELERY_RESULT_BACKEND",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "CELERY_TASK_ALWAYS_EAGER",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "CELERY_TASK_TIME_LIMIT",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "CELERY_WORKER_CONCURRENCY",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "CSRF_COOKIE_SECURE",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "DATABASES",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "DEBUG",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "DEFAULT_AUTO_FIELD",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "DEFAULT_FROM_EMAIL",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "DUNNING_MAX_ATTEMPTS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "EMAIL_BACKEND",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "EMAIL_HOST",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "EMAIL_PORT",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "EMAIL_USE_TLS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "FEATURE_NEW_CHECKOUT",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "FEATURE_SPLIT_SHIPMENTS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "INVOICE_DUE_DAYS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "LANGUAGE_CODE",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "MEDIA_URL",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "ORDER_EXPIRY_MINUTES",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "ORDER_MAX_ITEMS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "PRICE_CACHE_SECONDS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "REFUND_WINDOW_DAYS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "ROOT_URLCONF",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "SEARCH_INDEX_BATCH",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "SECURE_HSTS_SECONDS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "SECURE_SSL_REDIRECT",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "SESSION_COOKIE_AGE",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "SESSION_COOKIE_SECURE",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "STATIC_URL",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "TIME_ZONE",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "USE_TZ",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "WAREHOUSE_API_BASE",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "WSGI_APPLICATION",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "django",
+      "local_key": "X_FRAME_OPTIONS",
+      "note": "django setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "BILLING_API_TIMEOUT",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "DATABASE_POOL_MAX",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "DATABASE_POOL_MIN",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "DJANGO_LOG_LEVEL",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "DJANGO_SETTINGS_MODULE",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "FEATURE_NEW_CHECKOUT",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "FEATURE_SPLIT_SHIPMENTS",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "ORDER_WEBHOOK_TIMEOUT",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "REDIS_MAX_CONNECTIONS",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "env",
+      "local_key": "WAREHOUSE_API_TIMEOUT",
+      "note": "environment setting"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "failure",
+      "local_key": "billing.tasks.max_retries",
+      "note": "declared retry policy"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "failure",
+      "local_key": "billing.tasks.retry_backoff",
+      "note": "declared retry policy"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "failure",
+      "local_key": "orders.tasks.max_retries",
+      "note": "declared retry policy"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "autoscaling.enabled",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "autoscaling.maxReplicas",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "autoscaling.minReplicas",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "autoscaling.targetCPUUtilizationPercentage",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "image.pullPolicy",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "image.repository",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "image.tag",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "ingress.enabled",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "ingress.host",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "probes.livenessPath",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "probes.readinessPath",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "replicaCount",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "resources.limits.cpu",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "resources.limits.memory",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "resources.requests.cpu",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "helm",
+      "local_key": "resources.requests.memory",
+      "note": "helm value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "secret:env",
+      "local_key": "BILLING_API_TOKEN",
+      "note": "secret reference, never a value"
+    },
+    {
+      "identity_kind": "config_key",
+      "namespace": "secret:env",
+      "local_key": "DJANGO_SECRET_KEY",
+      "note": "secret reference, never a value"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.address",
+      "local_key": "*",
+      "note": "identity table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.address",
+      "local_key": "country",
+      "note": "identity.address column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.address",
+      "local_key": "customer_id",
+      "note": "identity.address column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.address",
+      "local_key": "id",
+      "note": "identity.address column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.address",
+      "local_key": "line1",
+      "note": "identity.address column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.bin",
+      "local_key": "*",
+      "note": "warehouse table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.bin",
+      "local_key": "code",
+      "note": "bin column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.bin",
+      "local_key": "id",
+      "note": "bin column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.bin_contents",
+      "local_key": "*",
+      "note": "warehouse table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.bin_contents",
+      "local_key": "bin_id",
+      "note": "bin_contents column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.bin_contents",
+      "local_key": "id",
+      "note": "bin_contents column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.bin_contents",
+      "local_key": "quantity",
+      "note": "bin_contents column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.category",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.category",
+      "local_key": "id",
+      "note": "catalog.category column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.category",
+      "local_key": "name",
+      "note": "catalog.category column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.category",
+      "local_key": "slug",
+      "note": "catalog.category column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.chargeback",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.chargeback",
+      "local_key": "id",
+      "note": "billing.chargeback column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.chargeback",
+      "local_key": "opened_at",
+      "note": "billing.chargeback column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.chargeback",
+      "local_key": "payment_id",
+      "note": "billing.chargeback column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.consent",
+      "local_key": "*",
+      "note": "identity table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.consent",
+      "local_key": "customer_id",
+      "note": "identity.consent column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.consent",
+      "local_key": "granted",
+      "note": "identity.consent column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.consent",
+      "local_key": "id",
+      "note": "identity.consent column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.contactmethod",
+      "local_key": "*",
+      "note": "identity table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.contactmethod",
+      "local_key": "channel",
+      "note": "identity.contactmethod column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.contactmethod",
+      "local_key": "customer_id",
+      "note": "identity.contactmethod column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.contactmethod",
+      "local_key": "id",
+      "note": "identity.contactmethod column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.coupon",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.coupon",
+      "local_key": "code",
+      "note": "billing.coupon column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.coupon",
+      "local_key": "id",
+      "note": "billing.coupon column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.coupon",
+      "local_key": "percent_off",
+      "note": "billing.coupon column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.creditnote",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.creditnote",
+      "local_key": "amount_cents",
+      "note": "billing.creditnote column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.creditnote",
+      "local_key": "id",
+      "note": "billing.creditnote column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.creditnote",
+      "local_key": "invoice_id",
+      "note": "billing.creditnote column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.customer",
+      "local_key": "*",
+      "note": "identity table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.customer",
+      "local_key": "created_at",
+      "note": "identity.customer column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.customer",
+      "local_key": "email",
+      "note": "identity.customer column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.customer",
+      "local_key": "id",
+      "note": "identity.customer column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.dunningattempt",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.dunningattempt",
+      "local_key": "attempt",
+      "note": "billing.dunningattempt column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.dunningattempt",
+      "local_key": "id",
+      "note": "billing.dunningattempt column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.dunningattempt",
+      "local_key": "invoice_id",
+      "note": "billing.dunningattempt column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.fulfilment",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.fulfilment",
+      "local_key": "id",
+      "note": "orders.fulfilment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.fulfilment",
+      "local_key": "order_id",
+      "note": "orders.fulfilment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.fulfilment",
+      "local_key": "warehouse",
+      "note": "orders.fulfilment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.inventory",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.inventory",
+      "local_key": "id",
+      "note": "catalog.inventory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.inventory",
+      "local_key": "on_hand",
+      "note": "catalog.inventory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.inventory",
+      "local_key": "sku",
+      "note": "catalog.inventory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoice",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoice",
+      "local_key": "id",
+      "note": "billing.invoice column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoice",
+      "local_key": "issued_at",
+      "note": "billing.invoice column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoice",
+      "local_key": "number",
+      "note": "billing.invoice column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoice",
+      "local_key": "order_id",
+      "note": "billing.invoice column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoice",
+      "local_key": "total_cents",
+      "note": "billing.invoice column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoiceline",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoiceline",
+      "local_key": "amount_cents",
+      "note": "billing.invoiceline column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoiceline",
+      "local_key": "description",
+      "note": "billing.invoiceline column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoiceline",
+      "local_key": "id",
+      "note": "billing.invoiceline column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.invoiceline",
+      "local_key": "invoice_id",
+      "note": "billing.invoiceline column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ledger",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ledger",
+      "local_key": "account",
+      "note": "billing.ledger column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ledger",
+      "local_key": "balance_cents",
+      "note": "billing.ledger column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ledger",
+      "local_key": "id",
+      "note": "billing.ledger column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ledgerentry",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ledgerentry",
+      "local_key": "delta_cents",
+      "note": "billing.ledgerentry column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ledgerentry",
+      "local_key": "id",
+      "note": "billing.ledgerentry column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ledgerentry",
+      "local_key": "ledger_id",
+      "note": "billing.ledgerentry column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.loyaltyaccount",
+      "local_key": "*",
+      "note": "identity table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.loyaltyaccount",
+      "local_key": "customer_id",
+      "note": "identity.loyaltyaccount column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.loyaltyaccount",
+      "local_key": "id",
+      "note": "identity.loyaltyaccount column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.loyaltyaccount",
+      "local_key": "points",
+      "note": "identity.loyaltyaccount column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.media",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.media",
+      "local_key": "id",
+      "note": "catalog.media column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.media",
+      "local_key": "product_id",
+      "note": "catalog.media column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.media",
+      "local_key": "url",
+      "note": "catalog.media column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.order",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.order",
+      "local_key": "id",
+      "note": "orders.order column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.order",
+      "local_key": "placed_at",
+      "note": "orders.order column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.order",
+      "local_key": "reference",
+      "note": "orders.order column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.order",
+      "local_key": "status",
+      "note": "orders.order column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.order",
+      "local_key": "total_cents",
+      "note": "orders.order column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderevent",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderevent",
+      "local_key": "id",
+      "note": "orders.orderevent column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderevent",
+      "local_key": "kind",
+      "note": "orders.orderevent column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderevent",
+      "local_key": "occurred_at",
+      "note": "orders.orderevent column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderevent",
+      "local_key": "order_id",
+      "note": "orders.orderevent column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderhold",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderhold",
+      "local_key": "id",
+      "note": "orders.orderhold column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderhold",
+      "local_key": "order_id",
+      "note": "orders.orderhold column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderhold",
+      "local_key": "released_at",
+      "note": "orders.orderhold column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderitem",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderitem",
+      "local_key": "id",
+      "note": "orders.orderitem column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderitem",
+      "local_key": "order_id",
+      "note": "orders.orderitem column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderitem",
+      "local_key": "quantity",
+      "note": "orders.orderitem column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderitem",
+      "local_key": "sku",
+      "note": "orders.orderitem column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.orderitem",
+      "local_key": "unit_price_cents",
+      "note": "orders.orderitem column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ordernote",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ordernote",
+      "local_key": "body",
+      "note": "orders.ordernote column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ordernote",
+      "local_key": "id",
+      "note": "orders.ordernote column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ordernote",
+      "local_key": "order_id",
+      "note": "orders.ordernote column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ordertag",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ordertag",
+      "local_key": "id",
+      "note": "orders.ordertag column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ordertag",
+      "local_key": "label",
+      "note": "orders.ordertag column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.ordertag",
+      "local_key": "order_id",
+      "note": "orders.ordertag column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payment",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payment",
+      "local_key": "amount_cents",
+      "note": "billing.payment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payment",
+      "local_key": "captured_at",
+      "note": "billing.payment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payment",
+      "local_key": "id",
+      "note": "billing.payment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payment",
+      "local_key": "invoice_id",
+      "note": "billing.payment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payment",
+      "local_key": "processor",
+      "note": "billing.payment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payoutbatch",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payoutbatch",
+      "local_key": "id",
+      "note": "billing.payoutbatch column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.payoutbatch",
+      "local_key": "settled_at",
+      "note": "billing.payoutbatch column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pick_line",
+      "local_key": "*",
+      "note": "warehouse table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pick_line",
+      "local_key": "id",
+      "note": "pick_line column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pick_line",
+      "local_key": "pick_list_id",
+      "note": "pick_line column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pick_line",
+      "local_key": "sku",
+      "note": "pick_line column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pick_list",
+      "local_key": "*",
+      "note": "warehouse table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pick_list",
+      "local_key": "id",
+      "note": "pick_list column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pick_list",
+      "local_key": "order_ref",
+      "note": "pick_list column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pick_list",
+      "local_key": "picked_at",
+      "note": "pick_list column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.price",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.price",
+      "local_key": "amount_cents",
+      "note": "catalog.price column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.price",
+      "local_key": "currency",
+      "note": "catalog.price column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.price",
+      "local_key": "id",
+      "note": "catalog.price column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.price",
+      "local_key": "product_id",
+      "note": "catalog.price column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pricehistory",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pricehistory",
+      "local_key": "changed_at",
+      "note": "catalog.pricehistory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pricehistory",
+      "local_key": "id",
+      "note": "catalog.pricehistory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.pricehistory",
+      "local_key": "price_id",
+      "note": "catalog.pricehistory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.product",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.product",
+      "local_key": "active",
+      "note": "catalog.product column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.product",
+      "local_key": "id",
+      "note": "catalog.product column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.product",
+      "local_key": "sku",
+      "note": "catalog.product column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.product",
+      "local_key": "title",
+      "note": "catalog.product column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.productcategory",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.productcategory",
+      "local_key": "category_id",
+      "note": "catalog.productcategory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.productcategory",
+      "local_key": "id",
+      "note": "catalog.productcategory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.productcategory",
+      "local_key": "product_id",
+      "note": "catalog.productcategory column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.productvariant",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.productvariant",
+      "local_key": "id",
+      "note": "catalog.productvariant column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.productvariant",
+      "local_key": "option",
+      "note": "catalog.productvariant column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.productvariant",
+      "local_key": "product_id",
+      "note": "catalog.productvariant column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.refund",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.refund",
+      "local_key": "amount_cents",
+      "note": "billing.refund column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.refund",
+      "local_key": "id",
+      "note": "billing.refund column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.refund",
+      "local_key": "payment_id",
+      "note": "billing.refund column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.reservation",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.reservation",
+      "local_key": "id",
+      "note": "orders.reservation column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.reservation",
+      "local_key": "quantity",
+      "note": "orders.reservation column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.reservation",
+      "local_key": "sku",
+      "note": "orders.reservation column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.returnline",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.returnline",
+      "local_key": "id",
+      "note": "orders.returnline column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.returnline",
+      "local_key": "quantity",
+      "note": "orders.returnline column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.returnline",
+      "local_key": "return_id",
+      "note": "orders.returnline column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.returnrequest",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.returnrequest",
+      "local_key": "id",
+      "note": "orders.returnrequest column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.returnrequest",
+      "local_key": "order_id",
+      "note": "orders.returnrequest column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.returnrequest",
+      "local_key": "reason",
+      "note": "orders.returnrequest column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.segment",
+      "local_key": "*",
+      "note": "identity table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.segment",
+      "local_key": "id",
+      "note": "identity.segment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.segment",
+      "local_key": "key",
+      "note": "identity.segment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipment",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipment",
+      "local_key": "carrier",
+      "note": "orders.shipment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipment",
+      "local_key": "id",
+      "note": "orders.shipment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipment",
+      "local_key": "order_id",
+      "note": "orders.shipment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipment",
+      "local_key": "tracking",
+      "note": "orders.shipment column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipmentleg",
+      "local_key": "*",
+      "note": "orders table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipmentleg",
+      "local_key": "id",
+      "note": "orders.shipmentleg column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipmentleg",
+      "local_key": "sequence",
+      "note": "orders.shipmentleg column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.shipmentleg",
+      "local_key": "shipment_id",
+      "note": "orders.shipmentleg column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.supplier",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.supplier",
+      "local_key": "id",
+      "note": "catalog.supplier column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.supplier",
+      "local_key": "name",
+      "note": "catalog.supplier column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.supplierproduct",
+      "local_key": "*",
+      "note": "catalog table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.supplierproduct",
+      "local_key": "id",
+      "note": "catalog.supplierproduct column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.supplierproduct",
+      "local_key": "product_id",
+      "note": "catalog.supplierproduct column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.supplierproduct",
+      "local_key": "supplier_id",
+      "note": "catalog.supplierproduct column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.taxrate",
+      "local_key": "*",
+      "note": "billing table"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.taxrate",
+      "local_key": "basis_points",
+      "note": "billing.taxrate column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.taxrate",
+      "local_key": "id",
+      "note": "billing.taxrate column"
+    },
+    {
+      "identity_kind": "db_field",
+      "namespace": "pg:public.taxrate",
+      "local_key": "region",
+      "note": "billing.taxrate column"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "graphql",
+      "local_key": "Mutation.applyCoupon",
+      "note": "graphql root field"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "graphql",
+      "local_key": "Mutation.cancelOrder",
+      "note": "graphql root field"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "graphql",
+      "local_key": "Query.invoice",
+      "note": "graphql root field"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "graphql",
+      "local_key": "Query.order",
+      "note": "graphql root field"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "graphql",
+      "local_key": "Query.orders",
+      "note": "graphql root field"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "graphql",
+      "local_key": "Query.products",
+      "note": "graphql root field"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "grpc",
+      "local_key": "orders.v1.OrderService.CancelOrder",
+      "note": "grpc rpc"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "grpc",
+      "local_key": "orders.v1.OrderService.GetOrder",
+      "note": "grpc rpc"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "grpc",
+      "local_key": "orders.v1.OrderService.ListOrders",
+      "note": "grpc rpc"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "grpc",
+      "local_key": "orders.v1.ShipmentService.TrackShipment",
+      "note": "grpc rpc"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "ANY /admin",
+      "note": "third-party include, not expandable"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "ANY /healthz",
+      "note": "project-level liveness route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "DELETE /api/v1/billing/invoices/{invoice_id}",
+      "note": "billing route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "DELETE /api/v1/catalog/products/{product_id}",
+      "note": "catalog route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "DELETE /api/v1/orders/{order_id}",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/billing/dunning",
+      "note": "billing route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/billing/invoices",
+      "note": "billing route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/billing/invoices/{invoice_id}",
+      "note": "billing route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/billing/payments",
+      "note": "billing route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/catalog/categories",
+      "note": "catalog route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/catalog/prices",
+      "note": "catalog route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/catalog/products",
+      "note": "catalog route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/catalog/products/{product_id}",
+      "note": "catalog route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/identity/customers",
+      "note": "identity route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/identity/customers/{customer_id}",
+      "note": "identity route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/identity/customers/{customer_id}/addresses",
+      "note": "identity route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/orders",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/orders/export",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/orders/search",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/orders/{order_id}",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /api/v1/orders/{order_id}/items",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "GET /warehouse.example.com/v1/stock",
+      "note": "outbound integration"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "PATCH /api/v1/identity/customers/{customer_id}",
+      "note": "identity route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "PATCH /api/v1/orders/{order_id}",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/billing/invoices",
+      "note": "billing route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/billing/payments",
+      "note": "billing route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/billing/payments/{payment_id}/refund",
+      "note": "billing route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/catalog/products",
+      "note": "catalog route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/identity/customers",
+      "note": "identity route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/identity/customers/{customer_id}/addresses",
+      "note": "identity route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/orders",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/orders/{order_id}/cancel",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /api/v1/orders/{order_id}/items",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "POST /billing.example.com/v1/charges",
+      "note": "outbound integration"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "PUT /api/v1/catalog/products/{product_id}",
+      "note": "catalog route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "PUT /api/v1/orders/{order_id}",
+      "note": "orders route"
+    },
+    {
+      "identity_kind": "endpoint",
+      "namespace": "http",
+      "local_key": "PUT /carrier.example.com/v2/shipments",
+      "note": "outbound integration"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "analytics.tasks.rollup_daily",
+      "note": "beat entry with no local task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "billing.tasks.close_ledger_period",
+      "note": "celery task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "billing.tasks.issue_invoices",
+      "note": "celery task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "billing.tasks.retry_failed_payments",
+      "note": "celery task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "catalog.tasks.refresh_price_cache",
+      "note": "celery task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "catalog.tasks.sync_supplier_feed",
+      "note": "celery task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "orders.tasks.expire_reservations",
+      "note": "celery task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "orders.tasks.rebuild_search_index",
+      "note": "celery task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "celery",
+      "local_key": "orders.tasks.reconcile_payments",
+      "note": "celery task"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "cron",
+      "local_key": "/usr/local/bin/prune-order-events --older-than 90d",
+      "note": "crontab entry"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "cron",
+      "local_key": "/usr/local/bin/publish-inventory-snapshot",
+      "note": "crontab entry"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "cron",
+      "local_key": "/usr/local/bin/rotate-application-logs",
+      "note": "crontab entry"
+    },
+    {
+      "identity_kind": "job",
+      "namespace": "cron",
+      "local_key": "/usr/local/bin/vacuum-analyze orders",
+      "note": "crontab entry"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.migrations.0001_initial.Migration",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.tasks.close_ledger_period",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.tasks.issue_invoices",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.tasks.retry_failed_payments",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.views.DunningView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.views.InvoiceDetailView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.views.InvoiceListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.views.PaymentListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "billing.views.RefundView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "catalog.migrations.0001_initial.Migration",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "catalog.tasks.refresh_price_cache",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "catalog.tasks.sync_supplier_feed",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "catalog.views.CategoryListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "catalog.views.PriceListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "catalog.views.ProductDetailView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "catalog.views.ProductListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "config.views.health_check",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "identity.migrations.0001_initial.Migration",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "identity.views.AddressListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "identity.views.CustomerDetailView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "identity.views.CustomerListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.integrations.charge_invoice",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.integrations.fetch_stock",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.integrations.notify_carrier",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.migrations.0001_initial.Migration",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.tasks.expire_reservations",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.tasks.rebuild_search_index",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.tasks.reconcile_payments",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.views.OrderCancelView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.views.OrderDetailView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.views.OrderExportView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.views.OrderItemListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.views.OrderListView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "orders.views.OrderSearchView",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "warehouse.models.Bin",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "warehouse.models.BinContents",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "warehouse.models.PickLine",
+      "note": "top-level declaration"
+    },
+    {
+      "identity_kind": "symbol",
+      "namespace": "python",
+      "local_key": "warehouse.models.PickList",
+      "note": "top-level declaration"
+    }
+  ]
+}

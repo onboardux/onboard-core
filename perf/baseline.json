@@ -1,0 +1,31 @@
+{
+  "baseline_version": 1,
+  "note": "Durations from the S1.4 fixture on the authoring machine -- a **local** reading, not the reference-runner evidence `01` N1-N3 require, and not usable as the `03` \u00a78 ratchet's baseline until it is re-measured there. S1.8 re-measures on the reference set (PRD Q4) and archives under perf/soak/<date>/.",
+  "machine": "authoring workstation (not the reference runner)",
+  "fixture": "django-orders",
+  "budgets": {
+    "MAP_STAGE1_BUDGET_S": 900,
+    "MAP_TOTAL_BUDGET_S": 3600,
+    "MAP_INCREMENTAL_BUDGET_S": 300
+  },
+  "first_run": {
+    "stage1_seconds": 0.297,
+    "total_seconds": 1.094,
+    "facts": 354,
+    "revisions_written": {
+      "identity": 354,
+      "knowledge": 354,
+      "binding": 354
+    }
+  },
+  "unchanged_rerun": {
+    "stage1_seconds": 0.234,
+    "total_seconds": 1.062,
+    "facts": 354,
+    "revisions_written": {
+      "identity": 0,
+      "knowledge": 0,
+      "binding": 0
+    }
+  }
+}

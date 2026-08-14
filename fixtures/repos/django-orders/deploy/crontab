@@ -1,0 +1,8 @@
+# Deployment crontab. Commented entries are disabled and must not mint.
+MAILTO=ops@example.com
+
+0 1 * * * /usr/local/bin/prune-order-events --older-than 90d
+30 2 * * 0 /usr/local/bin/vacuum-analyze orders
+*/15 * * * * /usr/local/bin/publish-inventory-snapshot
+@daily /usr/local/bin/rotate-application-logs
+# 0 5 * * * /usr/local/bin/legacy-reindex --full

@@ -50,7 +50,7 @@ from adopt_const import (
 )
 from adopt_coverage import CacheWriter
 from adopt_coverage.records import CoverageRecords
-from adopt_map.confidence import Degradation, LadderPolicy, with_counts
+from adopt_map.confidence import Degradation, LadderPolicy, confidence_for, with_counts
 from adopt_map.context import Budget, ExtractorContext
 from adopt_map.coverage import CoverageReport, report_coverage
 from adopt_map.emit import (
@@ -66,11 +66,12 @@ from adopt_map.emit.d2 import D2_NAME
 from adopt_map.emit.mermaid import MERMAID_NAME
 from adopt_map.execseam import tool_available
 from adopt_map.fileindex import FileIndex, build_index, detect_language, is_code
+from adopt_map.minting import mint
 from adopt_map.netguard import EgressGuard, guarded
 from adopt_map.plugins import ExtractorRegistry
 from adopt_map.report import RunResult, peak_rss_bytes, write_run_report
 from adopt_map.scheduler import ExtractorOutcome, ScheduleResult, run_all
-from adopt_map.schemas.surface import EvidenceMethod, Extractor
+from adopt_map.schemas.surface import EvidenceMethod, Extractor, SurfaceFact
 from adopt_map.scope_resolve import ResolvedScope
 from adopt_map.writer import FactBatch, SurfaceWriter, SurfaceWriteResult
 from adopt_obs import (
@@ -392,7 +393,7 @@ def run(
         stage2 = _run_stage(plan.stage2, ctx, sequential=sequential)
 
     schedules = (stage1, stage2)
-    batches = _batches(plan, schedules)
+    batches = _batches(plan, schedules, resolved)
     write_result = None
     if writer is not None:
         write_result = writer.write_batches(
@@ -439,12 +440,18 @@ def run(
     return result
 
 
-def _batches(plan: RunPlan, schedules: Sequence[ScheduleResult]) -> tuple[FactBatch, ...]:
-    """`(manifest, facts)` per extractor, in deterministic id order.
+def _batches(
+    plan: RunPlan, schedules: Sequence[ScheduleResult], resolved: ResolvedScope | None = None
+) -> tuple[FactBatch, ...]:
+    """`(manifest, facts)` per extractor, in deterministic id order, **reconciled**.
 
     Built by joining the plan's manifests to the scheduler's outcomes rather than
     by trusting either alone: an outcome names an id, and only the plan knows
     which manifest that id declared.
+
+    `resolved` is optional only so the pre-write assembly in `run` can build a
+    stage-1 view before scope-dependent work; a batch set assembled without it is
+    **not** reconciled, and nothing writes from one.
     """
     manifests = {extractor.manifest().id: extractor.manifest() for extractor in plan.all}
     batches = [
@@ -453,7 +460,136 @@ def _batches(plan: RunPlan, schedules: Sequence[ScheduleResult]) -> tuple[FactBa
         for outcome in schedule.outcomes
         if outcome.extractor_id in manifests and outcome.facts
     ]
-    return tuple(sorted(batches, key=lambda batch: batch.manifest.id))
+    ordered = tuple(sorted(batches, key=lambda batch: batch.manifest.id))
+    return ordered if resolved is None else reconcile_batches(ordered, resolved)
+
+
+@dataclass(frozen=True, slots=True)
+class _Observation:
+    """One extractor's sighting of one referent, before reconciliation.
+
+    Named fields rather than a tuple: `constants_sync` flagged the positional
+    `base[3]` this replaced, and it was right to -- an index into a four-tuple is
+    a number whose meaning lives somewhere else in the file.
+    """
+
+    band: float
+    extractor: str
+    batch: int
+    fact: SurfaceFact
+
+
+def reconcile_batches(
+    batches: Sequence[FactBatch], resolved: ResolvedScope
+) -> tuple[FactBatch, ...]:
+    """One fact per minted URI, merged from every observation of that referent.
+
+    **This is the ladder-gating rule for extractors that are not rungs of each
+    other, and S1.4 is the first sprint that could need it.** `01` F2.3 requires
+    two extractors describing one referent to mint *"byte-identical URIs"*, and
+    S1.4 ships the first pair that genuinely does: `web.django.routes` reads the
+    route a service serves and `web.openapi` reads the contract it publishes about
+    the same route. Achieving `02` §10 C1 is precisely what breaks `01` F4 --
+    the writer receives **two facts for one identity**, their attributes differ,
+    and the revision chain alternates between them **forever**: 6 revisions on
+    every run after the first, on an unchanged tree, which is idempotence failing
+    on the acceptance criterion F4 exists to state.
+
+    S1.3's `_run_stage` gates *rungs* of one ladder over one language. It cannot
+    see this case: `grammar` and `reflection` are different rungs, but the two
+    extractors are in one stage and neither is degrading to the other -- they are
+    two independent observations that happen to agree about what they observed.
+
+    **Merged rather than "strongest wins", because `02` §4.2's own projection
+    expects both halves.** The `endpoint` semantic projection names *"request/
+    response schema digest"* -- which only the contract artifact supplies -- and
+    *"framework, handler symbol"* -- which only the route parse supplies. Dropping
+    either observation discards a field the contract asks the digest to cover.
+
+    **The merge is deterministic and additive only.** Observations are ranked by
+    evidence band (`01` F9.1) and then by extractor id; the strongest is the base;
+    a weaker observation may only fill a field the base left empty, never
+    overwrite one. So the result is a pure function of (which extractors ran, what
+    they saw) and never of scheduling order.
+
+    Args:
+        batches: Every extractor's facts, in manifest-id order.
+        resolved: The run's scope -- the only source of the minted URI.
+
+    Returns:
+        The same batches with duplicates removed, each surviving fact carrying the
+        merged view, and empty batches dropped.
+    """
+    observations: dict[str, list[_Observation]] = {}
+    for index, batch in enumerate(batches):
+        band = confidence_for(batch.manifest.method)
+        for fact in batch.facts:
+            observations.setdefault(mint(resolved.scope, fact), []).append(
+                _Observation(band=band, extractor=batch.manifest.id, batch=index, fact=fact)
+            )
+
+    # Strongest evidence first, then a stable name.
+    winners: dict[int, list[SurfaceFact]] = {index: [] for index in range(len(batches))}
+    for uri in sorted(observations):
+        ranked = sorted(observations[uri], key=lambda item: (-item.band, item.extractor))
+        base = ranked[0]
+        merged = (
+            base.fact if len(ranked) == 1 else _merge(base.fact, [item.fact for item in ranked[1:]])
+        )
+        winners[base.batch].append(merged)
+
+    return tuple(
+        FactBatch(manifest=batch.manifest, facts=tuple(winners[index]))
+        for index, batch in enumerate(batches)
+        if winners[index]
+    )
+
+
+def _merge(base: SurfaceFact, others: Sequence[SurfaceFact]) -> SurfaceFact:
+    """`base` with empty fields filled from `others`, in the order given.
+
+    **Additive only.** A weaker observation never overwrites a value the stronger
+    one supplied -- otherwise the merged fact would depend on which extractor ran
+    last, which is the non-determinism this function exists to remove.
+    """
+    attributes = dict(base.attributes)
+    relations = list(base.relations)
+    source_refs = list(base.source_refs)
+    prose = base.prose
+    outside_vcs = base.outside_vcs
+    opaque = base.opaque
+
+    for other in others:
+        for key, value in other.attributes.items():
+            if value in (None, [], {}, ""):
+                continue
+            if attributes.get(key) in (None, [], {}, ""):
+                attributes[key] = value
+        for relation in other.relations:
+            if relation not in relations:
+                relations.append(relation)
+        for source_ref in other.source_refs:
+            if source_ref not in source_refs:
+                source_refs.append(source_ref)
+        prose = prose or other.prose
+        # An observation that says a referent is outside version control or
+        # opaque is evidence; one that is silent is not evidence to the contrary.
+        outside_vcs = outside_vcs or other.outside_vcs
+        opaque = opaque or other.opaque
+
+    return base.model_copy(
+        update={
+            "attributes": attributes,
+            "relations": sorted(
+                relations,
+                key=lambda item: (item.predicate, item.target_kind, item.target_local_key),
+            ),
+            "source_refs": sorted(source_refs, key=lambda item: (item.path, item.start_line or 0)),
+            "prose": prose,
+            "outside_vcs": outside_vcs,
+            "opaque": opaque,
+        }
+    )
 
 
 def _outcomes(schedules: Sequence[ScheduleResult]) -> tuple[ExtractorOutcome, ...]:
@@ -497,7 +633,10 @@ def _assemble(
     write_result: SurfaceWriteResult | None = None,
     coverage: CoverageReport | None = None,
 ) -> RunResult:
-    batches = _batches(plan, schedules)
+    # Reconciled with `resolved`, so `surface.json` and the store cannot
+    # disagree about how many identities the run produced. Idempotent, so the
+    # already-reconciled set the write path passes is unchanged.
+    batches = _batches(plan, schedules, resolved)
     truncated = tuple(
         sorted({family for schedule in schedules for family in schedule.truncated_families})
     )

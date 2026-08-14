@@ -44,6 +44,7 @@ from adopt_cli.config import (
     user_config_path,
 )
 from adopt_cli.json_out import emit, emit_error
+from adopt_cli.map_config import load_map_config
 from adopt_cli.store_option import open_configured_store
 from adopt_const import MAP_STAGE1_BUDGET_S, MAP_TOTAL_BUDGET_S
 from adopt_model._enums import Archetype
@@ -241,10 +242,7 @@ def map_command(
     run_id = new_run_id()
     log = _log.bind_run(run_id)
 
-    registry = ExtractorRegistry(enabled_packs=DEFAULT_ENABLED_PACKS)
-    from adopt_extractors_common import pack
-
-    registry.register_all(pack())
+    registry = _registry()
 
     handle = None if dry_run else open_configured_store(store, read_only=False)
     try:
@@ -273,6 +271,32 @@ def map_command(
     finally:
         if handle is not None:
             handle.close()
+
+
+def _registry() -> ExtractorRegistry:
+    """Every registered extractor, with the packs configuration enables.
+
+    **Registration and enablement are two decisions and this keeps them two.**
+    Every pack's extractors are registered; `ExtractorRegistry.plan` then filters
+    by `enabled_packs`, and `skipped()` records `pack_disabled` for the rest. A
+    disabled pack that was never registered would be indistinguishable from one
+    that does not exist, and `01` F13.5 wants the reason on the first screen.
+
+    The enabled set is `DEFAULT_ENABLED_PACKS` -- `common` and, from S1.4, `web`
+    (`01` §9) -- overridden by `[extractors]` in `.adopt/config.toml`. **S1.4 had
+    to build that override path**: `05` S1.1's checkbox for strict section parsing
+    was marked complete with nothing behind it, so until now no configuration
+    could reach pack enablement at all (`adopt_cli.map_config`).
+    """
+    from adopt_extractors_common import pack as common_pack
+    from adopt_extractors_web import pack as web_pack
+
+    configuration = load_map_config(project_config_path())
+    enabled = configuration.extractors.enabled_packs(defaults=DEFAULT_ENABLED_PACKS)
+    registry = ExtractorRegistry(enabled_packs=enabled)
+    registry.register_all(common_pack())
+    registry.register_all(web_pack())
+    return registry
 
 
 def _writer_for(handle: Any) -> SurfaceWriter:

@@ -23,6 +23,7 @@ from collections.abc import Iterator
 from pathlib import PurePosixPath
 from typing import Final
 
+import yaml
 from adopt_map.context import ExtractorContext
 from adopt_map.schemas import ExtractorManifest, SourceRef, SurfaceFact
 
@@ -79,6 +80,28 @@ _PY_SETTING_RE: Final[re.Pattern[str]] = re.compile(r"^([A-Z][A-Z0-9_]{2,})\s*="
 _MAX_DEPTH: Final[int] = 6
 
 
+#: Markers that identify a document as an **API contract** rather than a
+#: configuration source. `02` §3.1's `config_key` namespace names *where a key
+#: comes from* -- `django`, `env`, `helm`, `appsettings` -- and a published
+#: contract is not one of those: it is `web.openapi`'s or `web.graphql`'s subject,
+#: and minting a `config_key` per leaf of it would put
+#: `paths./api/v1/orders/.get.summary` in the identity set beside the endpoint it
+#: describes. Two extractors claiming one file is how an identity set fills with
+#: things nobody addresses.
+#:
+#: Added with YAML support (B1-CR-67): before it, no YAML file was read at all,
+#: so the overlap could not arise and nothing revealed it.
+_CONTRACT_MARKERS: Final[tuple[str, ...]] = (
+    "openapi:",
+    '"openapi"',
+    "swagger:",
+    '"swagger"',
+    "asyncapi:",
+    '"asyncapi"',
+    "$schema",
+)
+
+
 def _namespace(path: str) -> str | None:
     name = PurePosixPath(path).name
     if name in _NAMESPACE_BY_NAME:
@@ -86,6 +109,12 @@ def _namespace(path: str) -> str | None:
     if name.startswith(".env"):
         return "env"
     return _NAMESPACE_BY_SUFFIX.get(PurePosixPath(path).suffix.lower())
+
+
+def _is_contract(text: str) -> bool:
+    """Whether a document declares itself an API contract."""
+    head = text[:4096].lower()
+    return any(marker in head for marker in _CONTRACT_MARKERS)
 
 
 def _flatten(payload: object, prefix: str = "", depth: int = 0) -> Iterator[tuple[str, object]]:
@@ -153,6 +182,8 @@ class ConfigExtractor:
             if namespace is None:
                 continue
             text = ctx.text(entry)
+            if _is_contract(text):
+                continue
             for key, value in _keys(entry.path, text):
                 if looks_secret(key):
                     # A secret *reference* is `common.secrets`' to mint: it takes
@@ -186,7 +217,21 @@ def _keys(path: str, text: str) -> Iterator[tuple[str, object]]:
     """
     suffix = PurePosixPath(path).suffix.lower()
     name = PurePosixPath(path).name
-    if suffix == ".toml":
+    if suffix in {".yaml", ".yml"}:
+        # **S1.3 declared two YAML namespaces and shipped no YAML parser**
+        # (B1-CR-67). `_NAMESPACE_BY_NAME` maps `values.yaml` to `helm` and
+        # `_NAMESPACE_BY_SUFFIX` maps `.yaml` to `yaml`, and this function had no
+        # branch for either -- so every YAML configuration file in every client
+        # tree yielded zero keys, silently. Found by scoring a run against a
+        # labeled set that expected sixteen Helm values.
+        #
+        # `safe_load` constructs no Python objects, which is the only loader
+        # `02` §7 obligation 1 permits over a client file.
+        try:
+            yield from _flatten(yaml.safe_load(text))
+        except yaml.YAMLError:
+            return
+    elif suffix == ".toml":
         try:
             yield from _flatten(tomllib.loads(text))
         except tomllib.TOMLDecodeError:

@@ -58,6 +58,7 @@ __all__ = [
     "SOURCE_VERSION_SCHEME",
     "SourceVersion",
     "build_source_version",
+    "digest_payload",
     "matches_semantically",
     "parse_source_version",
 ]
@@ -292,6 +293,20 @@ def _project(
         normalizer = _NORMALIZERS.get((model, field))
         payload[field] = normalizer(value) if normalizer is not None else value
     return payload
+
+
+def digest_payload(payload: Mapping[str, object]) -> str:
+    """`MAP_DIGEST_ALGO` over the RFC 8785 canonical form of `payload`, for callers
+    that need *a* stable digest of a JSON structure rather than a composite.
+
+    S1.4's `web.openapi` and `web.grpc` need one: `02` §4.2 puts a *"request/response
+    schema digest"* in the `endpoint` semantic projection, and a request schema is a
+    nested JSON document rather than an attribute. Exposed rather than reimplemented
+    so that the schema digest and the two projection digests can never disagree
+    about the algorithm -- `03` §3's one-home rule applied to a function instead of
+    a number. `MAP_DIGEST_ALGO` stays the only place the algorithm is named.
+    """
+    return _digest(payload)
 
 
 def _digest(payload: Mapping[str, object]) -> str:

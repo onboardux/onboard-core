@@ -54,10 +54,17 @@ __all__ = [
 #: second copy of the thirteen members is a second thing to keep in step.
 _IDENTITY_KINDS: Final[frozenset[str]] = frozenset(get_args(IdentityKind))
 
-#: The one pack on by default. Every other pack flips at its own sprint exit
-#: gate (`01` §9), so a half-built pack cannot reach a client tree because
-#: somebody merged it early.
-DEFAULT_ENABLED_PACKS: Final[frozenset[str]] = frozenset({"common"})
+#: The packs on by default. Every other pack flips at its own sprint exit gate
+#: (`01` §9), so a half-built pack cannot reach a client tree because somebody
+#: merged it early.
+#:
+#: **`web` joins at S1.4**, which is what `01` §9's *"`extractors.web.enabled` |
+#: on from S1.4"* row means. `ai`, `data`, `lowcode` and `platform` stay off until
+#: S1.5 and S1.6 pass their own exit gates. An operator overrides either way
+#: through `[extractors]` in `.adopt/config.toml` (`adopt_cli.map_config`) --
+#: which S1.4 also had to build, because S1.1's checkbox for it was never
+#: implemented and until now no configuration could reach this set at all.
+DEFAULT_ENABLED_PACKS: Final[frozenset[str]] = frozenset({"common", "web"})
 
 #: What an extractor may import. **An allowlist, not a deny-list**, because a
 #: deny-list is a list of the ways somebody already thought of: `socket` is
@@ -70,12 +77,33 @@ DEFAULT_ENABLED_PACKS: Final[frozenset[str]] = frozenset({"common"})
 #: (`01` N7), `importlib`/`ctypes`/`pickle` (all load-and-execute), and `shutil`
 #: (it writes). A pack needing an addition states the reason here rather than
 #: silencing the rule at its own call site.
+#:
+#: **S1.4's four additions, each with its reason** (`03` §2, B1-CR-65). All four
+#: are *parsers*: they turn text into a tree and hand it back. That is the test an
+#: addition has to pass -- not "is it on our dependency list", which
+#: `openapi-spec-validator` would also have passed while adding an execution
+#: surface nobody needed:
+#:
+#: * `tree_sitter` / `tree_sitter_language_pack` -- the grammar rung. Parsing is
+#:   the whole API surface; there is no evaluator to reach.
+#: * `ast_grep_py` -- structural patterns over the same trees. Matching only.
+#: * `graphql` (`graphql-core`) -- SDL parsing. Note it *does* ship an executor,
+#:   which is why obligation 1's other rules still apply to a module importing
+#:   it: `graphql.graphql()` needs a resolver map, no extractor builds one, and
+#:   the audit's `dynamic_execution` rules do not depend on this list.
+#:
+#: **`sqlalchemy` is deliberately not here** even though `03` §2 named it: its
+#: metadata populates only from a live `Engine` or by importing client models,
+#: so admitting it would have widened the allowlist for a capability obligation 1
+#: forbids using (OD-12).
 PERMITTED_IMPORT_ROOTS: Final[frozenset[str]] = frozenset(
     {
         "adopt_const",
         "adopt_map",
         "adopt_model",
+        "ast_grep_py",
         "base64",
+        "graphql",
         "collections",
         "configparser",
         "csv",
@@ -94,6 +122,8 @@ PERMITTED_IMPORT_ROOTS: Final[frozenset[str]] = frozenset(
         "string",
         "textwrap",
         "tomllib",
+        "tree_sitter",
+        "tree_sitter_language_pack",
         "typing",
         "unicodedata",
         "yaml",

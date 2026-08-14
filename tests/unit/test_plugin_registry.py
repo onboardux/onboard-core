@@ -131,10 +131,33 @@ def test_all_returns_manifest_id_order_regardless_of_registration_order() -> Non
 
 
 def test_a_disabled_pack_is_excluded_and_the_reason_is_recorded() -> None:
-    """`01` F7.6 and F13.5: a skip is a stated reason, never a silent omission."""
-    registry = _registry(_Fake("web.routes", pack="web"))
+    """`01` F7.6 and F13.5: a skip is a stated reason, never a silent omission.
+
+    The example pack is `ai`, and it used to be `web`. S1.4 flipped
+    `extractors.web.enabled` on (`01` §9), which turned this case into an
+    assertion that an *enabled* pack is excluded -- so the test failed for the
+    right reason and names a still-disabled pack now. `ai` flips at S1.5's exit
+    gate, and when it does this case moves again rather than being deleted:
+    something must always be off, or `pack_disabled` stops being reachable.
+    """
+    registry = _registry(_Fake("ai.prompts", pack="ai"))
     assert registry.plan(archetype="web", root=".", tier="T2") == ()
-    assert ("web.routes", "pack_disabled") in registry.skipped(archetype="web", root=".", tier="T2")
+    assert ("ai.prompts", "pack_disabled") in registry.skipped(archetype="web", root=".", tier="T2")
+
+
+def test_the_web_pack_is_enabled_by_default_from_s1_4() -> None:
+    """`01` §9: *"`extractors.web.enabled` | on from S1.4"*.
+
+    *Defect sentence.* Fails when the S1.4 flag flip is reverted or a later sprint
+    edits `DEFAULT_ENABLED_PACKS`; matters because a `web` pack that is registered
+    but not enabled produces a run with zero endpoints and a `pack_disabled`
+    reason rather than an error, which reads as "this repository has no routes";
+    no other instrument catches it because every extractor test constructs its own
+    registry with an explicit enabled set.
+    """
+    assert "web" in DEFAULT_ENABLED_PACKS
+    assert "common" in DEFAULT_ENABLED_PACKS
+    assert not {"ai", "data", "lowcode", "platform"} & DEFAULT_ENABLED_PACKS
 
 
 def test_an_archetype_mismatch_is_excluded_with_its_reason() -> None:

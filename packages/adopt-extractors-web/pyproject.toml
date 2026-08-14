@@ -1,0 +1,57 @@
+[project]
+name = "adopt-extractors-web"
+version = "0.3.0"
+description = "Web/service extractors -- routes, contracts, data model, jobs, integrations. Build 1 S1.4."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
+# An extractor emits `SurfaceFact`s and never writes, so this package depends on
+# `adopt-map` for the shapes and on nothing that can reach a store (`02` §7
+# obligation 2). It also declares no dependency on any client framework:
+# `03` §5.10's web pack reads Django, FastAPI and Express trees **as text**, and
+# importing the framework to introspect it is the one thing `01` F7.2 forbids.
+dependencies = [
+    "adopt-const",
+    "adopt-map",
+    "adopt-model",
+    # `03` §2's analysis libraries. Every one is permissive and carries a
+    # seven-field `licence-verifications.md` row; a dependency with no row is
+    # treated as `in-binary` and fails closed.
+    # `openapi-spec-validator`, `grpcio-tools` and `sqlalchemy` are named by
+    # `03` §2 and are **deliberately absent** --
+    # `docs/pack/OPEN-DECISIONS.md` OD-12, on B1-CR-50's ruled precedent. The
+    # first brings thirteen in-binary distributions to *validate* a document
+    # this pack only *enumerates*; the second brings `grpcio` + `protobuf` +
+    # `setuptools` when the grammar pack below already reads `.proto` source,
+    # which is the static artefact. The third cannot be used at all on this
+    # sprint's path: `MetaData.reflect()` takes a live `Engine`, and the only
+    # other way to populate declarative metadata is to **import the client's
+    # models**, which is exactly `02` §7 obligation 1.
+    "ast-grep-py>=0.45,<1",
+    "graphql-core>=3.2,<4",
+    "tree-sitter>=0.25,<0.27",
+    "tree-sitter-language-pack>=1.14,<2",
+    # OpenAPI and GraphQL documents arrive as YAML as often as JSON. Not a new
+    # third-party dependency: `pyyaml` already carries a row (MIT, `in-binary`)
+    # and is a runtime dependency of seven workspace packages.
+    "pyyaml>=6,<7",
+]
+
+[project.urls]
+Homepage = "https://github.com/onboardux/onboard-core"
+Source = "https://github.com/onboardux/onboard-core"
+Issues = "https://github.com/onboardux/onboard-core/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_extractors_web"]
+
+# Apache-2.0 4(a) and 4(d): the licence and the NOTICE travel with every
+# redistribution.
+[tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"

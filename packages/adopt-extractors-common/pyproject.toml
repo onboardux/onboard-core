@@ -13,6 +13,12 @@ dependencies = [
     "adopt-const",
     "adopt-map",
     "adopt-model",
+    # `common.config` reads `values.yaml` and its siblings (B1-CR-67). Not a new
+    # third-party dependency -- `pyyaml` already carries a
+    # `licence-verifications.md` row (MIT, `in-binary`) -- and declared here
+    # rather than inherited through `adopt-map`, which is S1.1's own finding
+    # about two other packages.
+    "pyyaml>=6,<7",
 ]
 
 [project.urls]

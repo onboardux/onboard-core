@@ -1,0 +1,28 @@
+"""Read-side GraphQL schema."""
+type Query {
+  order(id: ID!): Order
+  orders(status: String, first: Int): [Order!]!
+  invoice(id: ID!): Invoice
+  products(categorySlug: String): [Product!]!
+}
+
+type Mutation {
+  cancelOrder(id: ID!, reason: String!): Order!
+  applyCoupon(orderId: ID!, code: String!): Order!
+}
+
+type Order {
+  id: ID!
+  reference: String!
+  status: String!
+}
+
+type Invoice {
+  id: ID!
+  number: String!
+}
+
+type Product {
+  id: ID!
+  sku: String!
+}

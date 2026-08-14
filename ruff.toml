@@ -15,7 +15,14 @@ src = ["packages", "scripts", "tools", "tests", "bench"]
 # ignoring a growing wall of warnings or "fixing" the fixtures until they no
 # longer resemble the systems they stand for, and the second is how a corpus
 # stops testing anything.
-exclude = ["tests/fixtures/repos"]
+# **Both trees, because `03` §4 puts fixture repos at the repository root** and
+# this list named only the `tests/` one. S1.4 found that by adding
+# `fixtures/repos/django-orders`, whose Django migrations carry a mutable class
+# attribute and whose integrations module calls `requests` without a timeout --
+# both correct for the client code they stand in for, and both linted as though
+# we had written them. The `tests/fixtures/repos` entry stays: it is the S6
+# detection corpus and it still exists.
+exclude = ["tests/fixtures/repos", "fixtures/repos"]
 
 [lint]
 select = [

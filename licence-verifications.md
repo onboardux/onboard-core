@@ -40,9 +40,12 @@ case.
 
 ## Verification records
 
-**Security status** is `clean-2026-08-07` for every row below: `pip-audit`
-was run against the whole resolved tree on that date and reported no known
-vulnerability. `licence_gate.py --check --strict-verify` — the release gate at
+**Security status** is `clean-2026-08-07` for every row below except the four
+S1.4 added, which carry `clean-2026-08-14`: `pip-audit` was run against the whole
+resolved tree on each of those dates and reported no known vulnerability. The date
+is per-row rather than global because it records **when that row's dependency was
+last audited**, and back-dating a new row to an older sweep would claim an audit
+that never saw it. `licence_gate.py --check --strict-verify` — the release gate at
 S9 — **rejects `pending-audit`**, which is what these rows said until the audit
 ran.
 
@@ -69,18 +72,37 @@ scanner added as a dev dependency would have made every one of its transitive
 dependencies a verification obligation, which is a poor trade for a tool that only
 reads a list.
 
-**The audited set is proven to be this set.** The 31 rows below and the 31
+**The audited set is proven to be this set.** The distribution rows below and the
 third-party distributions in the export match exactly, in both directions, with no
 first-party package counted — otherwise a row could be marked clean here having
-never been audited.
+never been audited. **Current: 36 and 36**, verified by
+`licence_gate.py --check --strict-verify`, which fails on either direction. Do not
+quote that figure from this sentence — run the gate. *(S1.4 added **four** —
+`ast-grep-py`, `graphql-core`, `tree-sitter`, `tree-sitter-language-pack` — all
+MIT, each read from its own repository's `LICENSE` at the pinned version, and each
+audited by the `pip-audit` run above on 2026-08-14, which reported no known
+vulnerability. Three further libraries `03` §2 names were **declined**: see
+`docs/pack/OPEN-DECISIONS.md` OD-12.)*
+
+**`tree-sitter-language-pack` vendors its grammars**, so its own MIT row is not the
+whole story for a reviewer: the wheel carries compiled grammars whose upstream
+licences travel inside it rather than as separate distributions the gate can see.
+Every grammar this build loads — `python`, `javascript`, `typescript`, `proto`,
+`graphql` — is MIT or Apache-2.0 upstream, all `in-binary`-legal. **Stated because
+the gate cannot check it**: a bundled artefact is invisible to a check that reads
+distribution metadata, and the honest response is to name the blind spot rather
+than let the MIT row imply a coverage it does not have. Re-verify at the same
+2026-10-30 date as the row.
 
 | Dependency | Repository | Version | Licence hash | Security status | Usage mode | Owner | Re-verification date | Licence |
 |---|---|---|---|---|---|---|---|---|
 | `annotated-doc` | https://github.com/fastapi/annotated-doc | 0.0.5 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
 | `annotated-types` | https://github.com/annotated-types/annotated-types | 0.8.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
+| `ast-grep-py` | https://github.com/ast-grep/ast-grep | 0.45.1 | `e5dcffe836b6ec8a` | clean-2026-08-14 | in-binary | onboardux | 2026-10-30 | MIT |
 | `click` | https://github.com/pallets/click | 8.4.2 | `118dbcd2d5c9f9b2` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | BSD-3-Clause |
 | `colorama` | https://github.com/tartley/colorama | 0.4.6 | `684e9824f05014cf` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | BSD-3-Clause |
 | `coverage` | https://github.com/coveragepy/coveragepy | 7.15.4 | `2af71558e438db0b` | clean-2026-08-10 | dev-only | onboardux | 2026-10-30 | Apache-2.0 |
+| `graphql-core` | https://github.com/graphql-python/graphql-core | 3.2.11 | `e5dcffe836b6ec8a` | clean-2026-08-14 | in-binary | onboardux | 2026-10-30 | MIT |
 | `grimp` | https://github.com/seddonym/grimp | 3.15 | `684e9824f05014cf` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | BSD-3-Clause |
 | `hypothesis` | https://github.com/HypothesisWorks/hypothesis | 6.164.0 | `09962c1dc23fac80` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MPL-2.0 |
 | `import-linter` | https://github.com/seddonym/import-linter | 2.13 | `684e9824f05014cf` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | BSD-3-Clause |
@@ -104,6 +126,8 @@ never been audited.
 | `ruff` | https://github.com/astral-sh/ruff | 0.16.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | MIT |
 | `shellingham` | https://github.com/sarugaku/shellingham | 1.5.4 | `d8d62d58d661d5dd` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | ISC |
 | `sortedcontainers` | https://github.com/grantjenks/python-sortedcontainers | 2.4.0 | `6a666d685ab3d80b` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | Apache-2.0 |
+| `tree-sitter` | https://github.com/tree-sitter/py-tree-sitter | 0.26.0 | `e5dcffe836b6ec8a` | clean-2026-08-14 | in-binary | onboardux | 2026-10-30 | MIT |
+| `tree-sitter-language-pack` | https://github.com/xberg-io/tree-sitter-language-pack | 1.14.3 | `e5dcffe836b6ec8a` | clean-2026-08-14 | in-binary | onboardux | 2026-10-30 | MIT |
 | `typer` | https://github.com/fastapi/typer | 0.27.0 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
 | `typing-extensions` | https://github.com/python/typing_extensions | 4.16.0 | `606b04e71db9ca7a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | PSF-2.0 |
 | `types-pyyaml` | https://github.com/python/typeshed | 6.0.12.20260724 | `2af71558e438db0b` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | Apache-2.0 |

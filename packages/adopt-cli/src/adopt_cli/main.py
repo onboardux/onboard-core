@@ -30,6 +30,7 @@ from adopt_cli.commands import interchange as interchange_commands
 from adopt_cli.commands import map_command as map_commands
 from adopt_cli.commands import policy as policy_commands
 from adopt_cli.commands import store as store_commands
+from adopt_cli.commands import surface as surface_commands
 from adopt_cli.commands import version as version_command
 from adopt_cli.json_out import emit, emit_error
 from adopt_obs import AdoptError, ExitCode, get_logger
@@ -50,6 +51,10 @@ app.add_typer(store_commands.app)
 app.add_typer(policy_commands.probe_app)
 app.add_typer(policy_commands.envelope_app)
 app.add_typer(agent_commands.app)
+# `adopt surface show|coverage|changes` -- `builds/build_1/02-contracts.md` §8.
+# A group rather than three bare commands, because §8 names them that way and
+# the CLI surface is the contract.
+app.add_typer(surface_commands.app)
 
 # `init`, `detect` and `boundary` are bare commands, not groups: contracts §14
 # names them `adopt init [path]`, `adopt detect [path]` and `adopt boundary`.

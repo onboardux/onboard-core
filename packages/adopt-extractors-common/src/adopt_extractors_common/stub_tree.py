@@ -33,9 +33,10 @@ one tree emit one sequence.
 
 import re
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Final
 
+from adopt_map.context import ExtractorContext
 from adopt_map.schemas import ExtractorManifest, SourceRef, SurfaceFact
 
 __all__ = ["MANIFEST", "StubTreeExtractor"]
@@ -70,13 +71,19 @@ class StubTreeExtractor:
         """Whether the tree holds anything this extractor can read."""
         return any(Path(root).rglob(f"*{_SOURCE_SUFFIX}"))
 
-    def extract(self, root: str) -> Iterator[SurfaceFact]:
-        """One fact per top-level declaration, in a deterministic order."""
-        base = Path(root)
-        for path in sorted(base.rglob(f"*{_SOURCE_SUFFIX}")):
-            relative = path.relative_to(base)
+    def extract(self, ctx: ExtractorContext) -> Iterator[SurfaceFact]:
+        """One fact per top-level declaration, in a deterministic order.
+
+        Reads through the context's **one-walk** index rather than walking the
+        tree itself (S1.3, `03` §5.8): two walks are two chances to disagree
+        about what the tree contains. The budget is checked once per file, which
+        is `02` §7 obligation 7.
+        """
+        for entry in ctx.files(language="python"):
+            ctx.budget.check()
+            relative = PurePosixPath(entry.path)
             module = ".".join([*relative.parts[:-1], relative.stem])
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = ctx.text(entry)
             for match in _DECLARATION_RE.finditer(text):
                 name = match.group("name")
                 parameters = (match.group("params") or "").strip()
@@ -88,7 +95,9 @@ class StubTreeExtractor:
                     attributes={"signature": f"{name}({parameters})"},
                     source_refs=[
                         SourceRef(
-                            path=relative.as_posix(), start_line=_line_of(text, match.start())
+                            path=entry.path,
+                            start_line=_line_of(text, match.start()),
+                            blob_sha=entry.blob_sha,
                         )
                     ],
                 )

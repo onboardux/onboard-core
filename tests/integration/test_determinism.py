@@ -19,7 +19,7 @@ from adopt_map.schemas import ExtractorManifest
 
 from adopt_model import Identity, KnowledgeRevision
 from adopt_store.api import SqliteStoreHandle
-from tests.build1_conftest import build_scoped_store, surface_writer_for
+from tests.build1_conftest import build_scoped_store, context_for, surface_writer_for
 
 pytestmark = [pytest.mark.integration, pytest.mark.determinism]
 
@@ -36,7 +36,7 @@ def _run_into_a_fresh_store(
         writer.write_run(
             resolved=scopes["prod"],
             manifest=manifest,
-            facts=list(StubTreeExtractor().extract(_FIXTURE)),
+            facts=list(StubTreeExtractor().extract(context_for(_FIXTURE))),
             vcs_revision=None,
         )
         records = handle.export_records()

@@ -15,7 +15,7 @@ from typing import Any, Final
 from adopt_cli._build_info import BUILD_ID, SBOM_SHA256
 from adopt_const import EXPORT_VERSION, SCHEMA_VERSION
 
-__all__ = ["build_payload"]
+__all__ = ["adopt_version", "build_payload"]
 
 _DISTRIBUTION: Final[str] = "adopt-cli"
 
@@ -25,6 +25,17 @@ def _package_version() -> str:
         return metadata.version(_DISTRIBUTION)
     except metadata.PackageNotFoundError:  # pragma: no cover -- source checkout only
         return "0.0.0+unknown"
+
+
+def adopt_version() -> str:
+    """The installed `adopt` version, for anything that stamps an artifact.
+
+    Exported so `02` §9.2's `toolchain.adopt_version` and `surface.md`'s third
+    first-screen item read the same string `adopt version` prints. A second
+    lookup would be a second answer to *"which build produced this map"*, which
+    is the one question an archived report has to survive being asked.
+    """
+    return _package_version()
 
 
 def build_payload() -> dict[str, Any]:

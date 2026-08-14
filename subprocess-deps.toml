@@ -6,10 +6,16 @@
 # shell out to it" from an intention into a fact `scripts/licence_gate.py` can
 # check.
 #
-# Build 0 declares none. The entries the design anticipates -- universal-ctags,
+# Build 0 declared none. The entries the design anticipates -- universal-ctags,
 # Semgrep CE, Pandoc and Quarto, all GPL or LGPL -- belong to later build items
 # and are added in the change that first invokes them, together with the module
 # and function that does the invoking.
+#
+# **Build 1 S1.3 adds the first: `universal-ctags`**, the degrade ladder's second
+# rung (`01` F9.2, `03` §2). Nothing imports it, links it or ships it: it is
+# reached only through `adopt_map.execseam.run_tool`, which is allowlisted by
+# binary name, passes an argv with `shell=False`, and returns `None` when the
+# binary is absent so a machine without it degrades rather than fails.
 #
 # Format:
 #
@@ -19,4 +25,8 @@
 #   invocation_site = "adopt_extract/ctags.py:run_ctags"
 #   reason = "Symbol extraction for languages without a tree-sitter grammar."
 
-subprocess = []
+[[subprocess]]
+name = "universal-ctags"
+licence = "GPL-2.0-or-later"
+invocation_site = "adopt_map/execseam.py:run_tool"
+reason = """Symbol extraction for languages with no tree-sitter grammar -- the ladder's second rung between `grammar` and `regex` (`01` F9.2). Invoked across a process boundary through the one allowlisted seam and never linked, so the GPL obligation does not reach the wheel or the single-file binary. The only caller is `adopt_extractors_common.ctags.CtagsExtractor`, which declines when the binary is absent."""

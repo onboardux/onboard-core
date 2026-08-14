@@ -306,6 +306,31 @@ MAP_AGENT_MAX_FILE_BYTES: Final[int] = 120_000
 #: release the store before raising `MAP_STORE_LOCKED`.
 MAP_RUN_LOCK_TIMEOUT_S: Final[int] = 30
 
+#: How much of a file is read to decide whether it is binary. A NUL byte in the
+#: first block is the heuristic git uses. Bounded on purpose: the alternative
+#: reads a two-megabyte file to answer a question about its first line.
+#: **Provisional** -- S1.8 ratifies it against the reference corpus.
+MAP_BINARY_SNIFF_BYTES: Final[int] = 8192
+
+#: How long an allowlisted analysis binary gets before the exec seam gives up and
+#: the ladder degrades. Kept well below `MAP_EXTRACTOR_TIMEOUT_S` so a hung tool
+#: costs one rung rather than the extractor's whole watchdog budget.
+#: **Provisional** -- S1.8 ratifies it against the reference corpus.
+MAP_TOOL_TIMEOUT_S: Final[int] = 30
+
+#: The longest configuration **default** `common.config` will record. Anything
+#: longer is omitted rather than stored: a value that size is more likely a token
+#: than a setting, and `01` N9's asymmetry is that a missing default costs a
+#: reader one lookup while a recorded secret is a breach.
+#: **Provisional** -- S1.8 ratifies it against the labeled corpus.
+MAP_CONFIG_VALUE_MAX_CHARS: Final[int] = 64
+
+#: How many URIs a first-screen list may name before it stops being a headline.
+#: `02` §9.1 makes the first screen the honest summary; a run with 5,000
+#: outside-VCS settings would otherwise bury its own count under its own list.
+#: **Provisional** -- S1.8 ratifies it against the cold-FDE exercise.
+MAP_FIRST_SCREEN_LIST_MAX: Final[int] = 20
+
 #: Build 1's run-artifact and front-matter format versions. Both start at 1 and
 #: move independently of `SCHEMA_VERSION` and `EXPORT_VERSION`; `surface.json`
 #: is a run artifact and **not** an interchange contract (02 §9.2).

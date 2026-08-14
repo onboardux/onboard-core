@@ -1,11 +1,13 @@
-"""`adopt map` -- contracts §8, PRD F1/F2/F3/F13.
+"""`adopt map` -- contracts §8, PRD F1/F2/F3/F7/F9/F10/F11/F13.
 
 **This module is composition and nothing else.** It resolves flags, opens the
-store, hands `adopt_map` its ports and renders the result. Every rule lives in
-`adopt_map`: scope resolution and its four aborts in `scope_resolve`, URI minting
-in `minting`, the write set in `writer`. That split is why this file gets **zero
-dedicated tests** under `03` §7's budget -- it is T4 glue, swept by the contract
-tests over the exit codes and by the six journeys in S1.8.
+store, hands `adopt_map.orchestrator` its ports and renders the result. Every rule
+lives in `adopt_map`: scope resolution and its four aborts in `scope_resolve`, URI
+minting in `minting`, the write set in `writer`, and from S1.3 the whole run
+lifecycle -- one walk, the plan, staging, the budget, coverage and the four
+emitters -- in `orchestrator`. That split is why this file gets **zero dedicated
+tests** under `03` §7's budget: it is T4 glue, swept by the contract tests over
+the exit codes and by the six journeys in S1.8.
 
 **The exit codes are `02` §8's, not the category default** (B1-CR-35, OD-3).
 `adopt_obs.map_exit_code_for` holds the table; this module calls it and holds no
@@ -15,23 +17,26 @@ treat them as usable.
 **`--json` stdout is exactly one object.** Logs and the error envelope go to
 stderr, so a caller piping into `jq` strips nothing (`02` §8).
 
-Sprint S1.1 wires the write path against `common.stub`. The file index, the
-scheduler, the budgets, the degrade ladder, coverage and the four emitters are
-S1.3's and S1.7's. **The `02` §8 flags those sprints implement are not declared
-here yet** -- `--profile`, `--budget`, `--stage1-budget`, `--format`,
-`--export-bundle`, `--db-url` and `--agent` arrive with the machinery behind
-them. Accepting a flag that does nothing is indistinguishable from a broken one,
-and `05` S1.1's deliverables record the deferral instead.
+**S1.3 lands six of the seven flags S1.1 deferred**, because the machinery behind
+each now exists: `--profile`, `--budget`, `--stage1-budget`, `--format`,
+`--export-bundle` and `--db-url`. `--agent` stays out until S1.7 builds the pass
+-- `05` S1.1's argument holds, that accepting a flag which does nothing is
+indistinguishable from a broken one.
 """
 
 from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
 import typer
-from adopt_map.schemas import Extractor
+from adopt_map.netguard import EgressGuard
+from adopt_map.orchestrator import DEFAULT_FORMAT_FLAG, DEFAULT_OUT_DIR
+from adopt_map.orchestrator import run as run_map
+from adopt_map.plugins import DEFAULT_ENABLED_PACKS, ExtractorRegistry
+from adopt_map.report import RunResult
 from adopt_map.scope_resolve import ResolvedScope, resolve_scope
-from adopt_map.writer import SurfaceWriter, SurfaceWriteResult
+from adopt_map.writer import SurfaceWriter
 
+from adopt_cli.commands.version import adopt_version
 from adopt_cli.config import (
     load_config_file,
     project_config_path,
@@ -40,11 +45,11 @@ from adopt_cli.config import (
 )
 from adopt_cli.json_out import emit, emit_error
 from adopt_cli.store_option import open_configured_store
+from adopt_const import MAP_STAGE1_BUDGET_S, MAP_TOTAL_BUDGET_S
 from adopt_model._enums import Archetype
 from adopt_obs import (
     AdoptError,
     ErrorCode,
-    MapExitCode,
     get_logger,
     map_exit_code_for,
     new_run_id,
@@ -54,9 +59,16 @@ __all__ = ["map_command"]
 
 _log = get_logger(__name__)
 
-#: `02` §8's flag surface. Declared in full even where S1.1 does not yet honour a
-#: flag, because a CLI contract that grows flags sprint by sprint is one no
-#: integrator can write a script against.
+#: The `02` §8 formats, and the packs whose flag is on by default. A `--format`
+#: value outside this set is `MAP_USAGE` rather than a silently skipped artifact.
+_FORMATS: frozenset[str] = frozenset({"md", "json", "mermaid", "d2"})
+
+#: The archetypes whose run `02` §8 requires an `--export-bundle` for. A packaged
+#: platform has no source tree to walk: the metadata *is* the export, so a run
+#: without one has nothing to read and says so at exit 4 rather than reporting an
+#: empty map (`01` F8.3, `05` S1.6).
+_BUNDLE_ARCHETYPES: frozenset[str] = frozenset({"platform", "lowcode"})
+
 FirmOption = Annotated[str | None, typer.Option("--firm", help="Firm id.")]
 EngagementOption = Annotated[str | None, typer.Option("--engagement", help="Engagement id.")]
 SystemOption = Annotated[str | None, typer.Option("--system", help="System id.")]
@@ -73,6 +85,22 @@ ArchetypeOption = Annotated[
 ]
 OutOption = Annotated[Path | None, typer.Option("--out", help="Artifact directory.")]
 StoreOption = Annotated[Path | None, typer.Option("--store", help="Store path.")]
+ProfileOption = Annotated[
+    str, typer.Option("--profile", help="fast|full. `fast` runs extractors in one process.")
+]
+BudgetOption = Annotated[
+    float | None, typer.Option("--budget", help="Total extraction budget, seconds.")
+]
+Stage1BudgetOption = Annotated[
+    float | None, typer.Option("--stage1-budget", help="Stage-1 deadline, seconds.")
+]
+FormatOption = Annotated[str, typer.Option("--format", help="Comma-separated: md,json,mermaid,d2.")]
+ExportBundleOption = Annotated[
+    Path | None, typer.Option("--export-bundle", help="Packaged-platform metadata export.")
+]
+DbUrlOption = Annotated[
+    str | None, typer.Option("--db-url", help="Live schema reflection (tier-gated).")
+]
 DryRunOption = Annotated[
     bool, typer.Option("--dry-run", help="Resolve and extract, but write nothing.")
 ]
@@ -89,38 +117,19 @@ def _resolved_payload(resolved: ResolvedScope) -> dict[str, Any]:
     }
 
 
-def _result_payload(result: SurfaceWriteResult, resolved: ResolvedScope) -> dict[str, Any]:
-    """The `surface.json` counters this build produces so far. `02` §9.2's shape,
-    minus the fields S1.3 fills (`coverage`, `degradations`, `facts`)."""
-    return {
-        "report_version": result.report_version,
-        "run_id": result.run_id,
-        "scope": _resolved_payload(resolved),
-        "system": {"archetype": resolved.archetype, "tier": resolved.tier},
-        "identities_seen": result.identities_seen,
-        "identities_new": result.identities_new,
-        "revisions_written": result.revisions_written,
-        "provenance_written": result.provenance_written,
-        "moves": [{"from": move.from_uri, "to": move.to_uri} for move in result.moves],
-        "conflicts": [
-            {
-                "identity_uri": conflict.identity_uri,
-                "reason": conflict.reason,
-                "candidates": conflict.candidates,
-            }
-            for conflict in result.conflicts
-        ],
-        # PRD F4.5: when revisions were written because the *tool* changed rather
-        # than the system, the report says so by name.
-        "extractor_version_changes": {
-            extractor: {"from": previous, "to": current}
-            for extractor, (previous, current) in sorted(result.extractor_version_changes.items())
-        },
-        "gaps": [
-            {"identity_uri": gap.identity_uri, "reason": gap.reason, "detail": gap.detail}
-            for gap in result.gaps
-        ],
-    }
+def _result_payload(result: RunResult) -> dict[str, Any]:
+    """`--json`'s single stdout object.
+
+    The `02` §9.2 `surface.json` payload minus `facts[]`, which belongs in the
+    artifact rather than on a terminal: a caller wanting the facts reads the file
+    the run just wrote, and a caller scripting exit codes wants the counters.
+    """
+    from adopt_map.emit.json_report import surface_payload
+
+    payload = surface_payload(result)
+    payload.pop("facts", None)
+    payload["exit_code"] = result.exit_code
+    return payload
 
 
 def map_command(
@@ -132,12 +141,16 @@ def map_command(
     archetype: ArchetypeOption = "auto",
     out: OutOption = None,
     store: StoreOption = None,
+    profile: ProfileOption = "full",
+    budget: BudgetOption = None,
+    stage1_budget: Stage1BudgetOption = None,
+    output_format: FormatOption = DEFAULT_FORMAT_FLAG,
+    export_bundle: ExportBundleOption = None,
+    db_url: DbUrlOption = None,
     dry_run: DryRunOption = False,
     as_json: JsonOption = False,
 ) -> None:
     """Map a system's surface into canonical identity URIs and append-only revisions."""
-    del out  # S1.3 owns emission; accepted so the flag surface is stable.
-
     # `02` §2 rule 1, in its stated order: the config file, then `ADOPT_*`, then
     # the flag. `adopt_cli.config` already holds that order for every other key,
     # so the scope ids join the registry rather than growing a second resolver.
@@ -145,6 +158,19 @@ def map_command(
     engagement = _configured(engagement, "ADOPT_ENGAGEMENT_ID")
     system = _configured(system, "ADOPT_SYSTEM_ID")
     environment = _configured(environment, "ADOPT_ENVIRONMENT_ID")
+
+    formats = _formats(output_format, as_json=as_json)
+    if profile not in {"fast", "full"}:
+        _fail(
+            AdoptError(
+                ErrorCode.MAP_USAGE,
+                message=f"--profile {profile!r} is not one of fast|full",
+                hint="`fast` runs extractors sequentially in this process, which is "
+                "deterministic but cannot enforce the per-extractor watchdog. `full` "
+                "uses the process pool.",
+            ),
+            as_json=as_json,
+        )
 
     if firm is None or engagement is None or system is None:
         missing = [
@@ -170,18 +196,28 @@ def map_command(
         )
 
     resolved_archetype: Archetype = "web" if archetype == "auto" else archetype  # type: ignore[assignment]
+    if resolved_archetype in _BUNDLE_ARCHETYPES and export_bundle is None:
+        _fail(
+            AdoptError(
+                ErrorCode.MAP_EXPORT_BUNDLE_MISSING,
+                message=f"a {resolved_archetype} run needs --export-bundle",
+                hint="A packaged platform has no source tree to read: the metadata *is* "
+                "the export. Ask the platform owner to run their export and pass the "
+                "bundle:\n"
+                "  sfdx force:source:retrieve -x manifest/package.xml   # Salesforce\n"
+                "  adopt map . --archetype platform --export-bundle <path>",
+            ),
+            as_json=as_json,
+        )
 
     # **Resolution runs against a read-only handle, and that is load-bearing.**
     # `02` §8's exit-4 row promises "zero writes", and `05` S1.1's validation line
     # is stronger still: *"the store is byte-identical afterwards"*. Opening a
     # SQLite store read-write changes the file even when no row changes -- the
     # header and the journal move -- so an abort reached through a writable handle
-    # fails that line while being entirely correct about rows. Resolving under a
-    # read-only handle makes the promise true at the byte level, and makes every
-    # abort path one that *cannot* write rather than one that declines to.
-    resolved, facts = _resolve_and_extract(
+    # fails that line while being entirely correct about rows.
+    resolved = _resolve(
         store=store,
-        path=path,
         firm=firm,
         engagement=engagement,
         system=system,
@@ -190,89 +226,122 @@ def map_command(
         as_json=as_json,
     )
 
-    # One correlation id for the whole invocation: the log lines, the
-    # `audit_event.subject_ref` and the report all carry it, which is what makes
-    # a run traceable from a log line to the row it wrote. `run_id` is a
-    # **reserved** log field -- the logger stamps it -- so it is bound rather
-    # than passed, and the writer is handed the same value.
+    if db_url is not None and resolved.tier in {"T0", "T1", "T2"}:
+        _fail(
+            AdoptError(
+                ErrorCode.MAP_TIER_DECLINED,
+                message=f"--db-url needs a tier above T2; the negotiated tier is {resolved.tier}",
+                hint="Live schema reflection reads a client database. Renegotiate the "
+                "boundary with `adopt boundary` before passing --db-url, or drop the "
+                "flag and let the migration extractors read the declared schema.",
+            ),
+            as_json=as_json,
+        )
+
     run_id = new_run_id()
     log = _log.bind_run(run_id)
 
-    if dry_run:
-        log.info("map_dry_run", run_scope=resolved.scope.path(), facts=len(facts))
-        emit(
-            {"dry_run": True, "scope": _resolved_payload(resolved), "facts": len(facts)},
-            as_json=as_json,
-            title="adopt map (dry run)",
-        )
-        raise typer.Exit(MapExitCode.COMPLETE)
+    registry = ExtractorRegistry(enabled_packs=DEFAULT_ENABLED_PACKS)
+    from adopt_extractors_common import pack
 
+    registry.register_all(pack())
+
+    handle = None if dry_run else open_configured_store(store, read_only=False)
+    try:
+        writer = None if handle is None else _writer_for(handle)
+        result = run_map(
+            resolved=resolved,
+            root=path,
+            registry=registry,
+            adopt_version=adopt_version(),
+            writer=writer,
+            coverage_records=None if handle is None else handle.coverage_records(),
+            cache=None if handle is None else handle.backend,
+            out_dir=out if out is not None else Path(DEFAULT_OUT_DIR),
+            formats=formats,
+            stage1_budget_s=MAP_STAGE1_BUDGET_S if stage1_budget is None else stage1_budget,
+            total_budget_s=MAP_TOTAL_BUDGET_S if budget is None else budget,
+            run_id=run_id,
+            sequential=profile == "fast",
+            guard=EgressGuard(),
+        )
+        log.info("map_command_completed", facts=result.total_facts(), exit_code=result.exit_code)
+        emit(_result_payload(result), as_json=as_json, title="adopt map")
+        raise typer.Exit(result.exit_code)
+    except AdoptError as error:
+        _fail(error, as_json=as_json)
+    finally:
+        if handle is not None:
+            handle.close()
+
+
+def _writer_for(handle: Any) -> SurfaceWriter:
+    """Compose the writer from the handle's facades.
+
+    Here rather than in `adopt_map`, because `no-raw-sqlite` names `adopt_map` a
+    source module and follows indirect chains: the package declares ports and is
+    handed a realization (CR-34/CR-37's pattern, `adopt_map.ports`).
+    """
     from adopt_store.revisions import (
         BindingRevisionDraft,
         IdentityRevisionDraft,
         KnowledgeRevisionDraft,
     )
 
-    handle = open_configured_store(store, read_only=False)
-    try:
-        writer = SurfaceWriter(
-            identities=handle.identities(),
-            items=handle.items(),
-            bindings=handle.bindings(),
-            aux=handle.import_records(),
-            lookup=handle.export_records(),
-            revisions=handle.revisions(),
-            knowledge_draft=KnowledgeRevisionDraft,
-            binding_draft=BindingRevisionDraft,
-            identity_draft=IdentityRevisionDraft,
-            schema_version=handle.schema_version,
-            supported_schema_version=handle.schema_version,
-        )
-        result = writer.write_run(
-            resolved=resolved,
-            manifest=_extractor_for(path).manifest(),
-            facts=facts,
-            vcs_revision=_vcs_revision(path),
-            run_id=run_id,
-        )
-        log.info(
-            "map_completed",
-            identities_seen=result.identities_seen,
-            identities_new=result.identities_new,
-            gaps=len(result.gaps),
-        )
-        emit(_result_payload(result, resolved), as_json=as_json, title="adopt map")
-        raise typer.Exit(MapExitCode.COMPLETE)
-    except AdoptError as error:
-        _fail(error, as_json=as_json)
-    finally:
-        handle.close()
+    return SurfaceWriter(
+        identities=handle.identities(),
+        items=handle.items(),
+        bindings=handle.bindings(),
+        aux=handle.import_records(),
+        lookup=handle.export_records(),
+        revisions=handle.revisions(),
+        knowledge_draft=KnowledgeRevisionDraft,
+        binding_draft=BindingRevisionDraft,
+        identity_draft=IdentityRevisionDraft,
+        schema_version=handle.schema_version,
+        supported_schema_version=handle.schema_version,
+    )
 
 
-def _resolve_and_extract(
+def _formats(value: str, *, as_json: bool) -> tuple[str, ...]:
+    """`02` §8's `--format`, validated. An unknown value is `MAP_USAGE`.
+
+    Refused rather than skipped, because a caller who typed `--format markdown`
+    and received `md,json,mermaid` would get artifacts they did not ask for and
+    conclude the flag works.
+    """
+    selected = tuple(part.strip() for part in value.split(",") if part.strip())
+    unknown = sorted(set(selected) - _FORMATS)
+    if unknown or not selected:
+        _fail(
+            AdoptError(
+                ErrorCode.MAP_USAGE,
+                message=f"--format {value!r} names {unknown or 'nothing'}",
+                hint=f"Valid formats are {', '.join(sorted(_FORMATS))}, comma-separated.",
+            ),
+            as_json=as_json,
+        )
+    return selected
+
+
+def _resolve(
     *,
     store: Path | None,
-    path: Path,
     firm: str,
     engagement: str,
     system: str,
     environment: str | None,
     archetype: Archetype,
     as_json: bool,
-) -> tuple[ResolvedScope, list[Any]]:
-    """Rules 1-5 and the extraction pass, under a **read-only** handle.
-
-    Extraction happens here too, before the store is opened for writing, because
-    `02` §7 obligation 1 makes extractors static-only: they read a client tree and
-    have no business holding a writable store while they do it.
-    """
+) -> ResolvedScope:
+    """`02` §2 rules 1-5, under a **read-only** handle."""
     handle = open_configured_store(store, read_only=True)
     try:
         boundary = handle.boundary().current(
             system_id=system, environment_id=environment
         ) or handle.boundary().current(system_id=system, environment_id=None)
 
-        resolved = resolve_scope(
+        return resolve_scope(
             handle.export_records(),
             firm_id=firm,
             engagement_id=engagement,
@@ -285,8 +354,6 @@ def _resolve_and_extract(
         _fail(error, as_json=as_json)
     finally:
         handle.close()
-
-    return resolved, list(_extractor_for(path).extract(str(path)))
 
 
 def _configured(override: str | None, key: str) -> str | None:
@@ -301,13 +368,11 @@ def _configured(override: str | None, key: str) -> str | None:
     `resolve_all()` takes `project` and `user` as injectable mappings and
     defaults both to empty, so a bare `resolve_all()` resolves the flag and
     environment layers **only** -- the config files are never read. That is a
-    Build 0 observation rather than a Build 1 repair: `configured_store_path`
-    and `configured_annex` call it the same way, so `ADOPT_STORE_PATH` in
-    `.adopt/config.toml` is silently ignored today too, and widening
-    `resolve_all` itself would change how every key in the registry resolves --
-    a Build 0 amendment with its own review, recorded as OD-10. `02` §2 rule 1
-    binds `adopt map` specifically, so `adopt map` reads the files for its own
-    keys and nothing else changes.
+    Build 0 observation rather than a Build 1 repair, recorded as OD-10 and
+    scheduled as `BACKLOG.md` B-07 item 3; widening `resolve_all` itself would
+    change how every key in the registry resolves. `02` §2 rule 1 binds
+    `adopt map` specifically, so `adopt map` reads the files for its own keys and
+    nothing else changes.
     """
     if override is not None:
         return override
@@ -321,22 +386,6 @@ def _configured(override: str | None, key: str) -> str | None:
     return None
 
 
-def _extractor_for(path: Path) -> Extractor:
-    """The one extractor S1.2 runs, chosen by the protocol's own `applies_to`.
-
-    **A stopgap with a stated end date**: `03` §5.8's registry, scheduler and
-    manifest audit are S1.3's, and until they exist a run has exactly one
-    extractor. Choosing between the two stubs through `applies_to` rather than a
-    flag means the seam S1.3 replaces is the one the protocol already declares --
-    `common.stub_tree` reads the tree, so a tree with no source files falls back
-    to `common.stub`, which reads nothing and always applies.
-    """
-    from adopt_extractors_common import StubExtractor, StubTreeExtractor
-
-    tree = StubTreeExtractor()
-    return tree if tree.applies_to(str(path)) else StubExtractor()
-
-
 def _fail(error: AdoptError, *, as_json: bool) -> NoReturn:
     """Render the envelope to stderr and exit with `02` §8's code.
 
@@ -346,22 +395,3 @@ def _fail(error: AdoptError, *, as_json: bool) -> NoReturn:
     """
     emit_error(error.to_envelope(), as_json=as_json)
     raise typer.Exit(map_exit_code_for(error.code))
-
-
-def _vcs_revision(path: Path) -> str | None:
-    """The tree's commit sha, or `None`.
-
-    `None` is a real answer, not a failure: a tree that is not a checkout has no
-    commit, and `provenance` is then recorded as a gap rather than written under
-    a `source_type` that does not fit (B1-CR-36). S1.3's file index owns the real
-    resolution; S1.1 answers honestly with what it can see without running a
-    subprocess against a client tree.
-    """
-    head = path / ".git" / "HEAD"
-    if not head.is_file():
-        return None
-    content = head.read_text(encoding="utf-8").strip()
-    if not content.startswith("ref: "):
-        return content or None
-    ref = (path / ".git" / content.removeprefix("ref: ")).resolve()
-    return ref.read_text(encoding="utf-8").strip() if ref.is_file() else None

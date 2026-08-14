@@ -15,10 +15,13 @@ insert, an update and a delete alike, and on nothing else.
 
 import hashlib
 import json
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
+from adopt_map.context import Budget, ExtractorContext
+from adopt_map.fileindex import build_index
 from adopt_map.ports import ScopeLookupRecords, SurfaceAuxRecords
 from adopt_map.scope_resolve import ResolvedScope, resolve_scope
 from adopt_map.writer import SurfaceWriter
@@ -32,6 +35,10 @@ from adopt_store.revisions import (
     IdentityRevisionDraft,
     KnowledgeRevisionDraft,
 )
+
+#: How long a test context's budget runs. Far enough that no extraction suite
+#: is accidentally a budget suite; finite so a hung test still ends.
+_TEST_BUDGET_S: float = 3_600.0
 
 
 def surface_writer_for(handle: SqliteStoreHandle) -> SurfaceWriter:
@@ -193,3 +200,48 @@ def store_fingerprint(s4_store: SqliteStoreHandle) -> Callable[[], str]:
         return digest.hexdigest()
 
     return _fingerprint
+
+
+def context_for(
+    root: str | Path, *, archetype: str = "web", tier: str | None = "T2"
+) -> ExtractorContext:
+    """An `ExtractorContext` over a real tree -- S1.3, B1-CR-58.
+
+    `02` §7 obligation 7 is *"calls `ctx.budget.check()` at least once per file"*,
+    which needs a `ctx` the S1.1 protocol had no parameter for. Every caller that
+    used to hand `extract()` a path string comes through here instead, so the
+    index is built the same way the orchestrator builds it -- one walk, real blob
+    shas, real language detection -- rather than each test inventing a context
+    that agrees with nothing.
+
+    The budget is a **far** deadline by default: a test exercising extraction is
+    not testing the budget, and a context whose budget could expire mid-test
+    would make every extraction suite intermittently a budget suite.
+    """
+    index = build_index(Path(root))
+    return ExtractorContext(
+        root=str(root),
+        index=index,
+        budget=Budget.starting_at(time.time(), stage1_s=_TEST_BUDGET_S, total_s=_TEST_BUDGET_S),
+        archetype=archetype,
+        tier=tier,
+    )
+
+
+def exhausted_context(root: str | Path) -> ExtractorContext:
+    """A context whose budget has **already** elapsed.
+
+    The instrument behind the budget-exhaustion drill: `Budget.now` is injected,
+    so exhaustion is produced by arithmetic rather than by sleeping -- `03` §5
+    bans sleeps in tests, and a drill that slept for the real budget would take
+    an hour.
+    """
+    index = build_index(Path(root))
+    start = time.time() - 10_000
+    return ExtractorContext(
+        root=str(root),
+        index=index,
+        budget=Budget.starting_at(start, stage1_s=1.0, total_s=1.0),
+        archetype="web",
+        tier="T2",
+    )

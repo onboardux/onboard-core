@@ -58,6 +58,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
 from adopt_const import MAP_MIN_EMIT_CONFIDENCE, SURFACE_ATTRS_VERSION, SURFACE_REPORT_VERSION
+from adopt_map.confidence import confidence_for
 from adopt_map.frontmatter import FrontMatter, RenderedRelation, render_body
 from adopt_map.minting import mint, normalize_local_key
 from adopt_map.moves import Move, Observation, detect_moves
@@ -92,6 +93,7 @@ __all__ = [
     "SURFACE_STATUS_ACTIVE",
     "SURFACE_STATUS_MOVED",
     "SURFACE_VERIFICATION",
+    "FactBatch",
     "Gap",
     "SurfaceWriteResult",
     "SurfaceWriter",
@@ -133,27 +135,19 @@ _LOCATOR_RUNG_BY_NAMESPACE: Final[dict[str, LocatorRung]] = {
 #: resolvable. See the module docstring for what happens when none was.
 _VCS_SOURCE_TYPE: Final[str] = "commit"
 
-#: Method -> the confidence the **framework** assigns (PRD F9.1). An extractor
-#: never sets its own; the plugin audit rejects one that tries (S1.3).
-_CONFIDENCE_BY_METHOD: Final[dict[str, str]] = {
-    "grammar": "MAP_CONF_GRAMMAR",
-    "reflection": "MAP_CONF_REFLECTION",
-    "declared": "MAP_CONF_DECLARED",
-    "ctags": "MAP_CONF_CTAGS",
-    "regex": "MAP_CONF_REGEX",
-    "agent": "MAP_CONF_AGENT_REVIEWED",
-}
 
+@dataclass(frozen=True, slots=True)
+class FactBatch:
+    """One extractor's facts, with the manifest that governs them.
 
-def confidence_for(method: EvidenceMethod) -> float:
-    """The confidence band for an evidence method -- PRD F9.1, `03` §3.
-
-    Imported from `adopt_const` by name rather than inlined, so a retune in the
-    constants table reaches every call site (`00` §9 rule 2).
+    A run is a **plan of extractors** from S1.3 onward, and `kinds`, `method` and
+    `version` differ per extractor -- so the manifest travels beside the facts
+    rather than beside the run. Frozen, because a batch whose manifest could be
+    swapped after the kinds check is a batch whose kinds check proved nothing.
     """
-    import adopt_const
 
-    return float(getattr(adopt_const, _CONFIDENCE_BY_METHOD[method]))
+    manifest: ExtractorManifest
+    facts: tuple[SurfaceFact, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,9 +357,53 @@ class SurfaceWriter:
             AdoptError: ``MAP_EXTRACTOR_FAILED`` when a fact's kind is outside the
                 manifest or its attributes do not validate.
         """
+        return self.write_batches(
+            resolved=resolved,
+            batches=(FactBatch(manifest=manifest, facts=tuple(facts)),),
+            vcs_revision=vcs_revision,
+            run_id=run_id,
+            actor_id=actor_id,
+        )
+
+    def write_batches(
+        self,
+        *,
+        resolved: ResolvedScope,
+        batches: Sequence["FactBatch"],
+        vcs_revision: str | None,
+        run_id: str | None = None,
+        actor_id: str | None = None,
+    ) -> SurfaceWriteResult:
+        """Write **every extractor's** facts, then one `audit_event`. One transaction.
+
+        S1.3 runs a plan of extractors rather than the single stub S1.1 proved the
+        path with, and each carries its own `kinds`, `method` and version -- so the
+        manifest is per batch and not per run. `write_run` is this method with one
+        batch, kept because a single-extractor run is a real case and because the
+        S1.1/S1.2 suites are the regression evidence for the path underneath.
+
+        **The moves pass runs once, over every batch's observations.** `02` §4.3's
+        move rule compares what disappeared against everything newly seen, and
+        running it per batch would let a referent that moved *between packs* look
+        like a disappearance plus an unrelated arrival -- which is precisely the
+        orphan-plus-stranger outcome `01` F5 exists to prevent.
+
+        Args:
+            resolved: The run's scope. The only source of the four scope columns.
+            batches: `(manifest, facts)` per extractor, in the scheduler's
+                deterministic id order.
+            vcs_revision: The tree's commit sha, or `None` (B1-CR-36).
+            run_id: Correlation id; minted when absent.
+            actor_id: Who caused the run, where a human did.
+
+        Returns:
+            The counters and gaps this run produced, across every batch.
+
+        Raises:
+            AdoptError: ``MAP_EXTRACTOR_FAILED`` when a fact's kind is outside its
+                own batch's manifest or its attributes do not validate.
+        """
         result = SurfaceWriteResult(run_id=run_id or new_id("run"))
-        permitted = frozenset(manifest.kinds)
-        confidence = confidence_for(manifest.method)
 
         with self._aux.transaction():
             # Read the prior state **once**, before anything is written, so every
@@ -377,23 +415,34 @@ class SurfaceWriter:
                 environment_id=resolved.environment_id,
             )
             observations: list[Observation] = []
-            for fact in facts:
-                self._write_fact(
-                    resolved=resolved,
-                    manifest=manifest,
-                    permitted=permitted,
-                    confidence=confidence,
-                    fact=fact,
-                    vcs_revision=vcs_revision,
-                    actor_id=actor_id,
-                    prior=prior,
-                    observations=observations,
-                    result=result,
-                )
+            # Which extractor observed each identity. A `moved` revision is
+            # attributed to the extractor that saw the **destination**, because
+            # that is whose evidence justified the move -- and with a plan of
+            # extractors there is no single "the" manifest to fall back on.
+            attribution: dict[str, ExtractorManifest] = {}
+            for batch in batches:
+                permitted = frozenset(batch.manifest.kinds)
+                confidence = confidence_for(batch.manifest.method)
+                seen_before = len(observations)
+                for fact in batch.facts:
+                    self._write_fact(
+                        resolved=resolved,
+                        manifest=batch.manifest,
+                        permitted=permitted,
+                        confidence=confidence,
+                        fact=fact,
+                        vcs_revision=vcs_revision,
+                        actor_id=actor_id,
+                        prior=prior,
+                        observations=observations,
+                        result=result,
+                    )
+                for observation in observations[seen_before:]:
+                    attribution[observation.identity_id] = batch.manifest
             self._apply_moves(
                 prior=prior,
                 observations=observations,
-                manifest=manifest,
+                attribution=attribution,
                 actor_id=actor_id,
                 result=result,
             )
@@ -779,7 +828,7 @@ class SurfaceWriter:
         *,
         prior: PriorState,
         observations: list[Observation],
-        manifest: ExtractorManifest,
+        attribution: dict[str, ExtractorManifest],
         actor_id: str | None,
         result: SurfaceWriteResult,
     ) -> None:
@@ -790,11 +839,20 @@ class SurfaceWriter:
         never marks an identity absent. A referent missing from a run may have
         been removed or may simply have defeated the parser, and the two are
         indistinguishable from here (PRD F5.3, B1-CR-07).
+
+        `attribution` is total over move destinations by construction: a move
+        requires a destination that was observed this run, and every observation
+        was recorded against the batch that produced it.
         """
         outcome = detect_moves(prior, observations)
 
         for move in outcome.moves:
-            self._record_move(move=move, prior=prior, manifest=manifest, actor_id=actor_id)
+            self._record_move(
+                move=move,
+                prior=prior,
+                manifest=attribution[move.to_identity_id],
+                actor_id=actor_id,
+            )
             result.revisions_written["identity"] += 1
             entry = prior.get(move.from_uri)
             if entry is not None and entry.binding is not None:

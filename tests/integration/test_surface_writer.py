@@ -65,7 +65,7 @@ from adopt_store.revisions import (
     IdentityRevisionDraft,
     KnowledgeRevisionDraft,
 )
-from tests.build1_conftest import surface_writer_for
+from tests.build1_conftest import context_for, surface_writer_for
 
 pytestmark = pytest.mark.integration
 
@@ -125,7 +125,7 @@ def sql_trace(s4_store: SqliteStoreHandle) -> Iterator[list[str]]:
 
 
 def _facts() -> list[SurfaceFact]:
-    return list(StubExtractor().extract("."))
+    return list(StubExtractor().extract(context_for(".")))
 
 
 def _written_tables(statements: list[str]) -> set[str]:

@@ -196,6 +196,100 @@ class NoCoveredCacheWriteContract(Contract):
         )
 
 
+def code_text(path: Path) -> Iterator[tuple[int, str]]:
+    """Yield ``(line, text)`` for source that could *execute*, comments removed.
+
+    Different from `scannable_text` on purpose, and the difference is the whole
+    reason `no-covered-cache-read` needed its own scanner. `scannable_text` yields
+    **string literals**, because SQL reaching a database from Python has to be in
+    one. A cache *read* is not a string: it is `row.covered_cache`, an attribute
+    access, and a scanner that only sees string constants is blind to it.
+
+    That blindness was not theorised -- it was **found by planting**. The first
+    version of this contract reused `scannable_text`, the planted
+    `return row.covered_cache` sailed through, and the gate reported `KEPT`. A
+    gate whose broken state is indistinguishable from its passing state is not a
+    gate (Build 0 CR-67).
+
+    Docstrings and comments are stripped so the rule does not fail on the prose
+    that explains it, which is the exemption `scannable_text` exists to avoid
+    needing.
+    """
+    text = path.read_text(encoding="utf-8")
+    if path.suffix != ".py":
+        yield from enumerate(text.splitlines(), 1)
+        return
+    try:
+        tree = ast.parse(text, filename=str(path))
+    except SyntaxError:  # pragma: no cover -- ruff catches these first
+        return
+    docstring_lines = {
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and id(node) in _docstring_nodes(tree)
+    }
+    spans = {
+        line
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and id(node) in _docstring_nodes(tree)
+        and node.end_lineno is not None
+        for line in range(node.lineno, node.end_lineno + 1)
+    }
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if lineno in docstring_lines or lineno in spans:
+            continue
+        code = line.split("#", 1)[0]
+        if code.strip():
+            yield lineno, code
+
+
+class NoCoveredCacheReadContract(Contract):
+    """Only `adopt_map.coverage` may **name** `covered_cache` inside `adopt_map`.
+
+    `05` S1.3 asks for a lint rule *"banning reads of `covered_cache` outside
+    `coverage.py`"*, and the sibling `no-covered-cache-write` does not cover it:
+    that rule looks for a write context, so `SELECT covered_cache …` or a
+    `row.covered_cache` decision passes it cleanly.
+
+    A read is the more dangerous half here. `01` F10.2 is *"the system never reads
+    `covered_cache` as authority"*, and the way that invariant dies is not a
+    second writer -- it is one convenient read in an emitter, printing a figure
+    that no longer traces to `recompute_coverage()`. The cache would then be
+    authoritative for exactly one number, which is how silent coverage decay
+    comes back.
+
+    `adopt_map.coverage` is the one module admitted, because B1-CR-59 needs
+    `covered_cache_at` to tell a **cold** cache from a **drifted** one -- and it
+    reads it to classify a disagreement, never to decide coverage.
+    """
+
+    paths = fields.ListField(subfield=fields.StringField())
+    allowed_paths = fields.ListField(subfield=fields.StringField())
+
+    def check(self, graph: ImportGraph, verbose: bool) -> ContractCheck:
+        findings: list[Finding] = []
+        for path in iter_source_files(as_str_list(self.paths)):
+            if is_under(path, as_str_list(self.allowed_paths)):
+                continue
+            for lineno, text in code_text(path):
+                if _COVERED_CACHE_RE.search(text):
+                    findings.append(Finding(path, lineno, text.strip()))
+        output.verbose_print(verbose, f"coverage-cache reads: {len(findings)} finding(s)")
+        return ContractCheck(
+            kept=not findings, metadata={"findings": [f.render() for f in findings]}
+        )
+
+    def render_broken_contract(self, check: ContractCheck) -> None:
+        _render(
+            check,
+            "`covered_cache` is named outside adopt_map/coverage.py.",
+            "Every coverage figure this build prints comes from `recompute_coverage()` "
+            "(`01` F10.2, `03` §5.7 invariant 1). Take the number from a "
+            "`CoverageReport`; the cache is written and never consulted.",
+        )
+
+
 def scan_paths_for_tests(contract_cls: type[Contract], **options: object) -> list[str]:
     """Instantiate a contract with options and return its rendered findings.
 

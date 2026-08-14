@@ -13,6 +13,12 @@ authors = [{ name = "The Adopt Authors" }]
 # graph and break `no-raw-sqlite`, which names `adopt_map` as a source module.
 dependencies = [
     "adopt-const",
+    # S1.3: `recompute_coverage` is the coverage authority and `rebuild_cache`
+    # is the **only** sanctioned writer of `covered_cache` -- `no-covered-cache-write`
+    # admits `packages/adopt-coverage` and nothing else, so `adopt_map.coverage`
+    # supplies the authority and the handle and owns neither half of the statement.
+    # `adopt-coverage` reaches no dialect, so this does not breach `no-raw-sqlite`.
+    "adopt-coverage",
     "adopt-identity",
     "adopt-model",
     "adopt-obs",

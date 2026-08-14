@@ -146,6 +146,19 @@ MINTING_MODULE: Final[Path] = (
     REPO_ROOT / "packages" / "adopt-map" / "src" / "adopt_map" / "minting.py"
 )
 
+#: Where `no-covered-cache-read` plants its read: Build 1's markdown emitter.
+#:
+#: **The one place the violation would actually be written.** `01` F10.2 does
+#: not die to a second *writer* -- `no-covered-cache-write` has caught that
+#: since S0. It dies to one convenient *read* in the module that prints a
+#: coverage figure, because taking the cached number is faster than threading a
+#: `CoverageReport` through, and the printed figure then no longer traces to
+#: `recompute_coverage()`. So the proof is planted where a contributor would
+#: really put it, not in a scratch module nobody edits.
+MARKDOWN_EMITTER: Final[Path] = (
+    REPO_ROOT / "packages" / "adopt-map" / "src" / "adopt_map" / "emit" / "markdown.py"
+)
+
 #: The provider module named in the planted import. One of the six
 #: `no-provider-sdk` forbids, and deliberately the one PRD F13.2 names first --
 #: so the proof is against a module the pack actually expects someone to reach
@@ -231,7 +244,34 @@ def plant_uri_construction() -> str:
     return f"added a hand-assembled URI literal to {MINTING_MODULE.name}"
 
 
+def plant_covered_cache_read() -> str:
+    """Read the coverage cache in an emitter -- `01` F10.2's gate, `05` S1.3.
+
+    `no-covered-cache-write` looks for a *write context*, so a bare read passes
+    it clean; that is exactly why `no-covered-cache-read` exists and why it needs
+    its own proof. The planted line is the shape the defect really takes: an
+    emitter reaching for `row.covered_cache` because it is already holding the
+    row, printing a number that no longer came from `recompute_coverage()`.
+
+    The cache would then be authoritative for precisely one figure -- which is
+    how the invisible coverage decay the v3 rebuild deleted comes back, one
+    convenience at a time.
+    """
+    if not MARKDOWN_EMITTER.exists():  # pragma: no cover -- layout change
+        raise SystemExit(
+            f"{MARKDOWN_EMITTER.relative_to(REPO_ROOT)} does not exist, so nothing was "
+            "planted. Update this script rather than leaving the gate unproven."
+        )
+    _backup(MARKDOWN_EMITTER)
+    with MARKDOWN_EMITTER.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            "\n\ndef _planted_violation(row: object) -> object:\n    return row.covered_cache\n"
+        )
+    return f"added a coverage-cache read to {MARKDOWN_EMITTER.name}"
+
+
 KINDS: Final[dict[str, Callable[[], str]]] = {
+    "covered-cache-read": plant_covered_cache_read,
     "covered-cache-write": plant_covered_cache_write,
     "drop-column": plant_drop_column,
     "provider-sdk": plant_provider_sdk,

@@ -15,13 +15,20 @@ and the degrade ladder would then be advisory.
 """
 
 from collections.abc import Iterator
-from typing import Final, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Final, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from adopt_map.schemas.attributes import validate_attributes
 from adopt_map.schemas.relations import RelationPredicate
 from adopt_model._enums import Archetype, IdentityKind, SourceType
+
+if TYPE_CHECKING:
+    # Under `TYPE_CHECKING` only, and that is structural rather than tidy:
+    # `adopt_map.context` imports `adopt_map.fileindex`, and a runtime import
+    # here would make every consumer of a `SurfaceFact` -- including the
+    # attribute registry -- depend on the file walker it has nothing to do with.
+    from adopt_map.context import ExtractorContext
 
 __all__ = [
     "EvidenceMethod",
@@ -142,9 +149,14 @@ class Extractor(Protocol):
     rather than left in a commit message. Build 8's probe runner is a separate,
     heavier mechanism (`00` §7 X-5) and is not this.
 
-    Sprint S1.1 needs only enough of the protocol to prove the write path against
-    `common.stub`. The framework that registers, audits, schedules and budgets
-    extractors is S1.3's, and `ctx` gains its budget and file index there.
+    **`extract` takes a context, and B1-CR-58 records why the signature
+    changed.** S1.1 shipped `extract(root: str)`, which is all the write path
+    needed. `02` §7 obligation 7 is *"Budget-aware. Calls `ctx.budget.check()` at
+    least once per file"* -- an obligation about a `ctx` that no parameter
+    supplied, so it was unenforceable by construction. S1.3 supplies it:
+    `ExtractorContext` carries the root, the one-walk file index, the budget, the
+    archetype and the negotiated tier, and carries **no** scope, store, URI
+    builder or writable path (`adopt_map.context`).
     """
 
     def manifest(self) -> ExtractorManifest:
@@ -155,12 +167,15 @@ class Extractor(Protocol):
         """Whether this extractor has anything to say about the tree at `root`.
 
         Reads the tree. **Never imports or executes anything in it** -- `02` §7
-        obligation 1, proven by the `poisoned-import` fixture in S1.3.
+        obligation 1, proven by the `poisoned-import` fixture.
+
+        Takes a path rather than a context because it is asked during planning,
+        before the index is built for the extractors that survive the plan.
         """
         ...
 
-    def extract(self, root: str) -> Iterator[SurfaceFact]:
-        """Yield facts one at a time.
+    def extract(self, ctx: "ExtractorContext") -> Iterator[SurfaceFact]:
+        """Yield facts one at a time, checking the budget at least once per file.
 
         An iterator rather than a list so that staged emission and the budget
         watchdog can act between facts rather than after all of them (`02` §7

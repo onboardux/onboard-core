@@ -228,6 +228,7 @@ version = "0.3.0"
 source = { editable = "packages/adopt-map" }
 dependencies = [
     { name = "adopt-const" },
+    { name = "adopt-coverage" },
     { name = "adopt-identity" },
     { name = "adopt-model" },
     { name = "adopt-obs" },
@@ -239,6 +240,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-coverage", editable = "packages/adopt-coverage" },
     { name = "adopt-identity", editable = "packages/adopt-identity" },
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },

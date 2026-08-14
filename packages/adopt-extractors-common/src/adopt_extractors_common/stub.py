@@ -22,6 +22,7 @@ static-only guarantee (`02` §7 obligation 1) rather than merely compliant with 
 from collections.abc import Iterator
 from typing import Final
 
+from adopt_map.context import ExtractorContext
 from adopt_map.schemas import ExtractorManifest, FactRelation, SourceRef, SurfaceFact
 
 __all__ = ["MANIFEST", "StubExtractor"]
@@ -103,7 +104,13 @@ class StubExtractor:
         del root
         return True
 
-    def extract(self, root: str) -> Iterator[SurfaceFact]:
-        """The fixed facts, in a fixed order. Reads nothing under `root`."""
-        del root
+    def extract(self, ctx: ExtractorContext) -> Iterator[SurfaceFact]:
+        """The fixed facts, in a fixed order. **Reads nothing.**
+
+        The budget is checked once even though no file is read, because `02` §7
+        obligation 7 is *"at least once"* and an extractor that never checks is
+        one a budget-exhaustion drill can never interrupt -- which would make the
+        stub the one extractor immune to the mechanism it exists to prove.
+        """
+        ctx.budget.check()
         yield from _FACTS

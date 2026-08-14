@@ -109,6 +109,25 @@ never been audited.
 | `types-pyyaml` | https://github.com/python/typeshed | 6.0.12.20260724 | `2af71558e438db0b` | clean-2026-08-07 | dev-only | onboardux | 2026-10-30 | Apache-2.0 |
 | `typing-inspection` | https://github.com/pydantic/typing-inspection | 0.4.2 | `e5dcffe836b6ec8a` | clean-2026-08-07 | in-binary | onboardux | 2026-10-30 | MIT |
 
+## Subprocess-invoked tools (Build 1, S1.3)
+
+`universal-ctags` is the degrade ladder's second rung (`01` F9.2, `03` §2). It is
+**GPL-2.0-or-later**, which the in-binary allowlist forbids and the `subprocess`
+mode permits — so it carries a row here *and* an entry in `subprocess-deps.toml`,
+naming the one site that invokes it. Without both, `licence_gate.py` treats it as
+`in-binary` and rejects it, which is the fail-closed behaviour the policy wants.
+
+**It is not a Python distribution and does not appear in `uv.lock`**, so its row
+records what a reviewer needs rather than what the gate resolves: it is invoked,
+never linked, never redistributed, and a machine without it degrades to the
+`regex` rung rather than failing. That is why the version column reads *any* —
+we depend on its output format, not on a pin, and `run_tool` tolerates a tool
+that will not start.
+
+| Component | Repository | Version | Licence hash | Security status | Usage mode | Owner | Re-verify by | Licence |
+|---|---|---|---|---|---|---|---|---|
+| `universal-ctags` | https://github.com/universal-ctags/ctags | any (not pinned; not a Python distribution) | `n/a -- not resolved by uv` | clean-2026-08-14 | subprocess | onboardux | 2026-10-30 | GPL-2.0-or-later |
+
 ## Toolchain that is never distributed
 
 The development container and the CI runner provide `git`, `uv`, the `sqlite3`

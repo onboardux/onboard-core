@@ -1,0 +1,13 @@
+# The support agent's retrieval configuration.
+#
+# `retrieval:` at the top level is what marks this document as `ai.retrieval`'s
+# subject rather than a general configuration source.
+retrieval:
+  store: pgvector
+  index: orders_kb
+  top_k: 8
+  embedding_model: text-embedding-3-large
+  chunk_size: 900
+  chunk_overlap: 120
+  rerank_model: rerank-english-v3
+  display_label: Support knowledge base

@@ -29,6 +29,8 @@ adopt-map = { workspace = true }
 adopt-extractors-common = { workspace = true }
 # S1.4's web/service pack. `03` §4, §5.10.
 adopt-extractors-web = { workspace = true }
+# S1.5's AI-deployment pack. `03` §4, §5.10.
+adopt-extractors-ai = { workspace = true }
 
 [dependency-groups]
 dev = [

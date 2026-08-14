@@ -1,0 +1,56 @@
+{
+  "labels_version": 1,
+  "fixture": "langgraph-support",
+  "method": "Derived from the fixture's own specification -- the prompt files, the client constructions, the tool declarations, the retrieval document, the eval set and the environment file the tree is written from, plus the top-level Python declarations `common.stub_tree` reads. Never from extractor output: a labeled set read back from what the extractors found makes recall 1.0 by construction and measures nothing.",
+  "covers": "Every kind a run over this tree emits. A labeled set covering only the `ai` pack would make precision a number about labelling rather than about extraction -- the finding S1.4 recorded when its own set covered eleven web extractors and nothing else.",
+  "outside_vcs_note": "`outside_vcs: true` is the ground truth for `01` §6 M8. Eight identities: three environment settings, two secret references, one runtime-resolved model pin, and the two prompts held outside the tree.",
+  "identities": [
+    {"identity_kind": "config_key", "namespace": "env", "local_key": "SUPPORT_RERANK_MODEL", "outside_vcs": true, "note": "deploy/.env.example"},
+    {"identity_kind": "config_key", "namespace": "env", "local_key": "SUPPORT_MAX_TURNS", "outside_vcs": true, "note": "deploy/.env.example"},
+    {"identity_kind": "config_key", "namespace": "env", "local_key": "SUPPORT_ESCALATION_QUEUE", "outside_vcs": true, "note": "deploy/.env.example"},
+    {"identity_kind": "config_key", "namespace": "secret:env", "local_key": "ANTHROPIC_API_KEY", "outside_vcs": true, "note": "reference only -- the model has no value field"},
+    {"identity_kind": "config_key", "namespace": "secret:env", "local_key": "PGVECTOR_PASSWORD", "outside_vcs": true, "note": "reference only"},
+    {"identity_kind": "config_key", "namespace": "evalset", "local_key": "support_quality.thresholds.faithfulness", "note": "evals/support_quality.yaml"},
+    {"identity_kind": "config_key", "namespace": "evalset", "local_key": "support_quality.thresholds.refusal_rate", "note": "evals/support_quality.yaml"},
+    {"identity_kind": "config_key", "namespace": "evalset", "local_key": "support_quality.cases.refund_policy", "note": "evals/support_quality.yaml"},
+    {"identity_kind": "config_key", "namespace": "evalset", "local_key": "support_quality.cases.order_status", "note": "evals/support_quality.yaml"},
+    {"identity_kind": "config_key", "namespace": "evalset", "local_key": "support_quality.cases.out_of_scope", "note": "evals/support_quality.yaml"},
+
+    {"identity_kind": "model_pin", "namespace": "openai", "local_key": "gpt-4o-latest@triage_model", "note": "floating -- the F8.8 callout"},
+    {"identity_kind": "model_pin", "namespace": "anthropic", "local_key": "claude-sonnet-4-5-20250929@answer_model", "note": "pinned -- dated id"},
+    {"identity_kind": "model_pin", "namespace": "openai", "local_key": "${SUPPORT_RERANK_MODEL}@rerank_model", "outside_vcs": true, "note": "resolved from the environment at start-up"},
+
+    {"identity_kind": "prompt", "namespace": "file", "local_key": "prompts/answer_grounded.md", "note": "prompt file"},
+    {"identity_kind": "prompt", "namespace": "file", "local_key": "prompts/triage_classifier.md", "note": "prompt file"},
+    {"identity_kind": "prompt", "namespace": "file", "local_key": "app/prompts.py#ESCALATION_TEMPLATE", "note": "template literal in code"},
+    {"identity_kind": "prompt", "namespace": "console", "local_key": "support-greeting", "outside_vcs": true, "note": "held in the vendor console -- opaque, no body in this tree"},
+    {"identity_kind": "prompt", "namespace": "db", "local_key": "faq_answer", "outside_vcs": true, "note": "held in the application database -- opaque"},
+
+    {"identity_kind": "retrieval_config", "namespace": "pgvector", "local_key": "orders_kb.top_k", "note": "config/retrieval.yaml"},
+    {"identity_kind": "retrieval_config", "namespace": "pgvector", "local_key": "orders_kb.embedding_model", "note": "config/retrieval.yaml"},
+    {"identity_kind": "retrieval_config", "namespace": "pgvector", "local_key": "orders_kb.chunk_size", "note": "config/retrieval.yaml"},
+    {"identity_kind": "retrieval_config", "namespace": "pgvector", "local_key": "orders_kb.chunk_overlap", "note": "config/retrieval.yaml"},
+    {"identity_kind": "retrieval_config", "namespace": "pgvector", "local_key": "orders_kb.rerank_model", "note": "config/retrieval.yaml"},
+    {"identity_kind": "retrieval_config", "namespace": "pgvector", "local_key": "orders_kb.display_label", "note": "config/retrieval.yaml -- presentation"},
+
+    {"identity_kind": "tool_schema", "namespace": "langgraph", "local_key": "lookup_order", "note": "app/tools.py"},
+    {"identity_kind": "tool_schema", "namespace": "langgraph", "local_key": "search_knowledge_base", "note": "app/tools.py"},
+    {"identity_kind": "tool_schema", "namespace": "langgraph", "local_key": "issue_refund", "note": "app/tools.py"},
+    {"identity_kind": "tool_schema", "namespace": "langgraph", "local_key": "create_ticket", "note": "app/tools.py"},
+
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.graph.triage", "note": "graph node"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.graph.retrieve", "note": "graph node"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.graph.answer", "note": "graph node"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.graph.escalate", "note": "graph node"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.graph.build_graph", "note": "top-level declaration"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.prompts.ConsolePrompt", "note": "top-level declaration"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.prompts.DbPrompt", "note": "top-level declaration"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.prompts.load", "note": "top-level declaration"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.retrieval.settings", "note": "top-level declaration"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.retrieval.search", "note": "top-level declaration"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.tools.lookup_order", "note": "tool handler"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.tools.search_knowledge_base", "note": "tool handler"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.tools.issue_refund", "note": "tool handler"},
+    {"identity_kind": "symbol", "namespace": "python", "local_key": "app.tools.create_ticket", "note": "tool handler"}
+  ]
+}

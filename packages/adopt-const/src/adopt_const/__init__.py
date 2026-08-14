@@ -294,6 +294,14 @@ MAP_STAGE1_REQUIRED_FAMILIES: Final[tuple[str, ...]] = (
 MAP_PLUGIN_COVERAGE_FLOOR: Final[float] = 0.60
 MAP_GLUE_REWRITE_ALERT: Final[float] = 0.40
 
+#: `01` §6 **M8** -- outside-VCS recall against a pack's labeled identity set --
+#: and `01` §9's flip trigger for `extractors.ai.enabled`, which are the same
+#: number stated in two documents. Consumed by `scripts/label_eval.py` as the
+#: default for `--min-outside-vcs-recall`, so the S1.5 exit gate is reproducible
+#: without anyone retyping it. Provisional; S1.8 ratifies it with the other
+#: bands.
+MAP_OUTSIDE_VCS_RECALL_FLOOR: Final[float] = 0.90
+
 #: Glue-pass budgets, per run. Exhausting any one aborts the pass at exit 6 with
 #: the deterministic map intact (04 §7).
 MAP_AGENT_MAX_COST_USD: Final[float] = 2.00

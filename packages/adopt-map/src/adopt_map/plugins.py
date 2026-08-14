@@ -58,13 +58,22 @@ _IDENTITY_KINDS: Final[frozenset[str]] = frozenset(get_args(IdentityKind))
 #: (`01` §9), so a half-built pack cannot reach a client tree because somebody
 #: merged it early.
 #:
-#: **`web` joins at S1.4**, which is what `01` §9's *"`extractors.web.enabled` |
-#: on from S1.4"* row means. `ai`, `data`, `lowcode` and `platform` stay off until
-#: S1.5 and S1.6 pass their own exit gates. An operator overrides either way
-#: through `[extractors]` in `.adopt/config.toml` (`adopt_cli.map_config`) --
-#: which S1.4 also had to build, because S1.1's checkbox for it was never
-#: implemented and until now no configuration could reach this set at all.
-DEFAULT_ENABLED_PACKS: Final[frozenset[str]] = frozenset({"common", "web"})
+#: **`web` joins at S1.4** and **`ai` at S1.5**, which is what `01` §9's
+#: *"`extractors.web.enabled` | on from S1.4"* and *"`extractors.ai.enabled` |
+#: off → on at S1.5 exit"* rows mean. `data`,
+#: `lowcode` and `platform` stay off until S1.6 passes its own exit gates. An
+#: operator overrides either way through `[extractors]` in `.adopt/config.toml`
+#: (`adopt_cli.map_config`) -- which S1.4 also had to build, because S1.1's
+#: checkbox for it was never implemented and until then no configuration could
+#: reach this set at all.
+#:
+#: **`ai`'s gate is a measurement, not a date.** `01` §9 flips it on outside-VCS
+#: recall at or above `MAP_OUTSIDE_VCS_RECALL_FLOOR`, and
+#: `scripts/label_eval.py --fixture langgraph-support` reports **1.000** (8 of 8
+#: labeled outside-VCS identities) against a labeled set derived from the
+#: fixture's specification. Had it come in below, this line would still read
+#: `{"common", "web"}` and the sprint would have said so.
+DEFAULT_ENABLED_PACKS: Final[frozenset[str]] = frozenset({"common", "web", "ai"})
 
 #: What an extractor may import. **An allowlist, not a deny-list**, because a
 #: deny-list is a list of the ways somebody already thought of: `socket` is

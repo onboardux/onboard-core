@@ -367,3 +367,89 @@ def test_the_merged_fact_carries_what_only_the_contract_artifact_saw(
     sample = merged[0]
     assert sample.attributes["handler_symbol"] is not None, "the route parse's field survived"
     assert sample.attributes["status_codes"], "the contract's field was merged in"
+
+
+def test_the_ai_pack_stays_idempotent_where_two_extractors_meet_one_symbol(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """S1.5's version of the case above, and the reason it is not redundant.
+
+    *Fails when* `ai.graph` and `common.stub_tree` -- which both key a Python
+    declaration `<module>.<name>` -- make the chain alternate on an unchanged
+    tree.
+
+    *Matters because* B1-CR-68's reconciliation was written against two *web*
+    extractors, and the AI pack meets the same situation with a different pair
+    and a different overlap: the graph extractor supplies `calls` **relations**
+    where the tree extractor supplies a **signature**, so the merge has to union
+    `relations` rather than only fill empty attributes. A merge that dropped one
+    side's relations would still be idempotent; a merge that alternated would
+    not, and only a second run tells them apart.
+
+    *No other instrument catches it because* the per-extractor determinism cases
+    pass either way -- each extractor is perfectly deterministic on its own --
+    and the identity count is identical whichever observation wins.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, "tests")
+    from adopt_extractors_ai import pack as ai_pack
+    from adopt_extractors_common import pack as common_pack
+    from adopt_map.orchestrator import run as run_map
+    from adopt_map.plugins import ExtractorRegistry
+
+    from build1_conftest import build_scoped_store, surface_writer_for
+
+    work = tmp_path_factory.mktemp("ai-idem")
+    handle, scopes = build_scoped_store(work, archetype="ai")
+    registry = ExtractorRegistry(enabled_packs=frozenset({"common", "ai"}))
+    registry.register_all(common_pack())
+    registry.register_all(ai_pack())
+    writer = surface_writer_for(handle)
+    fixture = Path("fixtures/repos/langgraph-support")
+
+    try:
+        first = run_map(
+            resolved=scopes["prod"],
+            root=fixture,
+            registry=registry,
+            adopt_version="test",
+            writer=writer,
+            out_dir=work / "out1",
+            sequential=True,
+        )
+        uris = [entry.uri for entry in first.minted()]
+        assert len(uris) == len(set(uris)), "one referent reached the writer twice"
+
+        # The merged symbol carries both halves: the declaration's signature and
+        # the graph's edge. Asserted here rather than in a separate merge test,
+        # because the point is that keeping both is what has to stay idempotent.
+        merged = [
+            entry
+            for entry in first.minted()
+            if entry.fact.identity_kind == "symbol" and entry.fact.relations
+        ]
+        assert merged, "no symbol carried a graph edge"
+        assert any(entry.fact.attributes.get("signature") for entry in merged), (
+            "the declaration's signature was discarded by the merge"
+        )
+
+        for index in (2, 3):
+            again = run_map(
+                resolved=scopes["prod"],
+                root=fixture,
+                registry=registry,
+                adopt_version="test",
+                writer=writer,
+                out_dir=work / f"out{index}",
+                sequential=True,
+            )
+            assert again.write_result is not None
+            assert dict(again.write_result.revisions_written) == {
+                "identity": 0,
+                "knowledge": 0,
+                "binding": 0,
+            }, f"run {index} wrote revisions on an unchanged AI tree"
+    finally:
+        handle.close()

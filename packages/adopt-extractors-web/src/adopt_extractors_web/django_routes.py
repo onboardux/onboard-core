@@ -68,8 +68,14 @@ _FUNCTION_PATTERN: Final[str] = """
   definition: (function_definition name: (identifier) @name)) @decorated
 """
 
+#: Membership only -- `call not in _ROUTE_CALLS` -- so a set is exactly right.
 _ROUTE_CALLS: Final[frozenset[str]] = frozenset({"path", "re_path", "url"})
-_INCLUDE_CALLS: Final[frozenset[str]] = frozenset({"include"})
+
+#: **A tuple, because `_include_target` iterates it** (`02` §7 obligation 3,
+#: found by B1-CR-69's repair). One member makes the current order accidental
+#: rather than safe: the obligation is that emission order is a property of the
+#: file, and a set with two members would make it a property of hash seeding.
+_INCLUDE_CALLS: Final[tuple[str, ...]] = ("include",)
 
 
 class DjangoRoutesExtractor:

@@ -64,7 +64,7 @@ def _store_text(root: Path) -> str:
     return "\n".join(chunks)
 
 
-def _prepare(root: Path) -> tuple[SurfaceWriter, object, Path]:
+def _prepare(root: Path, *, archetype: str = "web") -> tuple[SurfaceWriter, object, Path]:
     root.mkdir(parents=True, exist_ok=True)
     handle = open_store(root / "store.db", migrate=True)
     facade = handle.scope()
@@ -88,7 +88,10 @@ def _prepare(root: Path) -> tuple[SurfaceWriter, object, Path]:
         engagement_id=engagement.id,
         system_id=system.id,
         environment_id=environment.id,
-        archetype="web",
+        # The registry plans on the archetype: an `ai` pack against a `web` scope
+        # is skipped with `archetype_mismatch`, and this suite would then prove
+        # that a run emitting nothing emits no secrets.
+        archetype=archetype,
         tier="T2",
     )
     writer = surface_writer_for(handle)
@@ -249,3 +252,68 @@ def test_no_canary_from_the_django_orders_fixture_reaches_the_store_or_an_artifa
     # is `02` §3.1 rule 2. Asserting their presence keeps this from passing
     # because extraction quietly stopped reading the file at all.
     assert "DJANGO_SECRET_KEY" in haystacks["surface.json"]
+
+
+#: The two canaries planted in `fixtures/repos/langgraph-support/deploy/.env.example`.
+_AI_FIXTURE_CANARIES = (
+    "sk-ant-CANARY-do-not-emit-000000",
+    "CANARY-do-not-emit-111111",
+)
+
+
+def test_no_canary_from_the_langgraph_fixture_reaches_the_store_or_an_artifact(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The same four surfaces, over the fixture S1.5 ships -- `01` N9.
+
+    *Fails when* an AI extractor records a credential **value**.
+
+    *Matters because* the AI pack reads the one file type where a provider key
+    lives by convention, and it does something the web pack does not: a model pin
+    resolved from `os.environ` puts an environment variable's **name** into a
+    URI. A pin resolved from `ANTHROPIC_API_KEY` would put the key's name in an
+    identity -- which is correct -- and the failure one step further is putting
+    its value in the attributes beside it.
+
+    *No other instrument catches it because* the django-orders case above proves
+    the `common` and `web` extractors are clean over a different tree, and the
+    structural guarantee (`secret:*` has no value field) says nothing about
+    `model_pin`, `prompt` or `retrieval_config` attributes -- none of which is a
+    secret model, and all three of which this pack fills from files that sit
+    beside the credentials.
+    """
+    from adopt_extractors_ai import pack as ai_pack
+    from adopt_extractors_common import pack as common_pack
+    from adopt_map.emit.json_report import render_surface_json
+    from adopt_map.orchestrator import run as run_map
+    from adopt_map.plugins import ExtractorRegistry
+    from adopt_map.report import RUN_REPORT_NAME, write_run_report
+
+    writer, resolved, root = _prepare(tmp_path_factory.mktemp("ai-canary"), archetype="ai")
+    registry = ExtractorRegistry(enabled_packs=frozenset({"common", "ai"}))
+    registry.register_all(common_pack())
+    registry.register_all(ai_pack())
+
+    result = run_map(
+        resolved=resolved,  # type: ignore[arg-type]
+        root=Path("fixtures/repos/langgraph-support"),
+        registry=registry,
+        adopt_version="test",
+        writer=writer,
+        out_dir=root / "out",
+        sequential=True,
+    )
+
+    write_run_report(result, root / "out")
+    haystacks = {
+        "store": _store_text(root),
+        "surface.json": render_surface_json(result),
+        "run_report.json": (root / "out" / RUN_REPORT_NAME).read_text(encoding="utf-8"),
+    }
+    for name, text in haystacks.items():
+        for canary in _AI_FIXTURE_CANARIES:
+            assert canary not in text, f"a planted credential value reached {name}"
+
+    # The reference is recorded, which is what keeps this from passing because
+    # extraction stopped reading the file.
+    assert "ANTHROPIC_API_KEY" in haystacks["surface.json"]

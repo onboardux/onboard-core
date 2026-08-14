@@ -133,31 +133,37 @@ def test_all_returns_manifest_id_order_regardless_of_registration_order() -> Non
 def test_a_disabled_pack_is_excluded_and_the_reason_is_recorded() -> None:
     """`01` F7.6 and F13.5: a skip is a stated reason, never a silent omission.
 
-    The example pack is `ai`, and it used to be `web`. S1.4 flipped
-    `extractors.web.enabled` on (`01` §9), which turned this case into an
-    assertion that an *enabled* pack is excluded -- so the test failed for the
-    right reason and names a still-disabled pack now. `ai` flips at S1.5's exit
-    gate, and when it does this case moves again rather than being deleted:
-    something must always be off, or `pack_disabled` stops being reachable.
+    The example pack is `platform`, and it has now been `web` and `ai` in turn:
+    S1.4 flipped `extractors.web.enabled` on and **S1.5 flipped
+    `extractors.ai.enabled` on** (`01` §9), each time turning this case into an
+    assertion that an *enabled* pack is excluded -- so it failed for the right
+    reason and moved to a still-disabled pack, exactly as the previous version of
+    this docstring said it should. `platform` flips at S1.6's exit gate, and when
+    it does this case moves again rather than being deleted: **something must
+    always be off, or `pack_disabled` stops being reachable.**
     """
-    registry = _registry(_Fake("ai.prompts", pack="ai"))
+    registry = _registry(_Fake("platform.sf_metadata", pack="platform"))
     assert registry.plan(archetype="web", root=".", tier="T2") == ()
-    assert ("ai.prompts", "pack_disabled") in registry.skipped(archetype="web", root=".", tier="T2")
+    assert ("platform.sf_metadata", "pack_disabled") in registry.skipped(
+        archetype="web", root=".", tier="T2"
+    )
 
 
-def test_the_web_pack_is_enabled_by_default_from_s1_4() -> None:
-    """`01` §9: *"`extractors.web.enabled` | on from S1.4"*.
+def test_only_the_packs_that_passed_an_exit_gate_are_on_by_default() -> None:
+    """`01` §9's flag table, as an equality rather than two memberships.
 
-    *Defect sentence.* Fails when the S1.4 flag flip is reverted or a later sprint
-    edits `DEFAULT_ENABLED_PACKS`; matters because a `web` pack that is registered
-    but not enabled produces a run with zero endpoints and a `pack_disabled`
-    reason rather than an error, which reads as "this repository has no routes";
-    no other instrument catches it because every extractor test constructs its own
-    registry with an explicit enabled set.
+    *Defect sentence.* Fails when a flag flip is reverted **or** when a pack is
+    switched on without passing its exit gate; matters in both directions -- a
+    registered-but-disabled pack produces a run with zero facts of its kind and a
+    `pack_disabled` reason, which reads as "this repository has none of those",
+    and a pack switched on early reaches a client tree before the measurement
+    that was supposed to license it; no other instrument catches either, because
+    every extractor test constructs its own registry with an explicit enabled set.
+
+    `ai` is here because S1.5 measured **outside-VCS recall 1.000** against the
+    labeled `langgraph-support` set, which is the gate `01` §9 names.
     """
-    assert "web" in DEFAULT_ENABLED_PACKS
-    assert "common" in DEFAULT_ENABLED_PACKS
-    assert not {"ai", "data", "lowcode", "platform"} & DEFAULT_ENABLED_PACKS
+    assert frozenset({"common", "web", "ai"}) == DEFAULT_ENABLED_PACKS
 
 
 def test_an_archetype_mismatch_is_excluded_with_its_reason() -> None:

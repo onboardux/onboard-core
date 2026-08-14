@@ -493,6 +493,25 @@ class SurfaceWriter:
             )
             return
 
+        if fact.outside_vcs:
+            # `01` F8.6: *"Every such identity also produces a gap."* Mandatory
+            # rather than conditional, and emitted **beside** the knowledge
+            # rather than instead of it: the identity is real and its content is
+            # written, and what the gap records is that this build cannot see the
+            # value the deployment is actually running. A commit-shaped view of
+            # this system is missing exactly these rows.
+            result.gaps.append(
+                Gap(
+                    identity_uri=uri,
+                    reason="outside_vcs",
+                    detail=(
+                        "content is opaque from the tree"
+                        if fact.opaque
+                        else "resolved outside version control; changes here produce no commit"
+                    ),
+                )
+            )
+
         version = build_source_version(fact, attributes, vcs_revision=vcs_revision)
         body_md = self._render_body(
             resolved=resolved,

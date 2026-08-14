@@ -14,6 +14,7 @@ members = [
     "adopt-coverage",
     "adopt-detect",
     "adopt-export",
+    "adopt-extractors-ai",
     "adopt-extractors-common",
     "adopt-extractors-web",
     "adopt-freshness",
@@ -168,6 +169,29 @@ requires-dist = [
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },
     { name = "adopt-schema", editable = "packages/adopt-schema" },
+]
+
+[[package]]
+name = "adopt-extractors-ai"
+version = "0.3.0"
+source = { editable = "packages/adopt-extractors-ai" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-map" },
+    { name = "adopt-model" },
+    { name = "pyyaml" },
+    { name = "tree-sitter" },
+    { name = "tree-sitter-language-pack" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-map", editable = "packages/adopt-map" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+    { name = "tree-sitter", specifier = ">=0.25,<0.27" },
+    { name = "tree-sitter-language-pack", specifier = ">=1.14,<2" },
 ]
 
 [[package]]

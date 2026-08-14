@@ -288,6 +288,7 @@ def _registry() -> ExtractorRegistry:
     was marked complete with nothing behind it, so until now no configuration
     could reach pack enablement at all (`adopt_cli.map_config`).
     """
+    from adopt_extractors_ai import pack as ai_pack
     from adopt_extractors_common import pack as common_pack
     from adopt_extractors_web import pack as web_pack
 
@@ -296,6 +297,7 @@ def _registry() -> ExtractorRegistry:
     registry = ExtractorRegistry(enabled_packs=enabled)
     registry.register_all(common_pack())
     registry.register_all(web_pack())
+    registry.register_all(ai_pack())
     return registry
 
 

@@ -25,6 +25,7 @@ from typing import Final
 
 import yaml
 from adopt_map.context import ExtractorContext
+from adopt_map.documents import declares_owned_document
 from adopt_map.schemas import ExtractorManifest, SourceRef, SurfaceFact
 
 from adopt_const import MAP_CONFIG_VALUE_MAX_CHARS
@@ -182,7 +183,13 @@ class ConfigExtractor:
             if namespace is None:
                 continue
             text = ctx.text(entry)
-            if _is_contract(text):
+            if _is_contract(text) or declares_owned_document(text) is not None:
+                # B1-CR-67's rule, one sprint on: a document that declares itself
+                # a retrieval configuration or an eval set is that extractor's
+                # subject, and minting a `config_key` per leaf of it would put
+                # two identities under two kinds on one setting. The list is
+                # `adopt_map.documents` rather than here, because a pack may not
+                # import another pack and a second copy would drift.
                 continue
             for key, value in _keys(entry.path, text):
                 if looks_secret(key):

@@ -21,6 +21,15 @@ environment slug quartet and would stop matching the moment a fixture is
 registered under a different scope -- which is a property of the test harness, not
 of extraction quality.
 
+**`01` §6 M8 is a *subset* recall, and this tool could not express it (B1-CR-73).**
+M8 is *"outside-VCS recall vs the labeled AI fixture, >= 0.90"*, and `05` S1.5's
+validation line calls this script for it -- but overall recall over every labeled
+identity is a different number, and on a fixture where eight of forty-two
+identities live outside version control it can sit at 0.98 while every one of the
+eight is missed. So a labeled identity may carry `outside_vcs: true`, a
+`surface.json` fact already carries the flag (`02` §9.2), and the report prints
+the subset beside the whole whenever the labeled set declares one.
+
 **`--self-test` plants a missing identity and requires a red run.** An evaluator
 nobody has watched report a miss is one nobody should quote a recall figure from,
 which is the same argument every other gate in this repository makes about
@@ -36,7 +45,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from adopt_const import MAP_FIRST_SCREEN_LIST_MAX
+from adopt_const import MAP_FIRST_SCREEN_LIST_MAX, MAP_OUTSIDE_VCS_RECALL_FLOOR
 
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 
@@ -60,6 +69,23 @@ class Identity:
 
     def render(self) -> str:
         return f"{self.identity_kind}/{self.namespace or '-'}/{self.local_key}"
+
+
+@dataclass(frozen=True)
+class Observation:
+    """One fact a run emitted, reduced to what scoring needs."""
+
+    identity: Identity
+    method: str
+    outside_vcs: bool
+
+
+@dataclass(frozen=True)
+class Labels:
+    """A labeled identity set, and the outside-VCS ground truth inside it."""
+
+    identities: tuple[Identity, ...]
+    outside_vcs: frozenset[Identity]
 
 
 @dataclass(frozen=True)
@@ -90,23 +116,30 @@ class Result:
         return self.deterministic_facts / self.total_facts if self.total_facts else 0.0
 
 
-def load_labels(path: Path) -> tuple[Identity, ...]:
+def load_labels(path: Path) -> Labels:
     """The labeled identity set, as scope-independent triples."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     identities = payload.get("identities")
     if not isinstance(identities, list):
         raise ValueError(f"{path} carries no `identities` list")
-    return tuple(
-        Identity(
-            identity_kind=str(item["identity_kind"]),
-            namespace=str(item.get("namespace") or ""),
-            local_key=str(item["local_key"]),
+    parsed = tuple(
+        (
+            Identity(
+                identity_kind=str(item["identity_kind"]),
+                namespace=str(item.get("namespace") or ""),
+                local_key=str(item["local_key"]),
+            ),
+            bool(item.get("outside_vcs", False)),
         )
         for item in identities
     )
+    return Labels(
+        identities=tuple(identity for identity, _flag in parsed),
+        outside_vcs=frozenset(identity for identity, flag in parsed if flag),
+    )
 
 
-def facts_of(payload: Mapping[str, Any]) -> tuple[tuple[Identity, str], ...]:
+def facts_of(payload: Mapping[str, Any]) -> tuple[Observation, ...]:
     """`(identity, evidence method)` for every fact in a `surface.json`.
 
     The key is recovered by parsing the fact's URI rather than read from a field,
@@ -117,30 +150,31 @@ def facts_of(payload: Mapping[str, Any]) -> tuple[tuple[Identity, str], ...]:
     """
     from adopt_identity import parse_uri
 
-    found: list[tuple[Identity, str]] = []
+    found: list[Observation] = []
     for fact in payload.get("facts", []):
         uri = fact.get("identity_uri")
         if not isinstance(uri, str):
             continue
         parsed = parse_uri(uri)
         found.append(
-            (
-                Identity(
+            Observation(
+                identity=Identity(
                     identity_kind=parsed.kind,
                     namespace=parsed.namespace or "",
                     local_key="/".join(parsed.key),
                 ),
-                str(fact.get("method") or ""),
+                method=str(fact.get("method") or ""),
+                outside_vcs=bool(fact.get("outside_vcs", False)),
             )
         )
     return tuple(found)
 
 
-def compare(labels: Iterable[Identity], facts: Iterable[tuple[Identity, str]]) -> Result:
+def compare(labels: Iterable[Identity], facts: Iterable[Observation]) -> Result:
     labeled = set(labels)
     observed = list(facts)
-    seen = {identity for identity, _method in observed}
-    deterministic = sum(1 for _i, method in observed if method in DETERMINISTIC_METHODS)
+    seen = {item.identity for item in observed}
+    deterministic = sum(1 for item in observed if item.method in DETERMINISTIC_METHODS)
     return Result(
         matched=tuple(sorted(labeled & seen, key=Identity.render)),
         missing=tuple(sorted(labeled - seen, key=Identity.render)),
@@ -150,7 +184,25 @@ def compare(labels: Iterable[Identity], facts: Iterable[tuple[Identity, str]]) -
     )
 
 
-def report(result: Result, *, name: str, limit: int) -> None:
+def outside_vcs_recall(labels: Labels, facts: Iterable[Observation]) -> Result | None:
+    """`01` §6 **M8**: recall over the outside-VCS identities alone.
+
+    `None` when the labeled set declares none -- a fixture with nothing outside
+    version control has no M8 to report, and printing `0.000` for it would look
+    like a failure of extraction rather than an absence of subject.
+
+    **Scored against the facts that carry the flag**, not against every fact that
+    matched: an identity recovered *without* its `outside_vcs` marker is a miss
+    for this metric, because the whole point of M8 is the sentence on the first
+    screen, and a fact that reaches the map unflagged never appears in it.
+    """
+    if not labels.outside_vcs:
+        return None
+    flagged = tuple(item for item in facts if item.outside_vcs)
+    return compare(labels.outside_vcs, flagged)
+
+
+def report(result: Result, *, name: str, limit: int, m8: Result | None = None) -> None:
     print(f"label-eval: {name}")
     print(
         f"  recall     {result.recall:.3f}  "
@@ -163,6 +215,11 @@ def report(result: Result, *, name: str, limit: int) -> None:
         f"  det. share {result.deterministic_share:.3f}  "
         f"({result.deterministic_facts} of {result.total_facts} facts grammar|reflection)"
     )
+    if m8 is not None:
+        print(
+            f"  M8 ovcs    {m8.recall:.3f}  "
+            f"({len(m8.matched)} of {len(m8.matched) + len(m8.missing)} labeled outside-VCS)"
+        )
     for title, entries in (("missing", result.missing), ("unlabeled", result.spurious)):
         if not entries:
             continue
@@ -171,6 +228,10 @@ def report(result: Result, *, name: str, limit: int) -> None:
             print(f"    {identity.render()}")
         if len(entries) > limit:
             print(f"    ... and {len(entries) - limit} more")
+    if m8 is not None and m8.missing:
+        print("  missing outside-VCS:")
+        for identity in m8.missing[:limit]:
+            print(f"    {identity.render()}")
 
 
 def self_test() -> int:
@@ -186,8 +247,10 @@ def self_test() -> int:
         Identity("endpoint", "http", "GET /b"),
         Identity("job", "cron", "/usr/bin/x"),
     )
+    outside = Identity("prompt", "console", "greeting")
+    label_set = Labels(identities=(*labels, outside), outside_vcs=frozenset({outside}))
 
-    complete = [(identity, "grammar") for identity in labels]
+    complete = [Observation(identity, "grammar", False) for identity in labels]
     green = compare(labels, complete)
     if green.recall != 1.0 or green.precision != 1.0:
         failures.append(
@@ -208,7 +271,8 @@ def self_test() -> int:
         )
 
     planted_spurious = compare(
-        labels, [*complete, (Identity("endpoint", "http", "GET /invented"), "regex")]
+        labels,
+        [*complete, Observation(Identity("endpoint", "http", "GET /invented"), "regex", False)],
     )
     if planted_spurious.precision >= 1.0 or not planted_spurious.spurious:
         failures.append("a planted SPURIOUS fact was NOT reported")
@@ -227,6 +291,36 @@ def self_test() -> int:
             f"{planted_spurious.deterministic_share:.3f}"
         )
 
+    # M8's own direction. A run that recovers every ordinary identity and misses
+    # the one outside version control scores 0.75 overall and **0.0** on M8, and
+    # the whole reason B1-CR-73 added the subset is that the first number hides
+    # the second.
+    m8_blind = outside_vcs_recall(label_set, complete)
+    if m8_blind is None or m8_blind.recall != 0.0:
+        failures.append("a missed outside-VCS identity was NOT reported by the M8 subset")
+    else:
+        overall = compare(label_set.identities, complete)
+        print(
+            f"self-test: missed outside-VCS identity -> overall recall "
+            f"{overall.recall:.3f} but M8 {m8_blind.recall:.3f} ->"
+        )
+
+    m8_green = outside_vcs_recall(label_set, [*complete, Observation(outside, "grammar", True)])
+    if m8_green is None or m8_green.recall != 1.0:
+        failures.append("a flagged outside-VCS fact did NOT satisfy the M8 subset")
+    else:
+        print("self-test: a flagged outside-VCS fact scores M8 1.000 ->")
+
+    # The flag itself is the measurement. An identity recovered without it never
+    # reaches the first screen, so it is a miss rather than a match.
+    m8_unflagged = outside_vcs_recall(
+        label_set, [*complete, Observation(outside, "grammar", False)]
+    )
+    if m8_unflagged is None or m8_unflagged.recall != 0.0:
+        failures.append("an UNFLAGGED outside-VCS fact was counted as recovered")
+    else:
+        print("self-test: an unflagged outside-VCS fact is a miss, not a match ->")
+
     empty = compare(labels, [])
     if empty.deterministic_share != 0.0:
         failures.append("an empty run reported a non-zero deterministic share")
@@ -238,7 +332,7 @@ def self_test() -> int:
             print(f"VIOLATION: {failure}")
         print(f"label-eval --self-test: {len(failures)} failure(s)")
         return 1
-    print("label-eval --self-test: OK (5/5 checks)")
+    print("label-eval --self-test: OK (8/8 checks)")
     return 0
 
 
@@ -255,6 +349,20 @@ def main(argv: list[str] | None = None) -> int:
         help="the run artifact to score (default: .adopt/out/surface.json)",
     )
     parser.add_argument("--min-recall", type=float, default=None, help="fail below this recall")
+    # Defaulted from the constant rather than from a literal here: `01` §6 M8 and
+    # `01` §9's flip trigger are one number, and a gate that made the operator
+    # retype it is a gate that measures whatever they typed.
+    parser.add_argument(
+        "--min-outside-vcs-recall",
+        type=float,
+        nargs="?",
+        const=MAP_OUTSIDE_VCS_RECALL_FLOOR,
+        default=None,
+        help=(
+            "fail below this recall over the labeled outside-VCS subset (`01` §6 M8); "
+            f"bare flag uses MAP_OUTSIDE_VCS_RECALL_FLOOR ({MAP_OUTSIDE_VCS_RECALL_FLOOR})"
+        ),
+    )
     parser.add_argument(
         "--min-deterministic-share",
         type=float,
@@ -297,7 +405,9 @@ def main(argv: list[str] | None = None) -> int:
 
     labels = load_labels(labels_path)
     payload = json.loads(args.surface.read_text(encoding="utf-8"))
-    result = compare(labels, facts_of(payload))
+    observations = facts_of(payload)
+    result = compare(labels.identities, observations)
+    m8 = outside_vcs_recall(labels, observations)
 
     if args.json:
         print(
@@ -311,14 +421,35 @@ def main(argv: list[str] | None = None) -> int:
                     "matched": len(result.matched),
                     "missing": [identity.render() for identity in result.missing],
                     "unlabeled": [identity.render() for identity in result.spurious],
+                    "outside_vcs_recall": None if m8 is None else round(m8.recall, 6),
+                    "outside_vcs_labeled": None
+                    if m8 is None
+                    else len(m8.matched) + len(m8.missing),
+                    "outside_vcs_missing": (
+                        [] if m8 is None else [identity.render() for identity in m8.missing]
+                    ),
                 },
                 indent=2,
             )
         )
     else:
-        report(result, name=args.fixture or labels_path.stem, limit=args.limit)
+        report(result, name=args.fixture or labels_path.stem, limit=args.limit, m8=m8)
 
     failed = False
+    if args.min_outside_vcs_recall is not None:
+        if m8 is None:
+            print(
+                "VIOLATION: --min-outside-vcs-recall was asked for and this labeled set "
+                "declares no outside-VCS identity. `01` §6 M8 has no subject here, and "
+                "scoring it 1.0 would be a metric about an empty set."
+            )
+            failed = True
+        elif m8.recall < args.min_outside_vcs_recall:
+            print(
+                f"VIOLATION: outside-VCS recall {m8.recall:.3f} is below "
+                f"{args.min_outside_vcs_recall:.3f} -- `01` §6 M8"
+            )
+            failed = True
     if args.min_recall is not None and result.recall < args.min_recall:
         print(f"VIOLATION: recall {result.recall:.3f} is below {args.min_recall:.3f}")
         failed = True

@@ -1,31 +1,60 @@
 {
-  "baseline_version": 1,
-  "note": "Durations from the S1.4 fixture on the authoring machine -- a **local** reading, not the reference-runner evidence `01` N1-N3 require, and not usable as the `03` \u00a78 ratchet's baseline until it is re-measured there. S1.8 re-measures on the reference set (PRD Q4) and archives under perf/soak/<date>/.",
+  "baseline_version": 2,
+  "note": "Durations on the authoring machine -- a **local** reading, not the reference-runner evidence `01` N1-N3 require, and not usable as the `03` \u00a78 ratchet's baseline until it is re-measured there. S1.8 re-measures on the reference set (PRD Q4) and archives under perf/soak/<date>/. Version 2 is per fixture: S1.5 added a second pack with a different shape, and one pair of numbers for two archetypes measures neither.",
   "machine": "authoring workstation (not the reference runner)",
-  "fixture": "django-orders",
   "budgets": {
     "MAP_STAGE1_BUDGET_S": 900,
     "MAP_TOTAL_BUDGET_S": 3600,
     "MAP_INCREMENTAL_BUDGET_S": 300
   },
-  "first_run": {
-    "stage1_seconds": 0.297,
-    "total_seconds": 1.094,
-    "facts": 354,
-    "revisions_written": {
-      "identity": 354,
-      "knowledge": 354,
-      "binding": 354
-    }
-  },
-  "unchanged_rerun": {
-    "stage1_seconds": 0.234,
-    "total_seconds": 1.062,
-    "facts": 354,
-    "revisions_written": {
-      "identity": 0,
-      "knowledge": 0,
-      "binding": 0
+  "fixtures": {
+    "django-orders": {
+      "first_run": {
+        "stage1_seconds": 0.297,
+        "total_seconds": 1.094,
+        "facts": 354,
+        "revisions_written": {
+          "identity": 354,
+          "knowledge": 354,
+          "binding": 354
+        }
+      },
+      "unchanged_rerun": {
+        "stage1_seconds": 0.234,
+        "total_seconds": 1.062,
+        "facts": 354,
+        "revisions_written": {
+          "identity": 0,
+          "knowledge": 0,
+          "binding": 0
+        }
+      },
+      "pack": "web",
+      "measured": "S1.4"
+    },
+    "langgraph-support": {
+      "first_run": {
+        "stage1_seconds": 0.047,
+        "total_seconds": 0.156,
+        "facts": 42,
+        "revisions_written": {
+          "identity": 42,
+          "knowledge": 42,
+          "binding": 42
+        }
+      },
+      "unchanged_rerun": {
+        "stage1_seconds": 0.031,
+        "total_seconds": 0.094,
+        "facts": 42,
+        "revisions_written": {
+          "identity": 0,
+          "knowledge": 0,
+          "binding": 0
+        }
+      },
+      "pack": "ai",
+      "measured": "S1.5"
     }
   }
 }

@@ -149,12 +149,52 @@ _RENDERERS: Final[dict[str, Callable[[RunResult], list[str]]]] = {
 }
 
 
+def _floating_pins(result: RunResult) -> list[str]:
+    """`01` F8.8's callout: *"A floating model pin gets its own callout. It is the
+    single highest-value finding this pack produces."*
+
+    **A callout rather than a ninth numbered section**, and the distinction is
+    `02` §9.1's: that table fixes seven numbered items and then the inventory, and
+    renumbering the inventory depending on whether a tree happens to hold a
+    floating pin would make the normative order a function of the client's code.
+    So this is an unnumbered block between item 7 and the inventory -- on the
+    first screen, where F8.8 needs it, without moving anything the contract
+    numbers.
+
+    Emitted only when there is one. A standing "no floating pins" line would be
+    seven words a reader learns to skip, and the day one appears it would look
+    like the same line.
+    """
+    pins = [
+        entry
+        for entry in result.minted()
+        if entry.fact.identity_kind == "model_pin"
+        and entry.fact.attributes.get("pin_stability") == "floating"
+    ]
+    if not pins:
+        return []
+    return [
+        "> **Floating model pins — behaviour here can change with no commit.**",
+        "> An alias like `-latest`, or a family name with no version, is resolved by",
+        "> the provider at call time. The deployment's behaviour can change without a",
+        "> commit, a deploy or a notification.",
+        ">",
+        *[
+            f"> - `{entry.uri}` — {entry.fact.attributes.get('model_id')} "
+            f"at {entry.fact.attributes.get('provider')}"
+            for entry in pins[:MAP_FIRST_SCREEN_LIST_MAX]
+        ],
+        "",
+    ]
+
+
 def _first_screen(result: RunResult) -> list[str]:
     lines: list[str] = ["# System surface map", ""]
     for index, heading in enumerate(FIRST_SCREEN, start=1):
         lines.append(f"## {index}. {heading}")
         lines.extend(_RENDERERS[heading](result))
         lines.append("")
+    lines.extend(_floating_pins(result))
     return lines
 
 

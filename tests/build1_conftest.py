@@ -66,7 +66,7 @@ def surface_writer_for(handle: SqliteStoreHandle) -> SurfaceWriter:
 
 
 def build_scoped_store(
-    root: Path, *, environments: Sequence[str] = ("prod",)
+    root: Path, *, environments: Sequence[str] = ("prod",), archetype: str = "web"
 ) -> tuple[SqliteStoreHandle, dict[str, ResolvedScope]]:
     """A fresh store with one system and `environments` under it, all resolved.
 
@@ -75,6 +75,12 @@ def build_scoped_store(
     function-scoped fixture reused across examples is a store carrying the
     previous example's rows -- which for an idempotence property would make
     every run after the first look correct for the wrong reason.
+
+    `archetype` reaches `ResolvedScope`, and the registry plans on it: an `ai`
+    extractor against a `web` scope is skipped with `archetype_mismatch`, which
+    is `01` F13.5 working correctly and a silent empty run for any suite that
+    forgot to say which archetype it meant. S1.5 is the first caller that needs
+    a value other than the default.
     """
     root.mkdir(parents=True, exist_ok=True)
     handle = open_store(root / "store.db", migrate=True)
@@ -104,7 +110,7 @@ def build_scoped_store(
             # Named explicitly: with two environments present, omitting it is
             # `MAP_ENVIRONMENT_AMBIGUOUS` by design (`02` §2 rule 3).
             environment_id=environment.id,
-            archetype="web",
+            archetype=archetype,
             tier="T2",
         )
     return handle, resolved

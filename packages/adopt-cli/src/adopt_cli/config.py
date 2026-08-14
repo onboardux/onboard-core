@@ -106,6 +106,30 @@ REGISTRY: Final[tuple[ConfigKey, ...]] = (
     ConfigKey("ADOPT_FEATURE_POSTGRES_STORE", "0", "Postgres store realization. Off."),
     ConfigKey("ADOPT_FEATURE_VECTOR_INDEX", "0", "Vector index behind the VectorIndex seam. Off."),
     ConfigKey("ADOPT_API_KEY", None, "Provider credential, when an adapter is configured.", True),
+    # -- Build 1 (`adopt map`). `02` §2 rule 1: *"Read `.adopt/config.toml`;
+    #    apply env (`ADOPT_*`) then CLI overrides."* S1.1 implemented the CLI
+    #    override half and its own error hint promised the other half, so
+    #    `adopt map` with no flags exited 2 while telling the operator to use a
+    #    config file nothing read. Registered here rather than parsed in the
+    #    command, so `adopt doctor --json` reports where each one resolved from
+    #    -- which is the whole point of the registry.
+    #
+    #    **None carries a default, and that is `02` §2 rule 3 and PRD F1.4.**
+    #    There is no default firm, no default system and above all no default
+    #    environment: a run that cannot name its scope aborts and says what to
+    #    type. A default here would be the "default to production" the mandatory
+    #    environment segment exists to prevent.
+    ConfigKey(
+        "ADOPT_FIRM_ID", None, "Firm id for `adopt map`. No default: scope is never guessed."
+    ),
+    ConfigKey("ADOPT_ENGAGEMENT_ID", None, "Engagement id for `adopt map`. No default."),
+    ConfigKey("ADOPT_SYSTEM_ID", None, "System id for `adopt map`. No default."),
+    ConfigKey(
+        "ADOPT_ENVIRONMENT_ID",
+        None,
+        "Environment id for `adopt map`. No default, and omitting it is only valid when "
+        "the system has exactly one environment (`02` §2 rule 3).",
+    ),
 )
 
 

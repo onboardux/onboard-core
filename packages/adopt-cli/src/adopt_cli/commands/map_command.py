@@ -28,9 +28,16 @@ from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
 import typer
+from adopt_map.schemas import Extractor
 from adopt_map.scope_resolve import ResolvedScope, resolve_scope
 from adopt_map.writer import SurfaceWriter, SurfaceWriteResult
 
+from adopt_cli.config import (
+    load_config_file,
+    project_config_path,
+    resolve_all,
+    user_config_path,
+)
 from adopt_cli.json_out import emit, emit_error
 from adopt_cli.store_option import open_configured_store
 from adopt_model._enums import Archetype
@@ -83,8 +90,8 @@ def _resolved_payload(resolved: ResolvedScope) -> dict[str, Any]:
 
 
 def _result_payload(result: SurfaceWriteResult, resolved: ResolvedScope) -> dict[str, Any]:
-    """The `surface.json` counters S1.1 produces. `02` §9.2's shape, minus the
-    fields S1.2 and S1.3 fill (`moves`, `conflicts`, `coverage`, `facts`)."""
+    """The `surface.json` counters this build produces so far. `02` §9.2's shape,
+    minus the fields S1.3 fills (`coverage`, `degradations`, `facts`)."""
     return {
         "report_version": result.report_version,
         "run_id": result.run_id,
@@ -94,6 +101,21 @@ def _result_payload(result: SurfaceWriteResult, resolved: ResolvedScope) -> dict
         "identities_new": result.identities_new,
         "revisions_written": result.revisions_written,
         "provenance_written": result.provenance_written,
+        "moves": [{"from": move.from_uri, "to": move.to_uri} for move in result.moves],
+        "conflicts": [
+            {
+                "identity_uri": conflict.identity_uri,
+                "reason": conflict.reason,
+                "candidates": conflict.candidates,
+            }
+            for conflict in result.conflicts
+        ],
+        # PRD F4.5: when revisions were written because the *tool* changed rather
+        # than the system, the report says so by name.
+        "extractor_version_changes": {
+            extractor: {"from": previous, "to": current}
+            for extractor, (previous, current) in sorted(result.extractor_version_changes.items())
+        },
         "gaps": [
             {"identity_uri": gap.identity_uri, "reason": gap.reason, "detail": gap.detail}
             for gap in result.gaps
@@ -116,13 +138,33 @@ def map_command(
     """Map a system's surface into canonical identity URIs and append-only revisions."""
     del out  # S1.3 owns emission; accepted so the flag surface is stable.
 
+    # `02` §2 rule 1, in its stated order: the config file, then `ADOPT_*`, then
+    # the flag. `adopt_cli.config` already holds that order for every other key,
+    # so the scope ids join the registry rather than growing a second resolver.
+    firm = _configured(firm, "ADOPT_FIRM_ID")
+    engagement = _configured(engagement, "ADOPT_ENGAGEMENT_ID")
+    system = _configured(system, "ADOPT_SYSTEM_ID")
+    environment = _configured(environment, "ADOPT_ENVIRONMENT_ID")
+
     if firm is None or engagement is None or system is None:
+        missing = [
+            name
+            for name, value in (
+                ("--firm", firm),
+                ("--engagement", engagement),
+                ("--system", system),
+            )
+            if value is None
+        ]
         _fail(
             AdoptError(
                 ErrorCode.MAP_USAGE,
-                message="--firm, --engagement and --system are all required",
+                message=f"{', '.join(missing)} not supplied by any configuration source",
                 hint="`adopt map` resolves exactly one scope and never guesses one. Pass "
-                "the three ids, or set them in `.adopt/config.toml` under [map].",
+                "the ids as flags, set ADOPT_FIRM_ID / ADOPT_ENGAGEMENT_ID / "
+                "ADOPT_SYSTEM_ID in the environment, or put them in "
+                "`.adopt/config.toml`. `adopt doctor --json` shows where each one "
+                "resolved from.",
             ),
             as_json=as_json,
         )
@@ -165,9 +207,11 @@ def map_command(
         )
         raise typer.Exit(MapExitCode.COMPLETE)
 
-    from adopt_extractors_common import MANIFEST
-
-    from adopt_store.revisions import BindingRevisionDraft, KnowledgeRevisionDraft
+    from adopt_store.revisions import (
+        BindingRevisionDraft,
+        IdentityRevisionDraft,
+        KnowledgeRevisionDraft,
+    )
 
     handle = open_configured_store(store, read_only=False)
     try:
@@ -176,14 +220,17 @@ def map_command(
             items=handle.items(),
             bindings=handle.bindings(),
             aux=handle.import_records(),
+            lookup=handle.export_records(),
+            revisions=handle.revisions(),
             knowledge_draft=KnowledgeRevisionDraft,
             binding_draft=BindingRevisionDraft,
+            identity_draft=IdentityRevisionDraft,
             schema_version=handle.schema_version,
             supported_schema_version=handle.schema_version,
         )
         result = writer.write_run(
             resolved=resolved,
-            manifest=MANIFEST,
+            manifest=_extractor_for(path).manifest(),
             facts=facts,
             vcs_revision=_vcs_revision(path),
             run_id=run_id,
@@ -239,9 +286,55 @@ def _resolve_and_extract(
     finally:
         handle.close()
 
-    from adopt_extractors_common import StubExtractor
+    return resolved, list(_extractor_for(path).extract(str(path)))
 
-    return resolved, list(StubExtractor().extract(str(path)))
+
+def _configured(override: str | None, key: str) -> str | None:
+    """A scope id from the flag, else the registry's resolution order.
+
+    Returns `None` when no layer supplies one, which the caller turns into
+    `MAP_USAGE`. **It never invents a value**: `02` §2 rule 5 is that nothing is
+    created and a missing row produces the exact command to run, and a default
+    scope id would resolve to a row belonging to somebody else.
+
+    **The two file layers are loaded here, and that is worth explaining.**
+    `resolve_all()` takes `project` and `user` as injectable mappings and
+    defaults both to empty, so a bare `resolve_all()` resolves the flag and
+    environment layers **only** -- the config files are never read. That is a
+    Build 0 observation rather than a Build 1 repair: `configured_store_path`
+    and `configured_annex` call it the same way, so `ADOPT_STORE_PATH` in
+    `.adopt/config.toml` is silently ignored today too, and widening
+    `resolve_all` itself would change how every key in the registry resolves --
+    a Build 0 amendment with its own review, recorded as OD-10. `02` §2 rule 1
+    binds `adopt map` specifically, so `adopt map` reads the files for its own
+    keys and nothing else changes.
+    """
+    if override is not None:
+        return override
+    resolutions = resolve_all(
+        project=load_config_file(project_config_path()),
+        user=load_config_file(user_config_path()),
+    )
+    for resolution in resolutions:
+        if resolution.key == key and resolution.value:
+            return resolution.value
+    return None
+
+
+def _extractor_for(path: Path) -> Extractor:
+    """The one extractor S1.2 runs, chosen by the protocol's own `applies_to`.
+
+    **A stopgap with a stated end date**: `03` §5.8's registry, scheduler and
+    manifest audit are S1.3's, and until they exist a run has exactly one
+    extractor. Choosing between the two stubs through `applies_to` rather than a
+    flag means the seam S1.3 replaces is the one the protocol already declares --
+    `common.stub_tree` reads the tree, so a tree with no source files falls back
+    to `common.stub`, which reads nothing and always applies.
+    """
+    from adopt_extractors_common import StubExtractor, StubTreeExtractor
+
+    tree = StubTreeExtractor()
+    return tree if tree.applies_to(str(path)) else StubExtractor()
 
 
 def _fail(error: AdoptError, *, as_json: bool) -> NoReturn:

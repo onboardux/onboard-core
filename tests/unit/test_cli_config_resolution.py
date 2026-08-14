@@ -146,3 +146,48 @@ def test_version_build_facts_are_immutable_artifact_data(
 
     assert stamped["sbom_sha256"] == "a" * 64
     assert stamped["build_id"] == build_id
+
+
+# -- Build 1's scope ids (`02` §2 rule 1) ------------------------------------
+#
+# S1.1 implemented the CLI-override half of rule 1 and its own error hint
+# promised the other half, so `adopt map` with no flags exited 2 while telling
+# the operator to use a config file nothing read. `05` S1.2's fourth validation
+# line -- `uv run adopt map && uv run adopt map --json` -- is what exposed it:
+# the line is not executable against a flags-only command.
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["ADOPT_FIRM_ID", "ADOPT_ENGAGEMENT_ID", "ADOPT_SYSTEM_ID", "ADOPT_ENVIRONMENT_ID"],
+)
+def test_a_scope_id_resolves_from_the_project_file(key: str) -> None:
+    """*Fails when* `adopt map`'s scope ids are flag-only again.
+
+    *Matters because* `02` §2 rule 1 makes the config file the first layer, and
+    every documented invocation of `adopt map` in the pack omits the flags. *No
+    other instrument catches it because* the flag path works perfectly, so every
+    test that passes flags -- which is all of them -- stays green.
+    """
+    resolved = {r.key: r for r in resolve_all(project={key: "value-from-file"})}
+    assert resolved[key].value == "value-from-file"
+    assert resolved[key].source is Source.PROJECT_FILE
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["ADOPT_FIRM_ID", "ADOPT_ENGAGEMENT_ID", "ADOPT_SYSTEM_ID", "ADOPT_ENVIRONMENT_ID"],
+)
+def test_no_scope_id_carries_a_default(key: str) -> None:
+    """*Fails when* any scope id acquires a default.
+
+    *Matters because* `02` §2 rule 3 and PRD F1.4 are that there is **no default
+    environment** and no guessed scope: a run that cannot name its scope aborts
+    with the command to run. A default here would be the "default to production"
+    the mandatory environment segment exists to prevent, and it would resolve to
+    a row belonging to somebody else. *No other instrument catches it because* a
+    defaulted id makes the command succeed, which reads as working.
+    """
+    resolved = {r.key: r for r in resolve_all(env={})}
+    assert resolved[key].value is None
+    assert resolved[key].source is Source.DEFAULT

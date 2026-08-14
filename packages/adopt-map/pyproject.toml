@@ -18,6 +18,12 @@ dependencies = [
     "adopt-obs",
     "adopt-scope",
     "pydantic>=2.8,<3",
+    # The `02` §5 front-matter block. Not a new third-party dependency: `pyyaml`
+    # already carries a `licence-verifications.md` row (MIT, `in-binary`) and is
+    # a runtime dependency of six Build 0 packages. Declared here rather than
+    # inherited transitively, which is what `adopt-store`'s own S1.1 finding was
+    # about.
+    "pyyaml>=6,<7",
 ]
 
 [project.urls]

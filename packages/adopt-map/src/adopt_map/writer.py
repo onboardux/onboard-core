@@ -39,6 +39,17 @@ trace · human` -- and has **no artifact member**, so "else" names a value that
 does not exist and Build 1 may not add one (`00` §9 rule 4). A source ref with no
 resolvable `source_type` is recorded as a gap instead of being written under a
 plausible-looking wrong one.
+
+**S1.2 makes the writer revision-aware, and the comparison is per family.**
+`02` §4.3 row 1: an equal composite writes no revision and touches
+`identity.last_seen` alone. `05` S1.2 asks for *"exactly one revision per changed
+referent per table"*, and the honest reading of "changed" is **per table**: a
+revision is appended where *that table's recorded content* differs (B1-CR-47,
+OD-7). A `binding_revision` records an extractor, its version, a confidence and a
+locator rung and nothing else, so a fact whose attributes changed leaves it
+untouched -- appending an identical row on every content change would turn the
+chain into a log of scans, which is exactly what Build 0's `IdentityFacade`
+refuses to do for the same reason.
 """
 
 import datetime as _dt
@@ -46,11 +57,21 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
-from adopt_const import MAP_MIN_EMIT_CONFIDENCE, SURFACE_REPORT_VERSION
-from adopt_map.minting import mint
-from adopt_map.ports import SurfaceAuxRecords
-from adopt_map.schemas.surface import EvidenceMethod, ExtractorManifest, SourceRef, SurfaceFact
+from adopt_const import MAP_MIN_EMIT_CONFIDENCE, SURFACE_ATTRS_VERSION, SURFACE_REPORT_VERSION
+from adopt_map.frontmatter import FrontMatter, RenderedRelation, render_body
+from adopt_map.minting import mint, normalize_local_key
+from adopt_map.moves import Move, Observation, detect_moves
+from adopt_map.ports import RevisionAppender, ScopeLookupRecords, SurfaceAuxRecords
+from adopt_map.prior import PriorIdentity, PriorState
+from adopt_map.schemas.surface import (
+    EvidenceMethod,
+    ExtractorManifest,
+    FactRelation,
+    SourceRef,
+    SurfaceFact,
+)
 from adopt_map.scope_resolve import ResolvedScope
+from adopt_map.sourceversion import SourceVersion, build_source_version
 from adopt_model import AuditEvent, Conflict, DeathCondition, Provenance
 from adopt_model._enums import (
     AuthorityClass,
@@ -68,6 +89,8 @@ __all__ = [
     "SURFACE_AUTHORITY_CLASS",
     "SURFACE_DEATH_CONDITION",
     "SURFACE_ITEM_KIND",
+    "SURFACE_STATUS_ACTIVE",
+    "SURFACE_STATUS_MOVED",
     "SURFACE_VERIFICATION",
     "Gap",
     "SurfaceWriteResult",
@@ -82,6 +105,12 @@ SURFACE_AUTHORITY_CLASS: Final[AuthorityClass] = "artifact_observed"
 SURFACE_VERIFICATION: Final[Verification] = "unverified"
 SURFACE_DEATH_CONDITION: Final[DeathCause] = "referent_retired"
 AUDIT_EVENT_TYPE: Final[str] = "surface.map_completed"
+
+#: The two statuses Build 1 writes, and the complete list of them. `02` §6 gives
+#: `identity_revision` and `binding_revision` `'active'` or `'moved'`; every
+#: other member of either status enum belongs to a later build (B1-CR-07).
+SURFACE_STATUS_ACTIVE: Final[str] = "active"
+SURFACE_STATUS_MOVED: Final[str] = "moved"
 
 #: `is_load_bearing = 1` on every binding Build 1 creates (B1-CR-17, add-on §6).
 #: Build 3 owns the refinement; Build 1 does not guess. The column defaults to 1
@@ -141,6 +170,23 @@ class Gap:
     detail: str
 
 
+@dataclass(frozen=True, slots=True)
+class MoveRecord:
+    """One emitted move, as `02` §9.2's `moves[]` carries it: URI to URI."""
+
+    from_uri: str
+    to_uri: str
+
+
+@dataclass(frozen=True, slots=True)
+class ConflictRecord:
+    """One declined move -- `02` §9.2's `conflicts[]`."""
+
+    identity_uri: str
+    reason: str
+    candidates: int
+
+
 @dataclass(slots=True)
 class SurfaceWriteResult:
     """What one run wrote -- the payload behind `run_report.json`'s counters."""
@@ -154,7 +200,13 @@ class SurfaceWriteResult:
     )
     provenance_written: int = 0
     gaps: list[Gap] = field(default_factory=list)
-    conflicts: list[str] = field(default_factory=list)
+    conflicts: list[ConflictRecord] = field(default_factory=list)
+    moves: list[MoveRecord] = field(default_factory=list)
+    #: `extractor id -> (previous version, current version)`. PRD F4.5 and CUJ-2's
+    #: failure branch: an extractor version bump legitimately produces revisions,
+    #: and the report has to **name it as the cause** so an operator can tell a
+    #: real change from a tooling change without reading the diff.
+    extractor_version_changes: dict[str, tuple[str, str]] = field(default_factory=dict)
 
 
 class _IdentityRow(Protocol):
@@ -245,8 +297,11 @@ class SurfaceWriter:
         items: _ItemFacade,
         bindings: _BindingFacade,
         aux: SurfaceAuxRecords,
+        lookup: ScopeLookupRecords,
+        revisions: RevisionAppender,
         knowledge_draft: type,
         binding_draft: type,
+        identity_draft: type,
         schema_version: int,
         supported_schema_version: int,
         clock: Clock | None = None,
@@ -264,8 +319,11 @@ class SurfaceWriter:
         self._items = items
         self._bindings = bindings
         self._aux = aux
+        self._lookup = lookup
+        self._revisions = revisions
         self._knowledge_draft = knowledge_draft
         self._binding_draft = binding_draft
+        self._identity_draft = identity_draft
         self._clock: Clock = clock if clock is not None else SystemClock()
 
     def _now(self) -> _dt.datetime:
@@ -310,6 +368,15 @@ class SurfaceWriter:
         confidence = confidence_for(manifest.method)
 
         with self._aux.transaction():
+            # Read the prior state **once**, before anything is written, so every
+            # comparison in this run is against the state the previous run left
+            # rather than against whatever this run has already done to it.
+            prior = PriorState.load(
+                self._lookup,
+                system_id=resolved.system_id,
+                environment_id=resolved.environment_id,
+            )
+            observations: list[Observation] = []
             for fact in facts:
                 self._write_fact(
                     resolved=resolved,
@@ -319,8 +386,17 @@ class SurfaceWriter:
                     fact=fact,
                     vcs_revision=vcs_revision,
                     actor_id=actor_id,
+                    prior=prior,
+                    observations=observations,
                     result=result,
                 )
+            self._apply_moves(
+                prior=prior,
+                observations=observations,
+                manifest=manifest,
+                actor_id=actor_id,
+                result=result,
+            )
             self._write_audit_event(resolved=resolved, actor_id=actor_id, result=result)
 
         return result
@@ -337,6 +413,8 @@ class SurfaceWriter:
         fact: SurfaceFact,
         vcs_revision: str | None,
         actor_id: str | None,
+        prior: PriorState,
+        observations: list[Observation],
         result: SurfaceWriteResult,
     ) -> None:
         if fact.identity_kind not in permitted:
@@ -348,11 +426,11 @@ class SurfaceWriter:
                 "that widens its own vocabulary at runtime is one whose coverage "
                 "arithmetic nobody can check afterwards.",
             )
-        # Validated, not serialized: the closed schema is the egress allowlist
-        # (`02` §5.1), and **S1.2 owns the front-matter serializer** (`05` S1.2).
-        # Validating here means an extractor emitting an undeclared attribute
-        # fails now rather than in the sprint that starts writing them out.
-        fact.validated_attributes()
+        # Validated once, then reused: the closed schema is the egress allowlist
+        # (`02` §5.1), and the validated form is also what the digest and the
+        # front-matter are built from, so an undeclared attribute cannot reach a
+        # digest, a body or the store.
+        attributes = fact.validated_attributes().model_dump(mode="json")
 
         uri = mint(resolved.scope, fact)
 
@@ -366,7 +444,21 @@ class SurfaceWriter:
             )
             return
 
-        existing = self._identities.find_by_uri(uri)
+        version = build_source_version(fact, attributes, vcs_revision=vcs_revision)
+        body_md = self._render_body(
+            resolved=resolved,
+            fact=fact,
+            attributes=attributes,
+            uri=uri,
+            method=manifest.method,
+            confidence=confidence,
+        )
+
+        entry = prior.get(uri)
+        # Idempotent by construction: `observe` advances `last_seen` and writes
+        # no revision when the URI is already known (Build 0's `IdentityFacade`).
+        # It is called on **every** sighting, which is what `02` §4.3 row 1 means
+        # by *"touch `identity.last_seen` only"*.
         identity = self._identities.observe(
             scope=resolved.scope,
             kind=fact.identity_kind,
@@ -377,11 +469,70 @@ class SurfaceWriter:
             confidence=confidence,
             actor_id=actor_id,
         )
-        identity_id = identity.id
         result.identities_seen += 1
-        if existing is None:
-            result.identities_new += 1
-            result.revisions_written["identity"] += 1
+        observations.append(
+            Observation(
+                uri=uri,
+                identity_id=identity.id,
+                identity_kind=fact.identity_kind,
+                source_version=version,
+                is_new=entry is None,
+            )
+        )
+
+        if entry is None:
+            self._create_referent(
+                resolved=resolved,
+                manifest=manifest,
+                fact=fact,
+                uri=uri,
+                body_md=body_md,
+                version=version,
+                confidence=confidence,
+                identity_id=identity.id,
+                vcs_revision=vcs_revision,
+                actor_id=actor_id,
+                result=result,
+            )
+            return
+
+        self._update_referent(
+            entry=entry,
+            manifest=manifest,
+            fact=fact,
+            uri=uri,
+            body_md=body_md,
+            version=version,
+            confidence=confidence,
+            vcs_revision=vcs_revision,
+            actor_id=actor_id,
+            result=result,
+        )
+
+    # -- the two halves of a fact: first sighting, and every later one -----
+
+    def _create_referent(
+        self,
+        *,
+        resolved: ResolvedScope,
+        manifest: ExtractorManifest,
+        fact: SurfaceFact,
+        uri: str,
+        body_md: str,
+        version: SourceVersion,
+        confidence: float,
+        identity_id: str,
+        vcs_revision: str | None,
+        actor_id: str | None,
+        result: SurfaceWriteResult,
+    ) -> None:
+        """A URI nobody has seen: item, binding and death condition all arrive."""
+        result.identities_new += 1
+        # `observe` wrote the identity's first revision. It carries no composite,
+        # because Build 0's signature has no parameter for one and `adopt-store`
+        # is protected -- B1-CR-48 / OD-9, and the reason `PriorIdentity`
+        # compares against the knowledge revision's copy instead.
+        result.revisions_written["identity"] += 1
 
         item_id, revision_id = self._items.create(
             scope=resolved.scope,
@@ -390,20 +541,13 @@ class SurfaceWriter:
             revision=self._knowledge_draft(
                 authority_class=SURFACE_AUTHORITY_CLASS,
                 verification=SURFACE_VERIFICATION,
-                # Prose only. The `attrs_version: 1` front-matter block is
-                # `02` §5 and lands in S1.2 with its round-trip suite.
-                body_md=fact.prose,
+                body_md=body_md,
                 confidence=confidence,
-                # `source_version` is the §4 composite and lands in S1.2, which
-                # owns the projection table. `None` here is honest: there is no
-                # digest yet, and a placeholder would make the idempotence
-                # comparison compare two placeholders and find them equal.
-                source_version=None,
+                source_version=version.encode(),
             ),
             actor_id=actor_id,
         )
         result.revisions_written["knowledge"] += 1
-
         result.provenance_written += self._write_provenance(
             revision_id=revision_id,
             source_refs=fact.source_refs,
@@ -417,7 +561,7 @@ class SurfaceWriter:
             identity_id=identity_id,
             is_load_bearing=SURFACE_IS_LOAD_BEARING,
             revision=self._binding_draft(
-                status="active",
+                status=SURFACE_STATUS_ACTIVE,
                 extractor=manifest.id,
                 extractor_version=manifest.version,
                 confidence=confidence,
@@ -429,10 +573,157 @@ class SurfaceWriter:
 
         # Mandatory on every surface item (PRD F3.1 item 5, R22). `threshold` is
         # null: `referent_retired` is a state, not a duration, and the v2-era
-        # pack's `identity_absent_days` is not an enum member (B1-CR-19).
+        # pack's `identity_absent_days` is not an enum member (B1-CR-19). Written
+        # once, at creation: a second one on a later run would be a duplicate
+        # condition on one item.
         self._aux.insert_rows(
             "death_condition",
             [DeathCondition(item_id=item_id, condition=SURFACE_DEATH_CONDITION, threshold=None)],
+        )
+
+    def _update_referent(
+        self,
+        *,
+        entry: PriorIdentity,
+        manifest: ExtractorManifest,
+        fact: SurfaceFact,
+        uri: str,
+        body_md: str,
+        version: SourceVersion,
+        confidence: float,
+        vcs_revision: str | None,
+        actor_id: str | None,
+        result: SurfaceWriteResult,
+    ) -> None:
+        """A URI seen before: append a revision **only where content differs**.
+
+        This is F4. Three independent comparisons, one per family, because the
+        three record different things and *"changed"* is a question about a
+        table, not about a referent (B1-CR-47).
+        """
+        stored = entry.source_version
+        changed = stored is None or not stored.compares_equal(version)
+        self._note_extractor_version(entry, manifest, result)
+
+        if changed or _identity_content(entry) != (
+            manifest.id,
+            manifest.version,
+            confidence,
+            SURFACE_STATUS_ACTIVE,
+        ):
+            self._revisions.append_revision(
+                parent_id=entry.identity.id,
+                draft=self._identity_draft(
+                    status=SURFACE_STATUS_ACTIVE,
+                    extractor=manifest.id,
+                    extractor_version=manifest.version,
+                    source_version=version.encode(),
+                    confidence=confidence,
+                ),
+                expected_head_id=self._revisions.current_head(entry.identity.id),
+                actor_id=actor_id,
+            )
+            result.revisions_written["identity"] += 1
+
+        if entry.item is not None and (
+            changed or _knowledge_content(entry) != (body_md, confidence)
+        ):
+            revision_id = self._revisions.append_revision(
+                parent_id=entry.item.id,
+                draft=self._knowledge_draft(
+                    authority_class=SURFACE_AUTHORITY_CLASS,
+                    verification=SURFACE_VERIFICATION,
+                    body_md=body_md,
+                    confidence=confidence,
+                    source_version=version.encode(),
+                ),
+                expected_head_id=self._revisions.current_head(entry.item.id),
+                actor_id=actor_id,
+            )
+            result.revisions_written["knowledge"] += 1
+            result.provenance_written += self._write_provenance(
+                revision_id=revision_id,
+                source_refs=fact.source_refs,
+                vcs_revision=vcs_revision,
+                uri=uri,
+                result=result,
+            )
+
+        if entry.binding is not None and _binding_content(entry) != (
+            manifest.id,
+            manifest.version,
+            confidence,
+            _locator_rung(fact),
+            SURFACE_STATUS_ACTIVE,
+        ):
+            self._revisions.append_revision(
+                parent_id=entry.binding.id,
+                draft=self._binding_draft(
+                    status=SURFACE_STATUS_ACTIVE,
+                    extractor=manifest.id,
+                    extractor_version=manifest.version,
+                    confidence=confidence,
+                    locator_rung=_locator_rung(fact),
+                ),
+                expected_head_id=self._revisions.current_head(entry.binding.id),
+                actor_id=actor_id,
+            )
+            result.revisions_written["binding"] += 1
+
+    @staticmethod
+    def _note_extractor_version(
+        entry: PriorIdentity, manifest: ExtractorManifest, result: SurfaceWriteResult
+    ) -> None:
+        """Name a bumped extractor version as the cause -- PRD F4.5, CUJ-2's branch.
+
+        An operator reading `revisions_written > 0` on a tree they did not touch
+        needs to know whether the tool changed or the system did. Recorded per
+        extractor rather than per fact: it is one fact about the run.
+        """
+        head = entry.identity_head
+        if head is None or head.extractor != manifest.id or head.extractor_version is None:
+            return
+        if head.extractor_version != manifest.version:
+            result.extractor_version_changes[manifest.id] = (
+                head.extractor_version,
+                manifest.version,
+            )
+
+    def _render_body(
+        self,
+        *,
+        resolved: ResolvedScope,
+        fact: SurfaceFact,
+        attributes: dict[str, Any],
+        uri: str,
+        method: EvidenceMethod,
+        confidence: float,
+    ) -> str:
+        """The `02` §5 front-matter block plus the prose.
+
+        Relation targets are minted here, from **this run's scope** -- which is
+        what keeps an edge inside the run's environment without the front-matter
+        module having to know what an environment is (`02` §5.1 rule 2).
+        """
+        return render_body(
+            FrontMatter(
+                attrs_version=SURFACE_ATTRS_VERSION,
+                identity_uri=uri,
+                identity_kind=fact.identity_kind,
+                method=method,
+                confidence=confidence,
+                outside_vcs=fact.outside_vcs,
+                opaque=fact.opaque,
+                attributes=attributes,
+                relations=[
+                    RenderedRelation(
+                        predicate=relation.predicate,
+                        target=_mint_relation_target(resolved, relation),
+                    )
+                    for relation in fact.relations
+                ],
+            ),
+            fact.prose,
         )
 
     # -- the auxiliary tables --------------------------------------------
@@ -481,12 +772,97 @@ class SurfaceWriter:
         self._aux.insert_rows("provenance", rows)
         return len(rows)
 
-    def write_conflict(self, *, identity_id: str, result: SurfaceWriteResult) -> str:
-        """One `conflict` row for an ambiguous move -- `02` §6, B1-CR-08.
+    # -- moves ------------------------------------------------------------
+
+    def _apply_moves(
+        self,
+        *,
+        prior: PriorState,
+        observations: list[Observation],
+        manifest: ExtractorManifest,
+        actor_id: str | None,
+        result: SurfaceWriteResult,
+    ) -> None:
+        """Record what `adopt_map.moves` decided -- `02` §4.3 rows 4-5, PRD F5.
+
+        The decision is made there and applied here, because there is one path to
+        the store. Note what this does **not** do: it never retires a binding and
+        never marks an identity absent. A referent missing from a run may have
+        been removed or may simply have defeated the parser, and the two are
+        indistinguishable from here (PRD F5.3, B1-CR-07).
+        """
+        outcome = detect_moves(prior, observations)
+
+        for move in outcome.moves:
+            self._record_move(move=move, prior=prior, manifest=manifest, actor_id=actor_id)
+            result.revisions_written["identity"] += 1
+            entry = prior.get(move.from_uri)
+            if entry is not None and entry.binding is not None:
+                result.revisions_written["binding"] += 1
+            result.moves.append(MoveRecord(from_uri=move.from_uri, to_uri=move.to_uri))
+
+        for declination in outcome.declinations:
+            self._write_conflict(
+                identity_id=declination.identity_id,
+                identity_uri=declination.uri,
+                candidates=declination.candidates,
+                result=result,
+            )
+
+    def _record_move(
+        self,
+        *,
+        move: Move,
+        prior: PriorState,
+        manifest: ExtractorManifest,
+        actor_id: str | None,
+    ) -> None:
+        """The old identity gains a `moved` revision naming the new one.
+
+        The old identity keeps its URI and its row: a bundle exported last year
+        that referenced the old address still resolves, and the alias chain says
+        where the referent went. Its bindings gain `moved` revisions of their own
+        and are never removed -- bindings are retired, never removed at all, and
+        retirement is Build 3's (Build 0 CR-07, `02` §6).
+        """
+        self._revisions.append_revision(
+            parent_id=move.from_identity_id,
+            draft=self._identity_draft(
+                status=SURFACE_STATUS_MOVED,
+                extractor=manifest.id,
+                extractor_version=manifest.version,
+                alias_of_identity_id=move.to_identity_id,
+            ),
+            expected_head_id=self._revisions.current_head(move.from_identity_id),
+            actor_id=actor_id,
+        )
+        entry = prior.get(move.from_uri)
+        if entry is None or entry.binding is None:
+            return
+        self._revisions.append_revision(
+            parent_id=entry.binding.id,
+            draft=self._binding_draft(
+                status=SURFACE_STATUS_MOVED,
+                extractor=manifest.id,
+                extractor_version=manifest.version,
+            ),
+            expected_head_id=self._revisions.current_head(entry.binding.id),
+            actor_id=actor_id,
+        )
+
+    def _write_conflict(
+        self,
+        *,
+        identity_id: str,
+        identity_uri: str,
+        candidates: int,
+        result: SurfaceWriteResult,
+    ) -> str:
+        """One `conflict` row for a declined move -- `02` §6, B1-CR-08.
 
         Build 1 writes it and never resolves it: Build 3 owns the resolver and
-        its precision ladder. Present in S1.1 because the writer owns every write
-        to the store; the move rule that calls it lands in S1.2.
+        its precision ladder, and PRD §8's autonomy matrix assigns the resolution
+        to *"nobody in Build 1"*.
         """
         conflict_id = new_id("cf")
         self._aux.insert_rows(
@@ -502,7 +878,11 @@ class SurfaceWriter:
                 )
             ],
         )
-        result.conflicts.append(conflict_id)
+        result.conflicts.append(
+            ConflictRecord(
+                identity_uri=identity_uri, reason="ambiguous_move", candidates=candidates
+            )
+        )
         return conflict_id
 
     def _write_audit_event(
@@ -548,10 +928,62 @@ def _mintable_key(resolved: ResolvedScope, fact: SurfaceFact) -> str:
     `UNIQUE`, so a difference of one normalization would create a second row for
     one referent.
     """
-    from adopt_map.minting import normalize_local_key
-
     del resolved
     return normalize_local_key(fact.identity_kind, fact.local_key)
+
+
+def _identity_content(entry: PriorIdentity) -> tuple[object, ...]:
+    """What an `identity_revision` records, as a comparable tuple.
+
+    The three `_*_content` helpers exist so that *"has this table's content
+    changed?"* is answered by naming the columns that table actually has. A
+    single shared notion of "changed" would append an identical `binding_revision`
+    every time a docstring moved.
+    """
+    head = entry.identity_head
+    if head is None:
+        return ()
+    return (head.extractor, head.extractor_version, head.confidence, head.status)
+
+
+def _knowledge_content(entry: PriorIdentity) -> tuple[object, ...]:
+    head = entry.knowledge_head
+    if head is None:
+        return ()
+    return (head.body_md, head.confidence)
+
+
+def _binding_content(entry: PriorIdentity) -> tuple[object, ...]:
+    head = entry.binding_head
+    if head is None:
+        return ()
+    return (
+        head.extractor,
+        head.extractor_version,
+        head.confidence,
+        head.locator_rung,
+        head.status,
+    )
+
+
+def _mint_relation_target(resolved: ResolvedScope, relation: FactRelation) -> str:
+    """A relation's target URI, minted from **this run's** scope.
+
+    `02` §5.1 rule 2 makes relation targets identity URIs rather than database
+    ids, which is what keeps an exported bundle resolvable off this machine. An
+    extractor supplies only `(kind, namespace, local_key)` -- it has no field
+    through which to name an environment -- so a staging run's edges point at
+    staging identities by construction (PRD F6.1).
+    """
+    return mint(
+        resolved.scope,
+        SurfaceFact(
+            identity_kind=relation.target_kind,
+            namespace=relation.target_namespace,
+            local_key=relation.target_local_key,
+            title=relation.target_local_key,
+        ),
+    )
 
 
 def _locator_rung(fact: SurfaceFact) -> LocatorRung | None:

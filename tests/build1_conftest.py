@@ -15,13 +15,92 @@ insert, an update and a delete alike, and on nothing else.
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from pathlib import Path
 
 import pytest
 from adopt_map.ports import ScopeLookupRecords, SurfaceAuxRecords
+from adopt_map.scope_resolve import ResolvedScope, resolve_scope
+from adopt_map.writer import SurfaceWriter
 
 from adopt_model import MODEL_FOR_TABLE
+from adopt_scope import Scope, ScopeNode
+from adopt_store import open_store
 from adopt_store.api import SqliteStoreHandle
+from adopt_store.revisions import (
+    BindingRevisionDraft,
+    IdentityRevisionDraft,
+    KnowledgeRevisionDraft,
+)
+
+
+def surface_writer_for(handle: SqliteStoreHandle) -> SurfaceWriter:
+    """Compose a `SurfaceWriter` over a real store.
+
+    One helper rather than the same eight lines in four test modules: S1.2 widened
+    the constructor with the read port, the revision appender and the identity
+    draft, and four copies of a composition root is four places to forget one.
+    The composition itself mirrors `adopt_cli.commands.map_command`, which is the
+    only production caller.
+    """
+    return SurfaceWriter(
+        identities=handle.identities(),
+        items=handle.items(),
+        bindings=handle.bindings(),
+        aux=handle.import_records(),
+        lookup=handle.export_records(),
+        revisions=handle.revisions(),
+        knowledge_draft=KnowledgeRevisionDraft,
+        binding_draft=BindingRevisionDraft,
+        identity_draft=IdentityRevisionDraft,
+        schema_version=handle.schema_version,
+        supported_schema_version=handle.schema_version,
+    )
+
+
+def build_scoped_store(
+    root: Path, *, environments: Sequence[str] = ("prod",)
+) -> tuple[SqliteStoreHandle, dict[str, ResolvedScope]]:
+    """A fresh store with one system and `environments` under it, all resolved.
+
+    A plain function rather than a fixture because the property suites need one
+    store **per Hypothesis example** rather than one per test, and a
+    function-scoped fixture reused across examples is a store carrying the
+    previous example's rows -- which for an idempotence property would make
+    every run after the first look correct for the wrong reason.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    handle = open_store(root / "store.db", migrate=True)
+    facade = handle.scope()
+    firm = facade.create_firm(slug="northwind", name="Northwind LLP")
+    engagement = facade.create_engagement(firm_id=firm.id, slug="acme-erp", name="ACME ERP")
+    system = facade.create_system(engagement_id=engagement.id, slug="orders-api", name="Orders API")
+    handle.boundary().declare(
+        scope=Scope(
+            firm=ScopeNode(id=firm.id, slug=firm.slug),
+            system=ScopeNode(id=system.id, slug=system.slug),
+        ),
+        tier="T2",
+        knowledge_plane_location="customer",
+        control_plane_location="customer",
+        permitted_outbound_categories=["metadata_only"],
+    )
+
+    resolved: dict[str, ResolvedScope] = {}
+    for slug in environments:
+        environment = facade.create_environment(system_id=system.id, slug=slug, name=slug.title())
+        resolved[slug] = resolve_scope(
+            handle.export_records(),
+            firm_id=firm.id,
+            engagement_id=engagement.id,
+            system_id=system.id,
+            # Named explicitly: with two environments present, omitting it is
+            # `MAP_ENVIRONMENT_AMBIGUOUS` by design (`02` §2 rule 3).
+            environment_id=environment.id,
+            archetype="web",
+            tier="T2",
+        )
+    return handle, resolved
 
 
 @pytest.fixture
@@ -34,6 +113,60 @@ def scope_records(s4_store: SqliteStoreHandle) -> ScopeLookupRecords:
 def aux_records(s4_store: SqliteStoreHandle) -> SurfaceAuxRecords:
     """The write port for the four tables with no facade (OD-1)."""
     return s4_store.import_records()
+
+
+@pytest.fixture
+def surface_writer(s4_store: SqliteStoreHandle) -> SurfaceWriter:
+    """The writer, composed over the shared store fixture."""
+    return surface_writer_for(s4_store)
+
+
+@pytest.fixture
+def resolved_scope(
+    s4_store: SqliteStoreHandle,
+    s4_scope: Scope,
+    scope_records: ScopeLookupRecords,
+    add_boundary: Callable[..., str],
+) -> ResolvedScope:
+    """The production scope, with a boundary declared so resolution does not abort."""
+    assert s4_scope.engagement and s4_scope.system and s4_scope.environment
+    add_boundary(system_id=s4_scope.system.id)
+    return resolve_scope(
+        scope_records,
+        firm_id=s4_scope.firm.id,
+        engagement_id=s4_scope.engagement.id,
+        system_id=s4_scope.system.id,
+        environment_id=s4_scope.environment.id,
+        archetype="web",
+        tier="T2",
+    )
+
+
+@pytest.fixture
+def staging_scope(
+    s4_store: SqliteStoreHandle,
+    s4_scope_staging: Scope,
+    scope_records: ScopeLookupRecords,
+    add_boundary: Callable[..., str],
+) -> ResolvedScope:
+    """The **staging** scope of the same system -- PRD F6, CUJ-6.
+
+    A second environment on one system is what makes environment isolation
+    testable rather than asserted: without it the isolation gate would pass
+    vacuously, which is why `05`'s prerequisite 9 asked for the fixture.
+    """
+    assert s4_scope_staging.engagement and s4_scope_staging.system
+    assert s4_scope_staging.environment
+    add_boundary(system_id=s4_scope_staging.system.id)
+    return resolve_scope(
+        scope_records,
+        firm_id=s4_scope_staging.firm.id,
+        engagement_id=s4_scope_staging.engagement.id,
+        system_id=s4_scope_staging.system.id,
+        environment_id=s4_scope_staging.environment.id,
+        archetype="web",
+        tier="T2",
+    )
 
 
 @pytest.fixture

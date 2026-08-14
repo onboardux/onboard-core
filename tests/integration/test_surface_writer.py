@@ -60,7 +60,12 @@ from adopt_obs import AdoptError, ErrorCode
 from adopt_scope import Scope, ScopeNode
 from adopt_store import open_store
 from adopt_store.api import SqliteStoreHandle
-from adopt_store.revisions import BindingRevisionDraft, KnowledgeRevisionDraft
+from adopt_store.revisions import (
+    BindingRevisionDraft,
+    IdentityRevisionDraft,
+    KnowledgeRevisionDraft,
+)
+from tests.build1_conftest import surface_writer_for
 
 pytestmark = pytest.mark.integration
 
@@ -84,16 +89,7 @@ _PERMITTED_TABLES = frozenset(
 
 @pytest.fixture
 def writer(s4_store: SqliteStoreHandle) -> SurfaceWriter:
-    return SurfaceWriter(
-        identities=s4_store.identities(),
-        items=s4_store.items(),
-        bindings=s4_store.bindings(),
-        aux=s4_store.import_records(),
-        knowledge_draft=KnowledgeRevisionDraft,
-        binding_draft=BindingRevisionDraft,
-        schema_version=s4_store.schema_version,
-        supported_schema_version=s4_store.schema_version,
-    )
+    return surface_writer_for(s4_store)
 
 
 @pytest.fixture
@@ -434,7 +430,9 @@ def test_a_conflict_row_is_written_open_and_never_resolved(
         resolved=resolved, manifest=MANIFEST, facts=_facts(), vcs_revision="abc123"
     )
     identity = s4_store.export_records().table_rows("identity", Identity)[0]
-    writer.write_conflict(identity_id=identity.id, result=result)
+    writer._write_conflict(
+        identity_id=identity.id, identity_uri=identity.uri, candidates=2, result=result
+    )
 
     rows = s4_store.export_records().table_rows("conflict", Conflict)
     assert len(rows) == 1
@@ -457,8 +455,11 @@ def test_a_store_at_the_wrong_schema_version_is_refused(s4_store: SqliteStoreHan
             items=s4_store.items(),
             bindings=s4_store.bindings(),
             aux=s4_store.import_records(),
+            lookup=s4_store.export_records(),
+            revisions=s4_store.revisions(),
             knowledge_draft=KnowledgeRevisionDraft,
             binding_draft=BindingRevisionDraft,
+            identity_draft=IdentityRevisionDraft,
             schema_version=s4_store.schema_version + 1,
             supported_schema_version=s4_store.schema_version,
         )
@@ -504,20 +505,7 @@ def _prepared_store(root: Path) -> Iterator[tuple[SqliteStoreHandle, SurfaceWrit
             archetype="web",
             tier="T2",
         )
-        yield (
-            handle,
-            SurfaceWriter(
-                identities=handle.identities(),
-                items=handle.items(),
-                bindings=handle.bindings(),
-                aux=handle.import_records(),
-                knowledge_draft=KnowledgeRevisionDraft,
-                binding_draft=BindingRevisionDraft,
-                schema_version=handle.schema_version,
-                supported_schema_version=handle.schema_version,
-            ),
-            resolved_scope,
-        )
+        yield (handle, surface_writer_for(handle), resolved_scope)
     finally:
         handle.close()
 

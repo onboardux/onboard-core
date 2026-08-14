@@ -41,11 +41,11 @@ package receives whole.
 
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
-from typing import Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel
 
-__all__ = ["ScopeLookupRecords", "SurfaceAuxRecords"]
+__all__ = ["RevisionAppender", "ScopeLookupRecords", "SurfaceAuxRecords"]
 
 
 class ScopeLookupRecords(Protocol):
@@ -76,3 +76,36 @@ class SurfaceAuxRecords(Protocol):
     def insert_rows(self, table: str, models: Sequence[BaseModel]) -> None: ...
 
     def transaction(self) -> AbstractContextManager[None]: ...
+
+
+class RevisionAppender(Protocol):
+    """The two methods S1.2 needs from Build 0's `RevisionWriter`.
+
+    Satisfied structurally by `adopt_store.revisions.RevisionWriter`, obtained
+    from `Store.revisions()`. **Narrower than the class on purpose**: the real
+    writer also exposes `create_item` and `retire`, and neither belongs to this
+    package's write surface -- item creation goes through `KnowledgeFacade`, and
+    retirement is Build 3's (`00` §5, B1-CR-07). A port that named them would be
+    a port through which Build 1 could mark an identity dead.
+
+    `draft` is `Any` for the reason `_ItemFacade.revision` is: the concrete
+    drafts live in `adopt_store`, and naming them here would drag `sqlite3` into
+    this package's import graph and break `no-raw-sqlite`. The draft *types* are
+    handed to `SurfaceWriter` as constructor arguments for the same reason.
+
+    **There is still no update and no delete**, in this protocol or beneath it.
+    `append_revision` inserts, enforces `expected_head_id` and raises
+    ``REVISION_CHAIN_FORK`` on a mismatch -- which is the mechanism behind F4's
+    idempotence claim, not merely a safety check.
+    """
+
+    def append_revision(
+        self,
+        *,
+        parent_id: str,
+        draft: Any,
+        expected_head_id: str | None,
+        actor_id: str | None = ...,
+    ) -> str: ...
+
+    def current_head(self, parent_id: str) -> str | None: ...

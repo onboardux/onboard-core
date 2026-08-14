@@ -29,7 +29,7 @@ from adopt_model import MODEL_FOR_TABLE
 from adopt_obs import AdoptError
 from adopt_scope import Scope, ScopeNode
 from adopt_store import open_store
-from adopt_store.revisions import BindingRevisionDraft, KnowledgeRevisionDraft
+from tests.build1_conftest import surface_writer_for
 
 pytestmark = pytest.mark.property
 
@@ -91,16 +91,7 @@ def _prepare(root: Path) -> tuple[SurfaceWriter, object, Path]:
         archetype="web",
         tier="T2",
     )
-    writer = SurfaceWriter(
-        identities=handle.identities(),
-        items=handle.items(),
-        bindings=handle.bindings(),
-        aux=handle.import_records(),
-        knowledge_draft=KnowledgeRevisionDraft,
-        binding_draft=BindingRevisionDraft,
-        schema_version=handle.schema_version,
-        supported_schema_version=handle.schema_version,
-    )
+    writer = surface_writer_for(handle)
     return writer, resolved, root
 
 

@@ -208,8 +208,18 @@ def set_binding_freshness(s4_store: SqliteStoreHandle) -> Callable[..., None]:
 # --------------------------------------------------------------------------
 from tests.build1_conftest import (  # noqa: E402
     aux_records,
+    resolved_scope,
     scope_records,
+    staging_scope,
     store_fingerprint,
+    surface_writer,
 )
 
-__all__ = ["aux_records", "scope_records", "store_fingerprint"]
+__all__ = [
+    "aux_records",
+    "resolved_scope",
+    "scope_records",
+    "staging_scope",
+    "store_fingerprint",
+    "surface_writer",
+]

@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Landing tables written by the order service.
+    tables:
+      - name: orders
+        description: One row per order as the application wrote it.
+      - name: customers
+
+models:
+  - name: stg_orders
+    description: Orders, deduplicated on the natural key.
+  - name: orders_daily
+    description: Daily order counts and revenue by region.

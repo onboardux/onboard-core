@@ -31,6 +31,10 @@ adopt-extractors-common = { workspace = true }
 adopt-extractors-web = { workspace = true }
 # S1.5's AI-deployment pack. `03` §4, §5.10.
 adopt-extractors-ai = { workspace = true }
+# S1.6's packaged-platform, low-code and data packs. `03` §4, §5.10.
+adopt-extractors-platform = { workspace = true }
+adopt-extractors-lowcode = { workspace = true }
+adopt-extractors-data = { workspace = true }
 
 [dependency-groups]
 dev = [

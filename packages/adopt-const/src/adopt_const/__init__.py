@@ -339,6 +339,15 @@ MAP_CONFIG_VALUE_MAX_CHARS: Final[int] = 64
 #: **Provisional** -- S1.8 ratifies it against the cold-FDE exercise.
 MAP_FIRST_SCREEN_LIST_MAX: Final[int] = 20
 
+#: How deep `adopt_map.xmlsafe` walks an export bundle's XML. A Salesforce
+#: retrieve, an update set and a Power Platform solution all nest a handful of
+#: levels; a document nesting sixty is not one this build can say anything true
+#: about, and an unbounded walk over a hostile one is the amplification the seam
+#: refuses at the parser, arriving through our own traversal instead.
+#: **Provisional** -- S1.8 ratifies it against the reference corpus, and the
+#: reversal trigger is the first real bundle that loses a component to the bound.
+MAP_XML_MAX_DEPTH: Final[int] = 64
+
 #: Build 1's run-artifact and front-matter format versions. Both start at 1 and
 #: move independently of `SCHEMA_VERSION` and `EXPORT_VERSION`; `surface.json`
 #: is a run artifact and **not** an interchange contract (02 §9.2).

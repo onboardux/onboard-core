@@ -1,0 +1,27 @@
+{
+  "labels_version": 1,
+  "fixture": "powerapps-export",
+  "method": "Derived from `solution.xml` and `customizations.xml` themselves -- the manifest, every `<Workflow>`, `<Entity>`, `<systemform>`, `<CanvasApp>` and `<connectionreference>` element. Never from extractor output.",
+  "covers": "Both kinds a run over this solution emits: `metadata_component` for the components, and `config_key` under `secret:connection` for the two connection references.",
+  "outside_vcs_note": "`outside_vcs: true` on both connection references: the connection each points at is bound in the environment and can be repointed with no commit anywhere in this export (`01` F8.6).",
+  "unlabeled_note": "`unlabeled: true` where the export carries no `<LocalizedName>`. A form's `<Name>` is not a label -- `ZFORM_017` proves why, and the rule is applied to `Main Order Form` too rather than being bent for the one that reads well.",
+  "identities": [
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Solution.OrderIntake", "note": "the manifest, display name 'Order Intake'"},
+
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Workflow.CreateOrderApproval", "note": "display name 'Create order approval'"},
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Workflow.NotifyWarehouse", "note": "display name present"},
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Workflow.ZFLOW_042", "unlabeled": true, "note": "the low-code ZFIELD_003 -- a flow named in a hurry"},
+
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "CanvasApp.OrderIntakeApp", "note": "display name 'Order Intake App'"},
+
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Entity.new_order", "note": "display name 'Order'"},
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Entity.new_orderline", "unlabeled": true},
+
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Form.new_order.Main Order Form", "unlabeled": true, "note": "reads well and is still only a name"},
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Form.new_order.ZFORM_017", "unlabeled": true},
+    {"identity_kind": "metadata_component", "namespace": "powerapps", "local_key": "Form.new_orderline.Main Order Line Form", "unlabeled": true},
+
+    {"identity_kind": "config_key", "namespace": "secret:connection", "local_key": "new_sharedsql_ordersdb", "outside_vcs": true, "note": "reference only -- the model has no value field"},
+    {"identity_kind": "config_key", "namespace": "secret:connection", "local_key": "new_sharedoffice365_mailer", "outside_vcs": true, "note": "reference only"}
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "golden_version": 1,
+  "fixture": "dbt-warehouse",
+  "note": "Sorted (identity_kind, namespace, normalized local_key, evidence method) for the common pack and this pack over the fixture, before reconciliation. Volatile fields are excluded by construction rather than filtered.",
+  "identities": [
+    [
+      "metadata_component",
+      "dbt",
+      "metric.orders_per_day",
+      "declared"
+    ],
+    [
+      "metadata_component",
+      "dbt",
+      "metric.revenue",
+      "declared"
+    ],
+    [
+      "metadata_component",
+      "dbt",
+      "model.customer_revenue",
+      "declared"
+    ],
+    [
+      "metadata_component",
+      "dbt",
+      "model.orders_daily",
+      "declared"
+    ],
+    [
+      "metadata_component",
+      "dbt",
+      "model.stg_customers",
+      "declared"
+    ],
+    [
+      "metadata_component",
+      "dbt",
+      "model.stg_orders",
+      "declared"
+    ],
+    [
+      "metadata_component",
+      "dbt",
+      "semantic_model.orders",
+      "declared"
+    ],
+    [
+      "metadata_component",
+      "dbt",
+      "source.raw.customers",
+      "declared"
+    ],
+    [
+      "metadata_component",
+      "dbt",
+      "source.raw.orders",
+      "declared"
+    ]
+  ]
+}

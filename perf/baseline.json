@@ -1,6 +1,6 @@
 {
   "baseline_version": 2,
-  "note": "Durations on the authoring machine -- a **local** reading, not the reference-runner evidence `01` N1-N3 require, and not usable as the `03` \u00a78 ratchet's baseline until it is re-measured there. S1.8 re-measures on the reference set (PRD Q4) and archives under perf/soak/<date>/. Version 2 is per fixture: S1.5 added a second pack with a different shape, and one pair of numbers for two archetypes measures neither.",
+  "note": "Durations on the authoring machine -- a **local** reading, not the reference-runner evidence `01` N1-N3 require, and not usable as the `03` \u00a78 ratchet's baseline until it is re-measured there. S1.8 re-measures on the reference set (PRD Q4) and archives under perf/soak/<date>/. Version 2 is per fixture: S1.5 added a second pack with a different shape, and one pair of numbers for two archetypes measures neither. S1.6 adds three more -- two of them read an **export bundle** rather than a source tree, so their total is time over a metadata export and is not comparable with a repository's.",
   "machine": "authoring workstation (not the reference runner)",
   "budgets": {
     "MAP_STAGE1_BUDGET_S": 900,
@@ -55,6 +55,72 @@
       },
       "pack": "ai",
       "measured": "S1.5"
+    },
+    "sf-metadata-bundle": {
+      "first_run": {
+        "stage1_seconds": 0.015,
+        "total_seconds": 0.093,
+        "facts": 17,
+        "revisions_written": {
+          "identity": 17,
+          "knowledge": 17,
+          "binding": 17
+        }
+      },
+      "unchanged_rerun": {
+        "stage1_seconds": 0.0,
+        "total_seconds": 0.094,
+        "facts": 17,
+        "revisions_written": {
+          "identity": 0,
+          "knowledge": 0,
+          "binding": 0
+        }
+      }
+    },
+    "powerapps-export": {
+      "first_run": {
+        "stage1_seconds": 0.0,
+        "total_seconds": 0.062,
+        "facts": 12,
+        "revisions_written": {
+          "identity": 12,
+          "knowledge": 12,
+          "binding": 12
+        }
+      },
+      "unchanged_rerun": {
+        "stage1_seconds": 0.0,
+        "total_seconds": 0.047,
+        "facts": 12,
+        "revisions_written": {
+          "identity": 0,
+          "knowledge": 0,
+          "binding": 0
+        }
+      }
+    },
+    "dbt-warehouse": {
+      "first_run": {
+        "stage1_seconds": 0.031,
+        "total_seconds": 0.109,
+        "facts": 9,
+        "revisions_written": {
+          "identity": 9,
+          "knowledge": 9,
+          "binding": 9
+        }
+      },
+      "unchanged_rerun": {
+        "stage1_seconds": 0.031,
+        "total_seconds": 0.094,
+        "facts": 9,
+        "revisions_written": {
+          "identity": 0,
+          "knowledge": 0,
+          "binding": 0
+        }
+      }
     }
   }
 }

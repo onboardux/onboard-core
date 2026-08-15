@@ -317,3 +317,72 @@ def test_no_canary_from_the_langgraph_fixture_reaches_the_store_or_an_artifact(
     # The reference is recorded, which is what keeps this from passing because
     # extraction stopped reading the file.
     assert "ANTHROPIC_API_KEY" in haystacks["surface.json"]
+
+
+#: The two canaries planted in `fixtures/repos/powerapps-export/customizations.xml`,
+#: as `<environmentvariabledefinition><defaultvalue>` -- which is where a
+#: credential really travels in a Power Platform solution export.
+_LOWCODE_FIXTURE_CANARIES = (
+    "CANARY-do-not-emit-222222",
+    "sk-live-CANARY-do-not-emit-333333",
+)
+
+
+def test_no_canary_from_the_powerapps_fixture_reaches_the_store_or_an_artifact(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """The same four surfaces, over the bundle S1.6 ships -- `01` N9.
+
+    *Fails when* the low-code pack records a credential **value**.
+
+    *Matters because* a solution export is the one artefact in this build that a
+    client hands over whole, credentials and all: environment-variable
+    definitions ship with their default values, and connection references sit in
+    the same document. The pack reads that document today and takes the
+    reference **names**; the failure one step away is a future extractor for
+    environment variables -- an entirely reasonable thing to want, since they are
+    behaviour-bearing config -- taking the defaults with them.
+
+    *No other instrument catches it because* the structural guarantee
+    (`secret:*` has no value field) covers the connection references and says
+    nothing about `metadata_component` attributes, which is where a
+    `<defaultvalue>` would land if somebody read one.
+    """
+    from adopt_extractors_common import pack as common_pack
+    from adopt_extractors_lowcode import pack as lowcode_pack
+    from adopt_map.emit.json_report import render_surface_json
+    from adopt_map.orchestrator import run as run_map
+    from adopt_map.plugins import ExtractorRegistry
+    from adopt_map.report import RUN_REPORT_NAME, write_run_report
+
+    writer, resolved, root = _prepare(
+        tmp_path_factory.mktemp("lowcode-canary"), archetype="lowcode"
+    )
+    registry = ExtractorRegistry(enabled_packs=frozenset({"common", "lowcode"}))
+    registry.register_all(common_pack())
+    registry.register_all(lowcode_pack())
+
+    result = run_map(
+        resolved=resolved,  # type: ignore[arg-type]
+        root=Path(),
+        export_bundle=Path("fixtures/repos/powerapps-export"),
+        registry=registry,
+        adopt_version="test",
+        writer=writer,
+        out_dir=root / "out",
+        sequential=True,
+    )
+
+    write_run_report(result, root / "out")
+    haystacks = {
+        "store": _store_text(root),
+        "surface.json": render_surface_json(result),
+        "run_report.json": (root / "out" / RUN_REPORT_NAME).read_text(encoding="utf-8"),
+    }
+    for name, text in haystacks.items():
+        for canary in _LOWCODE_FIXTURE_CANARIES:
+            assert canary not in text, f"a planted credential value reached {name}"
+
+    # The reference is recorded, which is what keeps this from passing because
+    # extraction stopped reading the document.
+    assert "new_sharedsql_ordersdb" in haystacks["surface.json"]

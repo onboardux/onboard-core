@@ -210,6 +210,22 @@ def map_command(
             ),
             as_json=as_json,
         )
+    if export_bundle is not None and not export_bundle.exists():
+        # A flag pointing at nothing is the same fact as no flag -- there is no
+        # bundle to read -- so it takes the same code and the same exit. Checked
+        # here rather than at `build_index`, where a nonexistent root produces an
+        # empty index and a run that cheerfully reports a platform with no
+        # components in it: `01` §1.6 forbids exactly that kind of quiet zero.
+        _fail(
+            AdoptError(
+                ErrorCode.MAP_EXPORT_BUNDLE_MISSING,
+                message=f"--export-bundle {export_bundle} does not exist",
+                hint="Point --export-bundle at the directory the platform export "
+                "produced. `adopt map` reads it as the tree; it never connects to "
+                "the platform.",
+            ),
+            as_json=as_json,
+        )
 
     # **Resolution runs against a read-only handle, and that is load-bearing.**
     # `02` §8's exit-4 row promises "zero writes", and `05` S1.1's validation line
@@ -262,6 +278,7 @@ def map_command(
             run_id=run_id,
             sequential=profile == "fast",
             guard=EgressGuard(),
+            export_bundle=export_bundle,
         )
         log.info("map_command_completed", facts=result.total_facts(), exit_code=result.exit_code)
         emit(_result_payload(result), as_json=as_json, title="adopt map")
@@ -290,6 +307,9 @@ def _registry() -> ExtractorRegistry:
     """
     from adopt_extractors_ai import pack as ai_pack
     from adopt_extractors_common import pack as common_pack
+    from adopt_extractors_data import pack as data_pack
+    from adopt_extractors_lowcode import pack as lowcode_pack
+    from adopt_extractors_platform import pack as platform_pack
     from adopt_extractors_web import pack as web_pack
 
     configuration = load_map_config(project_config_path())
@@ -298,6 +318,9 @@ def _registry() -> ExtractorRegistry:
     registry.register_all(common_pack())
     registry.register_all(web_pack())
     registry.register_all(ai_pack())
+    registry.register_all(platform_pack())
+    registry.register_all(lowcode_pack())
+    registry.register_all(data_pack())
     return registry
 
 

@@ -133,16 +133,24 @@ def test_all_returns_manifest_id_order_regardless_of_registration_order() -> Non
 def test_a_disabled_pack_is_excluded_and_the_reason_is_recorded() -> None:
     """`01` F7.6 and F13.5: a skip is a stated reason, never a silent omission.
 
-    The example pack is `platform`, and it has now been `web` and `ai` in turn:
-    S1.4 flipped `extractors.web.enabled` on and **S1.5 flipped
-    `extractors.ai.enabled` on** (`01` §9), each time turning this case into an
-    assertion that an *enabled* pack is excluded -- so it failed for the right
-    reason and moved to a still-disabled pack, exactly as the previous version of
-    this docstring said it should. `platform` flips at S1.6's exit gate, and when
-    it does this case moves again rather than being deleted: **something must
-    always be off, or `pack_disabled` stops being reachable.**
+    The example pack was `platform`, and before that `web` and `ai` in turn: each
+    sprint's flip turned this case into an assertion that an *enabled* pack is
+    excluded, so it failed for the right reason and moved to a still-disabled
+    pack. **S1.6 flipped the last three on, and there is no still-disabled pack
+    left to move to** -- so the case stops borrowing one from the defaults and
+    states its own.
+
+    That is the stronger form anyway. The previous version's warning --
+    *"something must always be off, or `pack_disabled` stops being reachable"* --
+    was true of a test that read `DEFAULT_ENABLED_PACKS`, and it made this
+    instrument's survival depend on the product never enabling everything. An
+    explicit enabled set keeps `pack_disabled` reachable whatever `01` §9's table
+    says, and the flag table itself is asserted by the case below, which is where
+    that claim belongs.
     """
-    registry = _registry(_Fake("platform.sf_metadata", pack="platform"))
+    registry = _registry(
+        _Fake("platform.sf_metadata", pack="platform"), packs=frozenset({"common"})
+    )
     assert registry.plan(archetype="web", root=".", tier="T2") == ()
     assert ("platform.sf_metadata", "pack_disabled") in registry.skipped(
         archetype="web", root=".", tier="T2"
@@ -162,8 +170,17 @@ def test_only_the_packs_that_passed_an_exit_gate_are_on_by_default() -> None:
 
     `ai` is here because S1.5 measured **outside-VCS recall 1.000** against the
     labeled `langgraph-support` set, which is the gate `01` §9 names.
+
+    **S1.6 adds the last three**, each on the gate B1-CR-62 makes Build 1's --
+    labeled-set recall against `MAP_PLUGIN_COVERAGE_FLOOR`, measured per pack by
+    `scripts/label_eval.py`: `platform` 1.000 (17 of 17), `lowcode` 1.000 (12 of
+    12), `data` 1.000 (9 of 9). With every pack on, the equality below is the
+    only thing standing between a future pack and a default-on flag it never
+    earned -- which is why it is an equality and not a subset check.
     """
-    assert frozenset({"common", "web", "ai"}) == DEFAULT_ENABLED_PACKS
+    assert (
+        frozenset({"common", "web", "ai", "platform", "lowcode", "data"}) == DEFAULT_ENABLED_PACKS
+    )
 
 
 def test_an_archetype_mismatch_is_excluded_with_its_reason() -> None:

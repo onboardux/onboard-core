@@ -31,13 +31,16 @@ __all__ = ["EVALSET_KEYS", "RETRIEVAL_KEYS", "declared_section", "load_document"
 #: `adopt_map.documents` rather than restated: `common.config` skips exactly the
 #: documents this pack claims, and two lists would be one edit from disagreeing
 #: -- with the symptom being a silently double-claimed file rather than an error.
+#:
+#: Each row's **first** key is its declaring key; S1.6 gave a row a second,
+#: required co-key for dbt's ambiguous ones, and this pack's rows have none.
 RETRIEVAL_KEYS: Final[tuple[str, ...]] = tuple(
-    key for key, owner in OWNED_DOCUMENT_KEYS if owner == "ai.retrieval"
+    keys[0] for keys, owner in OWNED_DOCUMENT_KEYS if owner == "ai.retrieval"
 )
 
 #: The top-level keys that hand a document to `ai.evalsets`, same source.
 EVALSET_KEYS: Final[tuple[str, ...]] = tuple(
-    key for key, owner in OWNED_DOCUMENT_KEYS if owner == "ai.evalsets"
+    keys[0] for keys, owner in OWNED_DOCUMENT_KEYS if owner == "ai.evalsets"
 )
 
 _YAML_SUFFIXES: Final[tuple[str, ...]] = (".yaml", ".yml")

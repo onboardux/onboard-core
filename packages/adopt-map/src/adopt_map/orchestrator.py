@@ -54,9 +54,12 @@ from adopt_map.confidence import Degradation, LadderPolicy, confidence_for, with
 from adopt_map.context import Budget, ExtractorContext
 from adopt_map.coverage import CoverageReport, report_coverage
 from adopt_map.emit import (
+    LABELING_QUEUE_NAME,
     SURFACE_JSON_NAME,
     SURFACE_MD_NAME,
+    labeling_queue_wanted,
     render_d2,
+    render_labeling_queue,
     render_markdown,
     render_mermaid,
     render_stage1,
@@ -312,6 +315,7 @@ def run(
     sequential: bool = False,
     guard: EgressGuard | None = None,
     actor_id: str | None = None,
+    export_bundle: Path | None = None,
 ) -> RunResult:
     """Run one `adopt map` invocation end to end.
 
@@ -335,6 +339,11 @@ def run(
         guard: The egress guard. One is installed when none is supplied, because
             offline-by-default must not depend on a caller remembering.
         actor_id: Who caused the run, where a human did.
+        export_bundle: `02` §8's `--export-bundle`. When supplied it **is** the
+            tree this run reads: a packaged platform has no source tree, so
+            `01` F8.3's *"components, fields, transports from an export bundle"*
+            has no other subject. See the note below on why this is a subject
+            swap rather than a new field on `ExtractorContext`.
 
     Returns:
         The `RunResult` every artifact was rendered from.
@@ -346,21 +355,33 @@ def run(
     log = _log.bind_run(identifier)
     destination = out_dir if out_dir is not None else Path(DEFAULT_OUT_DIR)
 
-    index = build_index(root)
+    # **The bundle is the tree, and that is deliberately not a new context
+    # field** (`05` S1.6). `02` §8 accepts `--export-bundle` and S1.1 shipped the
+    # flag unhonoured; a packaged-platform run then refused without one and, given
+    # one, extracted from a source tree the platform does not have. The subject is
+    # swapped here rather than adding `ctx.export_bundle`, for two reasons: a
+    # second path on the context would be a second thing an extractor may walk,
+    # which is exactly the reach `02` §7 obligation 1 and `03` §5.8's one-walk
+    # guarantee remove; and `applies_to()` would then be asked about a tree that is
+    # not the one `extract()` reads. One subject, indexed once, disclosed once.
+    subject = export_bundle if export_bundle is not None else root
+
+    index = build_index(subject)
     log.info(
         "map_indexed",
         files=len(index.files),
         discovered=index.discovered,
         sampled=index.sampled,
+        subject="export_bundle" if export_bundle is not None else "tree",
     )
 
-    plan = plan_run(registry, archetype=resolved.archetype, root=str(root), tier=resolved.tier)
+    plan = plan_run(registry, archetype=resolved.archetype, root=str(subject), tier=resolved.tier)
     for extractor_id, reason in plan.skipped:
         log.info("map_extractor_skipped", extractor=extractor_id, reason=reason)
 
     budget = Budget.starting_at(wall_start, stage1_s=stage1_budget_s, total_s=total_budget_s)
     ctx = ExtractorContext(
-        root=str(root),
+        root=str(subject),
         index=index,
         budget=budget,
         archetype=resolved.archetype,
@@ -685,4 +706,10 @@ def _emit(result: RunResult, out_dir: Path, formats: Sequence[str]) -> None:
         (out_dir / MERMAID_NAME).write_text(render_mermaid(result), encoding="utf-8")
     if "d2" in selected:
         (out_dir / D2_NAME).write_text(render_d2(result), encoding="utf-8")
+    if labeling_queue_wanted(result):
+        # Not behind `--format`, for the same reason the run report is not: the
+        # queue is a *work item* handed to a human, and a run that found
+        # unlabelled components and emitted no queue because somebody passed
+        # `--format md` would have found the work and thrown it away (`01` F12.6).
+        (out_dir / LABELING_QUEUE_NAME).write_text(render_labeling_queue(result), encoding="utf-8")
     write_run_report(result, out_dir)

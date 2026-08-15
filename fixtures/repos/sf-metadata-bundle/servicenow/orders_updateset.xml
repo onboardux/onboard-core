@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<unload unload_date="2026-08-01 09:14:22">
+    <sys_update_xml action="INSERT_OR_UPDATE">
+        <name>sys_script_include_9f8c1a2b3c4d5e6f7a8b9c0d1e2f3a4b</name>
+        <type>Script Include</type>
+        <target_name>OrderUtils</target_name>
+        <update_set display_value="Orders release 4">a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6</update_set>
+        <payload>&lt;record_update table="sys_script_include"&gt;&lt;sys_script_include&gt;&lt;script&gt;var OrderUtils = Class.create();&lt;/script&gt;&lt;/sys_script_include&gt;&lt;/record_update&gt;</payload>
+    </sys_update_xml>
+    <sys_update_xml action="INSERT_OR_UPDATE">
+        <name>sys_script_1122334455667788990011223344556f</name>
+        <type>Business Rule</type>
+        <target_name>Set order approval state</target_name>
+        <update_set display_value="Orders release 4">a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6</update_set>
+        <payload>&lt;record_update table="sys_script"&gt;&lt;sys_script&gt;&lt;condition&gt;current.state.changes()&lt;/condition&gt;&lt;/sys_script&gt;&lt;/record_update&gt;</payload>
+    </sys_update_xml>
+    <sys_update_xml action="INSERT_OR_UPDATE">
+        <name>sys_ui_policy_00998877665544332211aabbccddeeff</name>
+        <type>UI Policy</type>
+        <target_name>Hide legacy fields</target_name>
+        <update_set display_value="Orders release 4">a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6</update_set>
+        <payload>&lt;record_update table="sys_ui_policy"&gt;&lt;sys_ui_policy&gt;&lt;short_description&gt;Hide legacy fields&lt;/short_description&gt;&lt;/sys_ui_policy&gt;&lt;/record_update&gt;</payload>
+    </sys_update_xml>
+</unload>

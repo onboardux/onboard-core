@@ -50,6 +50,9 @@ from typing import Final, NamedTuple
 import pytest
 from adopt_extractors_ai import pack as ai_pack
 from adopt_extractors_common import pack as common_pack
+from adopt_extractors_data import pack as data_pack
+from adopt_extractors_lowcode import pack as lowcode_pack
+from adopt_extractors_platform import pack as platform_pack
 from adopt_extractors_web import pack as web_pack
 from adopt_map.context import Budget, ExtractorContext
 from adopt_map.fileindex import build_index
@@ -93,6 +96,12 @@ PACKS: Final[tuple[Pack, ...]] = (
     Pack("common", tuple(common_pack()), Path("fixtures/repos/poisoned-import"), "web"),
     Pack("web", tuple(web_pack()), Path("fixtures/repos/django-orders"), "web"),
     Pack("ai", tuple(ai_pack()), Path("fixtures/repos/langgraph-support"), "ai"),
+    # S1.6. `platform` and `lowcode` meet **export bundles** rather than source
+    # trees, which is what those two archetypes have instead of one -- the tree
+    # here is exactly what `--export-bundle` is handed on a real run.
+    Pack("platform", tuple(platform_pack()), Path("fixtures/repos/sf-metadata-bundle"), "platform"),
+    Pack("lowcode", tuple(lowcode_pack()), Path("fixtures/repos/powerapps-export"), "lowcode"),
+    Pack("data", tuple(data_pack()), Path("fixtures/repos/dbt-warehouse"), "data"),
 )
 
 _EXTRACTORS = [extractor for entry in PACKS for extractor in entry.extractors]

@@ -1,0 +1,28 @@
+{
+  "labels_version": 1,
+  "fixture": "sf-metadata-bundle",
+  "method": "Derived from the three export documents themselves -- every `<fields>` element in the two Salesforce objects, every object-list line in the SAP request, every `sys_update_xml` in the ServiceNow update set. Never from extractor output: a labeled set read back from what the extractors found makes recall 1.0 by construction and measures nothing.",
+  "covers": "Every kind a run over this bundle emits. The `platform` pack emits one kind, so this set is `metadata_component` throughout -- which is the archetype's own shape rather than a gap in the labelling.",
+  "unlabeled_note": "`unlabeled: true` marks a component whose export states no human label. It is the ground truth for `05` S1.6's unlabelled-bucket line and for the honesty ratio on the first screen. Eleven of seventeen: two Salesforce fields, all five SAP objects, all three ServiceNow records, and one Salesforce field on Account.",
+  "identities": [
+    {"identity_kind": "metadata_component", "namespace": "salesforce", "local_key": "CustomObject.Order__c", "note": "objects/Order__c.object-meta.xml"},
+    {"identity_kind": "metadata_component", "namespace": "salesforce", "local_key": "CustomField.Order__c.Status__c", "note": "labelled 'Order Status'"},
+    {"identity_kind": "metadata_component", "namespace": "salesforce", "local_key": "CustomField.Order__c.Account__c", "note": "lookup to Account, labelled"},
+    {"identity_kind": "metadata_component", "namespace": "salesforce", "local_key": "CustomField.Order__c.ZFIELD_003__c", "unlabeled": true, "note": "the design document's own example -- retrievable and meaningless"},
+    {"identity_kind": "metadata_component", "namespace": "salesforce", "local_key": "CustomField.Order__c.ZFIELD_007__c", "unlabeled": true},
+    {"identity_kind": "metadata_component", "namespace": "salesforce", "local_key": "CustomObject.Account"},
+    {"identity_kind": "metadata_component", "namespace": "salesforce", "local_key": "CustomField.Account.Region__c", "note": "labelled 'Region'"},
+    {"identity_kind": "metadata_component", "namespace": "salesforce", "local_key": "CustomField.Account.Legacy_Code__c", "unlabeled": true},
+
+    {"identity_kind": "metadata_component", "namespace": "sap", "local_key": "TransportRequest.DEVK900123", "note": "the request's short text is its own, and is not sprayed onto its objects"},
+    {"identity_kind": "metadata_component", "namespace": "sap", "local_key": "R3TR.TABL.ZCUSTOMER", "unlabeled": true},
+    {"identity_kind": "metadata_component", "namespace": "sap", "local_key": "R3TR.DTEL.ZCUST_ID", "unlabeled": true},
+    {"identity_kind": "metadata_component", "namespace": "sap", "local_key": "R3TR.PROG.ZORDER_REPORT", "unlabeled": true},
+    {"identity_kind": "metadata_component", "namespace": "sap", "local_key": "LIMU.REPS.ZORDER_REPORT", "unlabeled": true, "note": "a sub-object of the same report -- a real transport moves both"},
+    {"identity_kind": "metadata_component", "namespace": "sap", "local_key": "R3TR.TABL.ZORDER_HEADER", "unlabeled": true},
+
+    {"identity_kind": "metadata_component", "namespace": "servicenow", "local_key": "sys_script_include.OrderUtils", "unlabeled": true, "note": "payload holds the Script Include's source and must never be read"},
+    {"identity_kind": "metadata_component", "namespace": "servicenow", "local_key": "sys_script.Set order approval state", "unlabeled": true},
+    {"identity_kind": "metadata_component", "namespace": "servicenow", "local_key": "sys_ui_policy.Hide legacy fields", "unlabeled": true}
+  ]
+}

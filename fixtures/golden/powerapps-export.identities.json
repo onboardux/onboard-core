@@ -1,0 +1,79 @@
+{
+  "golden_version": 1,
+  "fixture": "powerapps-export",
+  "note": "Sorted (identity_kind, namespace, normalized local_key, evidence method) for the common pack and this pack over the fixture, before reconciliation. Volatile fields are excluded by construction rather than filtered.",
+  "identities": [
+    [
+      "config_key",
+      "secret:connection",
+      "new_sharedoffice365_mailer",
+      "reflection"
+    ],
+    [
+      "config_key",
+      "secret:connection",
+      "new_sharedsql_ordersdb",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "CanvasApp.OrderIntakeApp",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Entity.new_order",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Entity.new_orderline",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Form.new_order.Main Order Form",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Form.new_order.ZFORM_017",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Form.new_orderline.Main Order Line Form",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Solution.OrderIntake",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Workflow.CreateOrderApproval",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Workflow.NotifyWarehouse",
+      "reflection"
+    ],
+    [
+      "metadata_component",
+      "powerapps",
+      "Workflow.ZFLOW_042",
+      "reflection"
+    ]
+  ]
+}

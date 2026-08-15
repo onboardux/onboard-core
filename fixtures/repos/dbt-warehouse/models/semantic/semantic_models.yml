@@ -1,0 +1,22 @@
+semantic_models:
+  - name: orders
+    description: Order facts, one row per order day and region.
+    model: ref('orders_daily')
+    measures:
+      - name: revenue_amount
+        agg: sum
+      - name: order_count
+        agg: sum
+
+metrics:
+  - name: revenue
+    label: Revenue
+    type: simple
+    type_params:
+      measure:
+        name: orders.revenue_amount
+  - name: orders_per_day
+    type: simple
+    type_params:
+      measure:
+        name: orders.order_count

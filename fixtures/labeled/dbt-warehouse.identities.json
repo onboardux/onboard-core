@@ -1,0 +1,20 @@
+{
+  "labels_version": 1,
+  "fixture": "dbt-warehouse",
+  "method": "Derived from the project's own files -- one entry per `.sql` model, per `sources: -> tables:` entry, per `semantic_models:` and per `metrics:` entry. Never from extractor output.",
+  "covers": "Every kind a run over this tree emits. `data` is not a bundle archetype, so `common.*` runs over the same tree: the four `.sql` files carry no configuration keys, and `dbt_project.yml`, `models/schema.yml` and `models/semantic/semantic_models.yml` are all claimed by this pack through `adopt_map.documents`, which is why no `config_key` appears below. A run that started minting `config_key/yaml/models.0.name` here would be B1-CR-74 regressing, and this set is what would catch it.",
+  "unlabeled_note": "`unlabeled: true` where the project documents nothing. Two models and one metric -- the ordinary state of a real warehouse, and the same bucket `ZFIELD_003` lands in.",
+  "identities": [
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "source.raw.orders", "note": "described in models/schema.yml"},
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "source.raw.customers", "unlabeled": true},
+
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "model.stg_orders", "note": "derives_from source.raw.orders"},
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "model.stg_customers", "unlabeled": true, "note": "derives_from source.raw.customers"},
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "model.orders_daily", "note": "derives_from both staging models"},
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "model.customer_revenue", "unlabeled": true, "note": "derives_from model.orders_daily"},
+
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "semantic_model.orders", "note": "derives_from model.orders_daily"},
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "metric.revenue", "note": "labelled 'Revenue'; derives_from semantic_model.orders"},
+    {"identity_kind": "metadata_component", "namespace": "dbt", "local_key": "metric.orders_per_day", "unlabeled": true, "note": "no label: -- unlabelled arriving from a third direction"}
+  ]
+}

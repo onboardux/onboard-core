@@ -1,0 +1,50 @@
+[project]
+name = "adopt-extractors-data"
+version = "0.3.0"
+description = "Data & analytics extractors -- dbt models, sources, semantic models and metrics, with lineage. Build 1 S1.6."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
+# An extractor emits `SurfaceFact`s and never writes, so this package depends on
+# `adopt-map` for the shapes and on nothing that can reach a store (`02` §7
+# obligation 2).
+#
+# **No new third-party distribution, and no XML library.** Every artefact this
+# pack reads is XML, and it is read through `adopt_map.xmlsafe` -- one seam,
+# which refuses a document declaring a DTD or an entity before a parser sees it
+# (B1-CR-76). Taking `defusedxml` instead would change the SBOM's locked-runtime
+# union and Build 0 CR-58's exact payload inventory for ~40 lines whose job is to
+# decline input, which is B1-CR-50's argument. `docs/pack/OPEN-DECISIONS.md`
+# OD-12 is therefore untouched by this sprint as well.
+#
+# **No platform SDK and no platform connection.** `01` §10 rules live packaged
+# -platform API connections out of this build entirely; the bundle *is* the
+# subject, which is also `02` §7 obligation 1.
+dependencies = [
+    "adopt-const",
+    "adopt-map",
+    "adopt-model",
+    # A dbt project is YAML and SQL text. Not a new dependency: `pyyaml` already
+    # carries a seven-field `licence-verifications.md` row (MIT, `in-binary`)
+    # and is declared by `adopt-map` and the `ai` pack for the same reason.
+    "pyyaml>=6,<7",
+]
+
+[project.urls]
+Homepage = "https://github.com/onboardux/onboard-core"
+Source = "https://github.com/onboardux/onboard-core"
+Issues = "https://github.com/onboardux/onboard-core/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_extractors_data"]
+
+# Apache-2.0 4(a) and 4(d): the licence and the NOTICE travel with every
+# redistribution.
+[tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"

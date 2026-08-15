@@ -27,15 +27,36 @@ __all__ = ["OWNED_DOCUMENT_KEYS", "declares_owned_document"]
 #: Top-level keys that hand a document to a pack extractor, and the extractor
 #: that claims each. Held as data with its claimant named, so a reader can tell
 #: *why* `common.config` skipped a file without reading two other packages.
-OWNED_DOCUMENT_KEYS: Final[tuple[tuple[str, str], ...]] = (
-    ("retrieval", "ai.retrieval"),
-    ("rag", "ai.retrieval"),
-    ("vectorstore", "ai.retrieval"),
-    ("vector_store", "ai.retrieval"),
-    ("evalset", "ai.evalsets"),
-    ("evals", "ai.evalsets"),
-    ("eval_set", "ai.evalsets"),
-    ("evaluation", "ai.evalsets"),
+#:
+#: **Each row is a tuple of keys that must *all* be present** (S1.6). S1.5's rows
+#: are single keys because `retrieval:` and `evalset:` say what a document is on
+#: their own. dbt's do not: `models:` is one of the most common top-level keys in
+#: YAML anywhere, and claiming it alone would make `common.config` skip an
+#: ordinary settings file in a web repository -- turning a double-count into a
+#: silent under-count, which is the worse of the two failures because nothing
+#: reports it. A dbt schema file always carries `version:` beside it, and a dbt
+#: project file always carries `profile:`, so the co-key is what makes the claim
+#: a statement rather than a guess.
+OWNED_DOCUMENT_KEYS: Final[tuple[tuple[tuple[str, ...], str], ...]] = (
+    (("retrieval",), "ai.retrieval"),
+    (("rag",), "ai.retrieval"),
+    (("vectorstore",), "ai.retrieval"),
+    (("vector_store",), "ai.retrieval"),
+    (("evalset",), "ai.evalsets"),
+    (("evals",), "ai.evalsets"),
+    (("eval_set",), "ai.evalsets"),
+    (("evaluation",), "ai.evalsets"),
+    # S1.6. `semantic_models:` and `metrics:` are unambiguous on their own; the
+    # dbt resource keys need their co-key. `dbt_project.yml` is claimed through
+    # `profile:`, which nothing else in a client tree declares at the top level.
+    (("semantic_models",), "data.semantic_model"),
+    (("metrics",), "data.semantic_model"),
+    (("models", "version"), "data.dbt"),
+    (("sources", "version"), "data.dbt"),
+    (("seeds", "version"), "data.dbt"),
+    (("snapshots", "version"), "data.dbt"),
+    (("exposures", "version"), "data.dbt"),
+    (("profile", "name"), "data.dbt"),
 )
 
 #: How much of a document is read to answer the question. A declaring key is at
@@ -55,7 +76,7 @@ def declares_owned_document(text: str) -> str | None:
         it deferred to rather than merely that it declined.
     """
     head = text[:_HEAD_CHARS]
-    for key, owner in OWNED_DOCUMENT_KEYS:
-        if re.search(rf"^{re.escape(key)}\s*:", head, re.MULTILINE):
+    for keys, owner in OWNED_DOCUMENT_KEYS:
+        if all(re.search(rf"^{re.escape(key)}\s*:", head, re.MULTILINE) for key in keys):
             return owner
     return None

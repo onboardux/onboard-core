@@ -27,7 +27,9 @@ from collections.abc import Callable, Sequence
 from typing import Final
 
 from adopt_const import MAP_FIRST_SCREEN_LIST_MAX, MAP_STAGE1_REQUIRED_FAMILIES
+from adopt_map.emit.labeling_queue import LABELING_QUEUE_NAME
 from adopt_map.report import RunResult
+from adopt_map.unlabeled import BUCKETED_KIND, unlabeled_components
 from adopt_obs import format_timestamp
 
 __all__ = ["FIRST_SCREEN", "SURFACE_MD_NAME", "render_markdown", "render_stage1"]
@@ -188,12 +190,51 @@ def _floating_pins(result: RunResult) -> list[str]:
     ]
 
 
+def _unlabeled(result: RunResult) -> list[str]:
+    """The packaged-platform honesty line -- `05` S1.6, design Appendix B.
+
+    *"On packaged ERP platforms the metadata is retrievable but meaningless alone
+    -- a field called `ZFIELD_003` tells you nothing -- so day-one competence is
+    genuinely worse until a human does a labelling pass. **The design says so out
+    loud**, because a confidently wrong answer in week one costs the account."*
+
+    An **unnumbered** callout, on B1-CR-75's precedent and for its reason: `02`
+    §9.1 numbers seven items and then the inventory, and numbering this one would
+    make the inventory's number depend on whether the client's system happens to
+    be a packaged platform.
+
+    Emitted only when the run found components and some are unlabelled. A tree
+    with none has nothing to be honest *about*, and a standing line saying so is
+    a line readers learn to skip -- the same argument the floating-pin callout
+    makes one block below.
+    """
+    entries = unlabeled_components(result)
+    if not entries:
+        return []
+    total = result.counts_by_kind().get(BUCKETED_KIND, 0)
+    return [
+        f"> **{len(entries)} of {total} platform components carry no human label in this export.**",
+        "> A packaged platform's metadata is retrievable but not self-explanatory:",
+        "> a field named `ZFIELD_003` is a real field and tells a reader nothing.",
+        "> Day-one competence here is genuinely worse until somebody who knows the",
+        "> system labels them. **Nothing in this tool will guess a label**; the list",
+        f"> is in `{LABELING_QUEUE_NAME}` for a human pass.",
+        ">",
+        *[
+            f"> - `{entry.uri}` — {entry.evidence()}"
+            for entry in entries[:MAP_FIRST_SCREEN_LIST_MAX]
+        ],
+        "",
+    ]
+
+
 def _first_screen(result: RunResult) -> list[str]:
     lines: list[str] = ["# System surface map", ""]
     for index, heading in enumerate(FIRST_SCREEN, start=1):
         lines.append(f"## {index}. {heading}")
         lines.extend(_RENDERERS[heading](result))
         lines.append("")
+    lines.extend(_unlabeled(result))
     lines.extend(_floating_pins(result))
     return lines
 

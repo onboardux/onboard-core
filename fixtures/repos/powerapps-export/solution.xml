@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml version="9.2.24073.0" SolutionPackageVersion="9.2">
+  <SolutionManifest>
+    <UniqueName>OrderIntake</UniqueName>
+    <LocalizedNames>
+      <LocalizedName description="Order Intake" languagecode="1033" />
+    </LocalizedNames>
+    <Version>1.2.0.3</Version>
+    <Managed>0</Managed>
+  </SolutionManifest>
+</ImportExportXml>

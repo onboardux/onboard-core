@@ -73,7 +73,27 @@ _IDENTITY_KINDS: Final[frozenset[str]] = frozenset(get_args(IdentityKind))
 #: labeled outside-VCS identities) against a labeled set derived from the
 #: fixture's specification. Had it come in below, this line would still read
 #: `{"common", "web"}` and the sprint would have said so.
-DEFAULT_ENABLED_PACKS: Final[frozenset[str]] = frozenset({"common", "web", "ai"})
+#:
+#: **S1.6's three flip on the same kind of measurement** (`01` §9: *"coverage
+#: floor met per pack"*, which B1-CR-62 makes **labeled-set recall** for this
+#: build, against `MAP_PLUGIN_COVERAGE_FLOOR`):
+#:
+#: * `platform` -- recall **1.000** (17 of 17), precision 1.000
+#: * `lowcode`  -- recall **1.000** (12 of 12), precision 1.000
+#: * `data`     -- recall **1.000** (9 of 9),  precision 1.000
+#:
+#: **What is *not* being claimed here, and it matters:** `01` §6 M2's own
+#: predicate is `facts[method in {grammar, reflection}] / facts[*]`, and on the
+#: `data` pack that reads **0.000** -- a dbt project is YAML and SQL a person
+#: wrote, so every fact is `declared`. M2 is a measure of the *evidence rung*,
+#: not of determinism: this pack makes zero model calls and runs zero
+#: heuristics, and firing ADR-0.1's *"collapse toward deterministic plugins"*
+#: trigger on it would be acting on a number about something else. Recorded as
+#: B1-CR-78 and left for S1.8, which is where `MAP_PLUGIN_COVERAGE_FLOOR` is
+#: ratified -- not retuned here to make a flag flip.
+DEFAULT_ENABLED_PACKS: Final[frozenset[str]] = frozenset(
+    {"common", "web", "ai", "platform", "lowcode", "data"}
+)
 
 #: What an extractor may import. **An allowlist, not a deny-list**, because a
 #: deny-list is a list of the ways somebody already thought of: `socket` is

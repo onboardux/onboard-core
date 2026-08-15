@@ -16,6 +16,9 @@ members = [
     "adopt-export",
     "adopt-extractors-ai",
     "adopt-extractors-common",
+    "adopt-extractors-data",
+    "adopt-extractors-lowcode",
+    "adopt-extractors-platform",
     "adopt-extractors-web",
     "adopt-freshness",
     "adopt-identity",
@@ -211,6 +214,59 @@ requires-dist = [
     { name = "adopt-map", editable = "packages/adopt-map" },
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "pyyaml", specifier = ">=6,<7" },
+]
+
+[[package]]
+name = "adopt-extractors-data"
+version = "0.3.0"
+source = { editable = "packages/adopt-extractors-data" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-map" },
+    { name = "adopt-model" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-map", editable = "packages/adopt-map" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "pyyaml", specifier = ">=6,<7" },
+]
+
+[[package]]
+name = "adopt-extractors-lowcode"
+version = "0.3.0"
+source = { editable = "packages/adopt-extractors-lowcode" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-map" },
+    { name = "adopt-model" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-map", editable = "packages/adopt-map" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+]
+
+[[package]]
+name = "adopt-extractors-platform"
+version = "0.3.0"
+source = { editable = "packages/adopt-extractors-platform" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-map" },
+    { name = "adopt-model" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-map", editable = "packages/adopt-map" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
 ]
 
 [[package]]

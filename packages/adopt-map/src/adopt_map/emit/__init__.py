@@ -1,4 +1,4 @@
-"""The four run artifacts -- `02` §9, `03` §5.9.
+"""The run artifacts -- `02` §9, `03` §5.9.
 
 `surface.md` for a human, `surface.json` for review and the labeled-corpus
 tooling, and a Mermaid or D2 diagram. **None of them is an interchange
@@ -12,13 +12,23 @@ testable without a database.
 
 from adopt_map.emit.d2 import render_d2
 from adopt_map.emit.json_report import SURFACE_JSON_NAME, render_surface_json
+from adopt_map.emit.labeling_queue import (
+    LABELING_QUEUE_NAME,
+    render_labeling_queue,
+)
+from adopt_map.emit.labeling_queue import (
+    wanted as labeling_queue_wanted,
+)
 from adopt_map.emit.markdown import SURFACE_MD_NAME, render_markdown, render_stage1
 from adopt_map.emit.mermaid import render_mermaid
 
 __all__ = [
+    "LABELING_QUEUE_NAME",
     "SURFACE_JSON_NAME",
     "SURFACE_MD_NAME",
+    "labeling_queue_wanted",
     "render_d2",
+    "render_labeling_queue",
     "render_markdown",
     "render_mermaid",
     "render_stage1",

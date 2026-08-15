@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImportExportXml version="9.2.24073.0">
+  <Entities>
+    <Entity>
+      <Name>new_order</Name>
+      <LocalizedNames>
+        <LocalizedName description="Order" languagecode="1033" />
+      </LocalizedNames>
+      <FormXml>
+        <forms type="main">
+          <systemform>
+            <Name>Main Order Form</Name>
+            <type>main</type>
+          </systemform>
+          <systemform>
+            <Name>ZFORM_017</Name>
+            <type>quick</type>
+          </systemform>
+        </forms>
+      </FormXml>
+    </Entity>
+    <Entity>
+      <Name>new_orderline</Name>
+      <FormXml>
+        <forms type="main">
+          <systemform>
+            <Name>Main Order Line Form</Name>
+            <type>main</type>
+          </systemform>
+        </forms>
+      </FormXml>
+    </Entity>
+  </Entities>
+  <Workflows>
+    <Workflow Name="CreateOrderApproval" WorkflowId="{6f1a1a2b-1111-4c9a-9d0e-2f3a4b5c6d70}" Category="5">
+      <LocalizedNames>
+        <LocalizedName description="Create order approval" languagecode="1033" />
+      </LocalizedNames>
+    </Workflow>
+    <Workflow Name="ZFLOW_042" WorkflowId="{6f1a1a2b-2222-4c9a-9d0e-2f3a4b5c6d71}" Category="5" />
+    <Workflow Name="NotifyWarehouse" WorkflowId="{6f1a1a2b-3333-4c9a-9d0e-2f3a4b5c6d72}" Category="0">
+      <LocalizedNames>
+        <LocalizedName description="Notify warehouse on approval" languagecode="1033" />
+      </LocalizedNames>
+    </Workflow>
+  </Workflows>
+  <CanvasApps>
+    <CanvasApp>
+      <Name>OrderIntakeApp</Name>
+      <LocalizedNames>
+        <LocalizedName description="Order Intake App" languagecode="1033" />
+      </LocalizedNames>
+    </CanvasApp>
+  </CanvasApps>
+  <environmentvariabledefinitions>
+    <!-- Two credential canaries for the `01` N9 planted-secret suite. A Power
+         Platform solution really does ship environment-variable *definitions*
+         with default values, which is the most plausible place a credential
+         travels in an export. Nothing in this build reads them today; the
+         canaries are here so that the day something does, the property suite
+         says so rather than a client's key reaching an artefact quietly. -->
+    <environmentvariabledefinition schemaname="new_OrdersDbPassword">
+      <displayname>Orders database password</displayname>
+      <type>100000000</type>
+      <defaultvalue>CANARY-do-not-emit-222222</defaultvalue>
+    </environmentvariabledefinition>
+    <environmentvariabledefinition schemaname="new_MailerApiKey">
+      <displayname>Mailer API key</displayname>
+      <type>100000000</type>
+      <defaultvalue>sk-live-CANARY-do-not-emit-333333</defaultvalue>
+    </environmentvariabledefinition>
+  </environmentvariabledefinitions>
+  <connectionreferences>
+    <connectionreference connectionreferencelogicalname="new_sharedsql_ordersdb">
+      <connectionreferencedisplayname>Orders database</connectionreferencedisplayname>
+      <connectorid>/providers/Microsoft.PowerApps/apis/shared_sql</connectorid>
+    </connectionreference>
+    <connectionreference connectionreferencelogicalname="new_sharedoffice365_mailer">
+      <connectionreferencedisplayname>Outbound mail</connectionreferencedisplayname>
+      <connectorid>/providers/Microsoft.PowerApps/apis/shared_office365</connectorid>
+    </connectionreference>
+  </connectionreferences>
+</ImportExportXml>

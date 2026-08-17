@@ -13,12 +13,32 @@ it, a removed or retyped column is a rejected pull request.
 
 ## [Unreleased]
 
-Nothing yet. The first release will be `0.3.0`.
+### Fixed
 
-## [0.3.0] — not yet released
+- **`adopt-store` and `adopt-cli` each imported a first-party module they did not
+  declare**, so `pip install adopt-store` alone raised `ModuleNotFoundError` on
+  its first facade import. `adopt-store` now declares `adopt-identity` and
+  `adopt-cli` declares `adopt-model`. **This affects the released `0.3.0`** and
+  is fixed for the next release; `pip install adopt-cli` was never affected.
+
+### Added
+
+- **`first-party-deps` CI gate.** Nothing could observe the defect above: every
+  test runs under `uv sync --all-packages`, where all fifteen distributions are
+  present whatever any one of them declares, and `packaged-artifact` installs
+  `adopt-cli`, which supplied the missing name transitively. The gate judges each
+  manifest against the imports in its own `src/`, discovers the
+  module-to-distribution map rather than listing it, and refuses to pass a run
+  that discovered nothing.
+
+## [0.3.0] — 2026-08-16
 
 The first published release. Everything below is new; there is no upgrade path
 from an earlier version because none was published.
+
+**Known issue.** `adopt-store` and `adopt-cli` are missing one dependency
+declaration each — see *Unreleased → Fixed*. Installing either distribution on
+its own can raise `ModuleNotFoundError`; `pip install adopt-cli` is unaffected.
 
 ### Added
 

@@ -8,12 +8,17 @@ The CLI is offline by default and has no telemetry switch. Network access is an
 explicit per-invocation choice, and client content is structurally excluded from
 logs.
 
-> **Status: not yet released.** The implementation and release machinery are
-> complete enough for strict public validation, but no `0.3.0` tag, GitHub
-> Release or PyPI release exists. **Do not install from PyPI yet** — the
-> distribution names are reserved and any version below `0.3.0` there is an
-> empty placeholder, not this software. Do not treat a workflow artifact as a
-> release either. Install from source until the first signed release lands.
+> **Status: `0.3.0` is released** — fifteen distributions on PyPI, plus three
+> signed single-file binaries, a CycloneDX SBOM and SLSA provenance on the
+> [GitHub Release](https://github.com/onboardux/onboard-core/releases/tag/v0.3.0).
+> A workflow artifact is still not a release; only the tagged, signed bundle is.
+>
+> **Known issue in `0.3.0`.** `adopt-store` imports `adopt_identity` and
+> `adopt-cli` imports `adopt_model` without declaring them, so installing one of
+> those distributions **on its own** raises `ModuleNotFoundError` on first use.
+> `pip install adopt-cli` — the supported path below — is **unaffected**, because
+> it declares `adopt-identity` itself and reaches `adopt-model` transitively.
+> Fixed on `main`; see [CHANGELOG.md](CHANGELOG.md).
 
 ## What is included
 
@@ -32,19 +37,22 @@ policy validation, adapter checks, `doctor`, and release provenance reporting.
 
 ## Install
 
-**Once `0.3.0` is released** — one package pulls in the other fourteen:
+One package pulls in the thirteen the CLI needs:
 
 ```sh
 pip install adopt-cli          # or: uv tool install adopt-cli
 adopt version --json
 ```
 
+That is fourteen of the fifteen distributions. `adopt-workflow` is a library the
+CLI does not depend on, so it is published but not installed by the line above.
+
 Or download a single-file binary — `adopt-linux-x86_64`, `adopt-macos-arm64` or
 `adopt-windows-x86_64.exe` — from the GitHub Release. It needs no Python.
 **Verify it before you run it**; [SECURITY.md](SECURITY.md) has the exact
 `cosign` and attestation commands.
 
-**Until then**, run from a checkout — Python 3.12 and
+To run from a checkout instead — Python 3.12 and
 [uv](https://docs.astral.sh/uv/):
 
 ```sh

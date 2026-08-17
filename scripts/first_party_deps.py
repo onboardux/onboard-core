@@ -53,8 +53,12 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 #: gate. These are floors on *discovery*, not targets -- raising them to today's
 #: measurement would turn a floor into a ratchet, which `03` §2.3 forbids for
 #: exactly the reason it forbids coverage targets.
-MIN_DISTRIBUTIONS: Final[int] = 10
-MIN_EDGES: Final[int] = 10
+#: The shared value with `SCHEMA_CREATE_P95_SECONDS` is a coincidence -- that is
+#: a p95 in seconds, these are counts of things discovered -- so they are waived
+#: rather than imported. Importing a performance budget to floor a discovery
+#: count would couple two unrelated numbers and make retuning one move the other.
+MIN_DISTRIBUTIONS: Final[int] = 10  # const-sync: ok -- a discovery floor, not a tunable
+MIN_EDGES: Final[int] = 10  # const-sync: ok -- a discovery floor, not a tunable
 
 #: A first-party module is one this workspace publishes. The prefix is how a
 #: candidate is *recognised*; membership is decided by the discovered map, so an

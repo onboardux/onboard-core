@@ -308,17 +308,35 @@ jobs:
 
       - name: Pack
         shell: bash
+        env:
+          FIRST_PARTY_DISTRIBUTIONS: ${{ needs.build.outputs.distributions }}
         run: |
           set -euo pipefail
           MAIN="$("$PY" -c 'import importlib.util as u; print(u.find_spec("adopt_cli.main").origin)')"
           echo "packing $MAIN"
+          # Metadata for EVERY first-party distribution, not just `adopt-cli`.
+          # `importlib.metadata` is how three separate modules resolve their own
+          # version, and they do not all ask about the same distribution:
+          # `version --json` asks for `adopt-cli`, and `adopt_store.writer_identity`
+          # -- the value stamped into `schema_meta.written_by` and into every
+          # exported bundle's manifest -- asks for `adopt-store`. Packing only
+          # `adopt-cli` left the second unresolvable, so the 0.3.0 binary wrote
+          # `adopt-core/0.0.0+unknown` into a contract-governed field while its
+          # own `version --json` correctly said `0.3.0`. The fallback carries a
+          # `# pragma: no cover -- source checkout only` comment, which is exactly
+          # the assumption that was false in the artefact. Enumerated from the
+          # build job's own list so a new distribution cannot be forgotten.
+          metadata_flags=()
+          for distribution in $FIRST_PARTY_DISTRIBUTIONS; do
+            metadata_flags+=("--include-distribution-metadata=${distribution}")
+          done
           "$PY" -m nuitka \
             --onefile \
             --assume-yes-for-downloads \
             --include-package-data=adopt_agent \
             --include-package-data=adopt_detect \
             --include-package-data=adopt_schema \
-            --include-distribution-metadata=adopt-cli \
+            "${metadata_flags[@]}" \
             --output-dir=packed \
             --output-filename=${{ matrix.artefact }} \
             "$MAIN"
@@ -404,6 +422,40 @@ jobs:
           "$BIN" store migrate --store "$work/s.db" --json
           "$BIN" store info --store "$work/s.db" --json \
             | grep -q '"schema_version": *3'
+
+      # The binary must stamp its own version into what it WRITES, not only
+      # report it. `version --json` reads `adopt-cli`'s metadata; the provenance
+      # in `schema_meta.written_by` and in every exported bundle manifest reads
+      # `adopt-store`'s. The 0.3.0 binary resolved the first and not the second,
+      # so it reported `0.3.0` and wrote `adopt-core/0.0.0+unknown` into a field
+      # `02` §1.6 makes a contract for third-party integrators. Every smoke test
+      # here asked the binary what it was; none read back what it had written.
+      - name: What it writes carries the version it reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$PWD/packed/${{ matrix.artefact }}"
+          work="$(mktemp -d)"
+          "$BIN" store migrate --store "$work/w.db" --json > /dev/null
+          ADOPT_STORE_PATH="$work/w.db" "$BIN" export "$work/bundle" --json > /dev/null
+          VERSION="${{ needs.build.outputs.version }}" "$PY" - "$work/bundle/manifest.json" <<'PY'
+          import json
+          import os
+          import sys
+
+          written_by = json.load(open(sys.argv[1], encoding="utf-8"))["written_by"]
+          expected = f"adopt-core/{os.environ['VERSION']}"
+          if written_by == expected:
+              print(f"written_by: {written_by}")
+              sys.exit(0)
+          print(
+              f"::error::the binary writes provenance {written_by!r}, expected {expected!r}. "
+              "A distribution whose metadata the binary does not carry cannot resolve its "
+              "own version, and the fallback is silent -- check that every first-party "
+              "distribution is passed to --include-distribution-metadata."
+          )
+          sys.exit(1)
+          PY
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

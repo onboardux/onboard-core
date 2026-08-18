@@ -23,6 +23,7 @@ from adopt_cli.commands import boundary as boundary_command
 from adopt_cli.commands import coverage as coverage_commands
 from adopt_cli.commands import detect as detect_command
 from adopt_cli.commands import doctor as doctor_command
+from adopt_cli.commands import extractors as extractors_commands
 from adopt_cli.commands import freshness as freshness_commands
 from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import init as init_command
@@ -55,6 +56,8 @@ app.add_typer(agent_commands.app)
 # A group rather than three bare commands, because §8 names them that way and
 # the CLI surface is the contract.
 app.add_typer(surface_commands.app)
+# S1.7's review queue -- `02` §8, `04` §6.
+app.add_typer(extractors_commands.app)
 
 # `init`, `detect` and `boundary` are bare commands, not groups: contracts §14
 # names them `adopt init [path]`, `adopt detect [path]` and `adopt boundary`.

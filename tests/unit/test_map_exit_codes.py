@@ -11,6 +11,8 @@ it is T4 glue, swept by the six journeys in S1.8. What is tested here is the
 table, which is T3: a contract with exactly one home.
 """
 
+from pathlib import Path
+
 import pytest
 
 from adopt_obs import ERROR_CATEGORIES, ErrorCode, MapExitCode, exit_code_for, map_exit_code_for
@@ -115,3 +117,39 @@ def test_the_three_partial_success_codes_are_distinct_from_failure() -> None:
     assert usable.isdisjoint(refusing)
     assert usable == {0, 3, 6}
     assert refusing == {2, 4, 5}
+
+
+def test_a_build_0_code_from_the_glue_pass_becomes_a_gap_and_not_a_crash() -> None:
+    """B1-CR-88, the regression test. `04` §7: *"a missing agent pass is never an error"*.
+
+    `map_exit_code_for` raises `KeyError` for a non-`MAP_*` code **by design** --
+    the test above asserts exactly that, because a plausible default would hide a
+    caller using the wrong table. S1.7 then added the first path in `adopt map`
+    that can raise a Build 0 code: `load_skill` raises `MANIFEST_INVALID` when the
+    prompts directory is not where the run started, and the seam raises
+    `AGENT_ADAPTER_UNKNOWN` when no adapter is configured. Both reached `_fail`,
+    both hit `map_exit_code_for`, and an operator got a traceback instead of the
+    complete deterministic map sitting on disk beside it.
+
+    **Found by running the command, not by a test**, because every earlier path in
+    `adopt map` raises only `MAP_*` codes -- so no fixture could have produced the
+    input. What this asserts is the repair's shape: those codes are outside the
+    map table, and `_glue_pass` is what must therefore absorb them.
+    """
+    from adopt_cli.commands import map_command as module
+
+    for code in (
+        ErrorCode.MANIFEST_INVALID,
+        ErrorCode.AGENT_ADAPTER_UNKNOWN,
+        ErrorCode.AGENT_OUTPUT_SCHEMA,
+    ):
+        with pytest.raises(KeyError):
+            map_exit_code_for(code)
+
+    source = Path(module.__file__ or "").read_text(encoding="utf-8")
+    assert "agent_pass_unavailable" in source, (
+        "the glue pass must absorb a Build 0 code into a recorded gap. `04` §7's "
+        "degrade ladder ends 'skip the pass and record a gap', and the code that "
+        "re-raised it turned a complete map into a traceback."
+    )
+    assert '"status": "unavailable"' in source

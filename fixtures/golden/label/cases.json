@@ -1,0 +1,178 @@
+{
+  "cases": [
+    {
+      "api_name": "ZFIELD_003",
+      "context": {
+        "data_type": "currency",
+        "neighbours": [
+          "ZCREDIT_TERMS",
+          "ZCREDIT_RATING"
+        ],
+        "object": "Customer"
+      },
+      "expect_empty": false,
+      "truth": "Credit Limit"
+    },
+    {
+      "api_name": "CUSTOM_17",
+      "context": {
+        "data_type": "picklist",
+        "object": "Contact",
+        "picklist": [
+          "EN",
+          "DE",
+          "FR"
+        ]
+      },
+      "expect_empty": false,
+      "truth": "Preferred Language"
+    },
+    {
+      "api_name": "ZF_A1",
+      "context": {
+        "data_type": "daterange",
+        "neighbours": [
+          "ZF_SHIP_FROM"
+        ],
+        "object": "Order"
+      },
+      "expect_empty": false,
+      "truth": "Delivery Window"
+    },
+    {
+      "api_name": "UDF_22",
+      "context": {
+        "comment": "months of warranty",
+        "data_type": "integer",
+        "object": "Asset"
+      },
+      "expect_empty": false,
+      "truth": "Warranty Months"
+    },
+    {
+      "api_name": "XFLD_9",
+      "context": {
+        "data_type": "boolean",
+        "neighbours": [
+          "XTAX_CODE"
+        ],
+        "object": "Account"
+      },
+      "expect_empty": false,
+      "truth": "Tax Exempt"
+    },
+    {
+      "api_name": "ZZ_PO",
+      "context": {
+        "data_type": "text",
+        "label_in_export": "PO Nr.",
+        "object": "Invoice"
+      },
+      "expect_empty": false,
+      "truth": "Purchase Order Number"
+    },
+    {
+      "api_name": "CF_44",
+      "context": {
+        "data_type": "date",
+        "neighbours": [
+          "CF_45_TERM"
+        ],
+        "object": "Subscription"
+      },
+      "expect_empty": false,
+      "truth": "Renewal Date"
+    },
+    {
+      "api_name": "ZSEG",
+      "context": {
+        "data_type": "picklist",
+        "object": "Account",
+        "picklist": [
+          "SMB",
+          "MID",
+          "ENT"
+        ]
+      },
+      "expect_empty": false,
+      "truth": "Market Segment"
+    },
+    {
+      "api_name": "UD_7",
+      "context": {
+        "data_type": "picklist",
+        "object": "Contract",
+        "picklist": [
+          "BRONZE",
+          "SILVER",
+          "GOLD"
+        ]
+      },
+      "expect_empty": false,
+      "truth": "Service Level"
+    },
+    {
+      "api_name": "ZBILL_C",
+      "context": {
+        "data_type": "picklist",
+        "object": "Subscription",
+        "picklist": [
+          "MONTHLY",
+          "ANNUAL"
+        ]
+      },
+      "expect_empty": false,
+      "truth": "Billing Cycle"
+    },
+    {
+      "api_name": "ZFIELD_101",
+      "context": {
+        "data_type": "text",
+        "neighbours": [],
+        "object": null
+      },
+      "expect_empty": true,
+      "truth": null
+    },
+    {
+      "api_name": "CUSTOM_88",
+      "context": {
+        "data_type": "text",
+        "neighbours": [],
+        "object": null
+      },
+      "expect_empty": true,
+      "truth": null
+    },
+    {
+      "api_name": "ZZ_X2",
+      "context": {
+        "data_type": "text",
+        "neighbours": [],
+        "object": null
+      },
+      "expect_empty": true,
+      "truth": null
+    },
+    {
+      "api_name": "UDF_99",
+      "context": {
+        "data_type": "text",
+        "neighbours": [],
+        "object": null
+      },
+      "expect_empty": true,
+      "truth": null
+    },
+    {
+      "api_name": "XFLD_0",
+      "context": {
+        "data_type": "text",
+        "neighbours": [],
+        "object": null
+      },
+      "expect_empty": true,
+      "truth": null
+    }
+  ]
+}

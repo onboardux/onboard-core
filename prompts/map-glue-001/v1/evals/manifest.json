@@ -1,0 +1,12 @@
+{
+  "golden_set": "fixtures/golden/glue/",
+  "note": "Ten tasks on repository shapes outside the shipped packs (`04` \u00a78).",
+  "suites": [
+    "E1",
+    "E2",
+    "E3",
+    "E4",
+    "E5",
+    "E9"
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "golden_set": null,
+  "note": "No E-suite gates triage directly. `04` \u00a78's nine evals grade the glue, label and prose positions; triage's output is an input to the glue position and is graded there, at E2 and E3. Stated rather than left blank, because an empty `evals/` and an unmeasured prompt look identical.",
+  "suites": []
+}

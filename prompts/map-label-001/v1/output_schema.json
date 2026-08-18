@@ -1,0 +1,41 @@
+{
+  "$defs": {
+    "LabelCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "evidence": {
+          "maxLength": 300,
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 80,
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "confidence",
+        "evidence"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "fields": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/LabelCandidate"
+        },
+        "type": "array"
+      },
+      "type": "object"
+    }
+  },
+  "type": "object"
+}

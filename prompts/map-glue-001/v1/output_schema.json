@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "ExtractorManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "archetypes": {
+          "items": {
+            "enum": [
+              "web",
+              "platform",
+              "lowcode",
+              "data",
+              "ai"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "determinism": {
+          "const": "strict",
+          "default": "strict",
+          "type": "string"
+        },
+        "fallback": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "heavy": {
+          "default": false,
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+          "type": "string"
+        },
+        "kinds": {
+          "items": {
+            "enum": [
+              "endpoint",
+              "db_field",
+              "state_transition",
+              "symbol",
+              "metadata_component",
+              "prompt",
+              "tool_schema",
+              "model_pin",
+              "retrieval_config",
+              "flag",
+              "job",
+              "config_key",
+              "ui_component"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "method": {
+          "enum": [
+            "grammar",
+            "reflection",
+            "declared",
+            "ctags",
+            "regex",
+            "agent"
+          ],
+          "type": "string"
+        },
+        "pack": {
+          "enum": [
+            "common",
+            "web",
+            "ai",
+            "data",
+            "lowcode",
+            "platform"
+          ],
+          "type": "string"
+        },
+        "requires_capability": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "pack",
+        "kinds",
+        "method"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "decline_reason": {
+      "anyOf": [
+        {
+          "maxLength": 300,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "extractor_id": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "manifest": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExtractorManifest"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "module_source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "outcome": {
+      "enum": [
+        "authored",
+        "declined"
+      ],
+      "type": "string"
+    },
+    "test_source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "outcome"
+  ],
+  "type": "object"
+}

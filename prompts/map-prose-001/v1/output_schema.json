@@ -1,0 +1,13 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "maxLength": 400,
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary"
+  ],
+  "type": "object"
+}

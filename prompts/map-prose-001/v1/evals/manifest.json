@@ -1,0 +1,7 @@
+{
+  "golden_set": "fixtures/golden/prose/",
+  "note": "Twenty cases; E8's judge is pinned by version (`04` \u00a78).",
+  "suites": [
+    "E8"
+  ]
+}

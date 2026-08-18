@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "TriageItem": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "type": "string"
+        },
+        "identity_kinds": {
+          "items": {
+            "enum": [
+              "endpoint",
+              "db_field",
+              "state_transition",
+              "symbol",
+              "metadata_component",
+              "prompt",
+              "tool_schema",
+              "model_pin",
+              "retrieval_config",
+              "flag",
+              "job",
+              "config_key",
+              "ui_component"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rationale": {
+          "maxLength": 400,
+          "type": "string"
+        },
+        "statically_recoverable": {
+          "type": "boolean"
+        },
+        "value_rank": {
+          "maximum": 10,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "family",
+        "identity_kinds",
+        "rationale",
+        "value_rank",
+        "statically_recoverable"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "families": {
+      "items": {
+        "$ref": "#/$defs/TriageItem"
+      },
+      "maxItems": 10,
+      "type": "array"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "maxLength": 400,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "families"
+  ],
+  "type": "object"
+}

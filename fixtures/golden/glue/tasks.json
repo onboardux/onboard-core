@@ -1,0 +1,264 @@
+{
+  "tasks": [
+    {
+      "expect_outcome": "authored",
+      "family_description": "routes declared in rails source",
+      "id": "rails.routes",
+      "identity_kinds": [
+        "endpoint"
+      ],
+      "labeled_triples": [
+        [
+          "endpoint",
+          "rails",
+          "v1.refunds#create"
+        ],
+        [
+          "endpoint",
+          "rails",
+          "v1.refunds#show"
+        ],
+        [
+          "endpoint",
+          "rails",
+          "v1.orders#cancel"
+        ],
+        [
+          "endpoint",
+          "rails",
+          "v1.health#show"
+        ]
+      ],
+      "shape": "rails"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "jobs declared in rails source",
+      "id": "rails.jobs",
+      "identity_kinds": [
+        "job"
+      ],
+      "labeled_triples": [
+        [
+          "job",
+          "rails",
+          "SettlementJob"
+        ]
+      ],
+      "shape": "rails"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "requestmapping declared in spring source",
+      "id": "spring.requestmapping",
+      "identity_kinds": [
+        "endpoint"
+      ],
+      "labeled_triples": [
+        [
+          "endpoint",
+          "spring",
+          "GET /v2/accounts/{id}"
+        ],
+        [
+          "endpoint",
+          "spring",
+          "POST /v2/accounts"
+        ]
+      ],
+      "shape": "spring"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "scheduled declared in spring source",
+      "id": "spring.scheduled",
+      "identity_kinds": [
+        "job"
+      ],
+      "labeled_triples": [
+        [
+          "job",
+          "spring",
+          "ReconcileTask.run"
+        ]
+      ],
+      "shape": "spring"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "variables declared in terraform source",
+      "id": "terraform.variables",
+      "identity_kinds": [
+        "config_key"
+      ],
+      "labeled_triples": [
+        [
+          "config_key",
+          "terraform",
+          "region"
+        ],
+        [
+          "config_key",
+          "terraform",
+          "instance_type"
+        ],
+        [
+          "config_key",
+          "terraform",
+          "retention_days"
+        ]
+      ],
+      "shape": "terraform"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "outputs declared in terraform source",
+      "id": "terraform.outputs",
+      "identity_kinds": [
+        "config_key"
+      ],
+      "labeled_triples": [
+        [
+          "config_key",
+          "terraform",
+          "cluster_endpoint"
+        ],
+        [
+          "config_key",
+          "terraform",
+          "bucket_arn"
+        ]
+      ],
+      "shape": "terraform"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "routes declared in hono-ts source",
+      "id": "hono-ts.routes",
+      "identity_kinds": [
+        "endpoint"
+      ],
+      "labeled_triples": [
+        [
+          "endpoint",
+          "hono-ts",
+          "GET /api/session"
+        ],
+        [
+          "endpoint",
+          "hono-ts",
+          "POST /api/session"
+        ]
+      ],
+      "shape": "hono-ts"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "env-bindings declared in hono-ts source",
+      "id": "hono-ts.env-bindings",
+      "identity_kinds": [
+        "config_key"
+      ],
+      "labeled_triples": [
+        [
+          "config_key",
+          "hono-ts",
+          "SESSION_KV"
+        ],
+        [
+          "config_key",
+          "hono-ts",
+          "RATE_LIMIT"
+        ]
+      ],
+      "shape": "hono-ts"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "front-controller declared in legacy-php source",
+      "id": "legacy-php.front-controller",
+      "identity_kinds": [
+        "endpoint"
+      ],
+      "labeled_triples": [
+        [
+          "endpoint",
+          "legacy-php",
+          "/index.php?p=invoice"
+        ],
+        [
+          "endpoint",
+          "legacy-php",
+          "/index.php?p=report"
+        ]
+      ],
+      "shape": "legacy-php"
+    },
+    {
+      "expect_outcome": "authored",
+      "family_description": "cron declared in legacy-php source",
+      "id": "legacy-php.cron",
+      "identity_kinds": [
+        "job"
+      ],
+      "labeled_triples": [
+        [
+          "job",
+          "legacy-php",
+          "nightly_invoice_sweep"
+        ]
+      ],
+      "shape": "legacy-php"
+    },
+    {
+      "expect_outcome": "declined",
+      "family_description": "runtime-feature-flags: the flag set is whatever the Flipper backend holds at runtime",
+      "id": "rails.runtime-feature-flags",
+      "identity_kinds": [
+        "config_key"
+      ],
+      "labeled_triples": [],
+      "shape": "rails"
+    },
+    {
+      "expect_outcome": "declined",
+      "family_description": "profile-resolved-beans: which bean wins depends on the profile active in the JVM",
+      "id": "spring.profile-resolved-beans",
+      "identity_kinds": [
+        "config_key"
+      ],
+      "labeled_triples": [],
+      "shape": "spring"
+    },
+    {
+      "expect_outcome": "declined",
+      "family_description": "applied-state: the applied resource set lives in remote state, not in source",
+      "id": "terraform.applied-state",
+      "identity_kinds": [
+        "config_key"
+      ],
+      "labeled_triples": [],
+      "shape": "terraform"
+    },
+    {
+      "expect_outcome": "declined",
+      "family_description": "kv-contents: the KV namespace's keys exist only in Cloudflare's store",
+      "id": "hono-ts.kv-contents",
+      "identity_kinds": [
+        "config_key"
+      ],
+      "labeled_triples": [],
+      "shape": "hono-ts"
+    },
+    {
+      "expect_outcome": "declined",
+      "family_description": "eval-built-routes: routes are assembled by eval() over a database column",
+      "id": "legacy-php.eval-built-routes",
+      "identity_kinds": [
+        "config_key"
+      ],
+      "labeled_triples": [],
+      "shape": "legacy-php"
+    }
+  ]
+}

@@ -51,6 +51,7 @@ from adopt_model._enums import Archetype
 from adopt_obs import (
     AdoptError,
     ErrorCode,
+    MapExitCode,
     get_logger,
     map_exit_code_for,
     new_run_id,
@@ -105,6 +106,13 @@ DbUrlOption = Annotated[
 DryRunOption = Annotated[
     bool, typer.Option("--dry-run", help="Resolve and extract, but write nothing.")
 ]
+AgentOption = Annotated[
+    bool,
+    typer.Option(
+        "--agent/--no-agent",
+        help="Run the agentic glue pass after the deterministic one. Off by default.",
+    ),
+]
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 
 
@@ -149,6 +157,7 @@ def map_command(
     export_bundle: ExportBundleOption = None,
     db_url: DbUrlOption = None,
     dry_run: DryRunOption = False,
+    agent: AgentOption = False,
     as_json: JsonOption = False,
 ) -> None:
     """Map a system's surface into canonical identity URIs and append-only revisions."""
@@ -281,13 +290,158 @@ def map_command(
             export_bundle=export_bundle,
         )
         log.info("map_command_completed", facts=result.total_facts(), exit_code=result.exit_code)
-        emit(_result_payload(result), as_json=as_json, title="adopt map")
-        raise typer.Exit(result.exit_code)
+        payload = _result_payload(result)
+        # **The glue pass runs after the transaction, and that ordering is `04`
+        # §2's G-2 plus `02` §8's exit-6 guarantee together.** By the time a model
+        # is called the deterministic map is written and committed, so budget
+        # exhaustion can abort the pass without costing the run anything -- and a
+        # pass that never runs is exit 0 with the map already on disk.
+        agent_payload = _glue_pass(result, enabled=agent, root=path, log=log)
+        payload["agent"] = agent_payload
+        emit(payload, as_json=as_json, title="adopt map")
+        # **The pass may raise the run's exit code, never lower it.** `02` §8 gives
+        # exit 6 to an exhausted glue budget and guarantees "deterministic
+        # artifacts and transaction intact"; a run already at exit 3 keeps the
+        # larger claim about how little it managed to do.
+        raise typer.Exit(max(result.exit_code, int(agent_payload.get("exit_code", 0))))
     except AdoptError as error:
         _fail(error, as_json=as_json)
     finally:
         if handle is not None:
             handle.close()
+
+
+def _glue_pass(
+    result: RunResult,
+    *,
+    enabled: bool,
+    root: Path,
+    log: Any,
+) -> dict[str, Any]:
+    """Run `04` §2's gate and, if it opens, `04` §6's pipeline. Never raises past exit 6.
+
+    **A run without `--agent` makes zero model calls, and this is where that is
+    true rather than intended**: the gate is evaluated with `agent_flag=False`,
+    which refuses at G-1 before a runner is constructed, before a prompt is loaded
+    and before `agent.adapter` is read. `05` S1.7's last validation line asks for
+    deterministic output byte-identical with and without `--agent`; nothing on this
+    path touches `result`.
+    """
+    from adopt_map.agent_gate import AgentBudget, GateInputs
+    from adopt_map.agent_gate import evaluate as evaluate_gate
+    from adopt_map.quarantine import QuarantinePaths, run_glue_pass
+
+    configuration = load_map_config(project_config_path())
+    facts_by_kind: dict[str, int] = {}
+    for batch in result.batches:
+        for fact in batch.facts:
+            facts_by_kind[fact.identity_kind] = facts_by_kind.get(fact.identity_kind, 0) + 1
+
+    inputs = GateInputs(
+        agent_flag=enabled,
+        config_enabled=configuration.agent.enabled,
+        deterministic_complete=True,
+        facts_by_kind=facts_by_kind,
+        budget=AgentBudget(),
+        tier=result.resolved.tier,
+        archetype=result.resolved.archetype,
+    )
+    decision = evaluate_gate(inputs)
+    if not decision.allowed:
+        decision.record()
+        return {"ran": False, "skipped_condition": decision.failed, "detail": decision.detail}
+
+    runner = _glue_runner(configuration.agent.adapter)
+    try:
+        outcome = run_glue_pass(
+            runner,
+            inputs_gate=inputs,
+            index=result.index,
+            paths=QuarantinePaths(adopt_dir=root / ".adopt"),
+            root=root,
+            adapter=runner.adapter,
+            extractor_ids=[batch.manifest.id for batch in result.batches],
+        )
+    except AdoptError as error:
+        if error.code is ErrorCode.MAP_AGENT_BUDGET_EXHAUSTED:
+            log.warn("agent_budget_exhausted", agent_error=error.code.value)
+            return {
+                "ran": True,
+                "status": "budget_exhausted",
+                "exit_code": int(MapExitCode.AGENT_BUDGET_EXHAUSTED),
+            }
+        # **B1-CR-88 -- a missing agent pass is never an error, and this is where
+        # that stopped being true.** `04` §7's degrade ladder ends *"skip the pass
+        # and record a gap"*, and the glue pass is the first path in `adopt map`
+        # that can raise a **Build 0** code: `MANIFEST_INVALID` from a prompts
+        # directory that is not where the run was started, `AGENT_ADAPTER_UNKNOWN`
+        # when none is configured, `AGENT_OFFLINE_ADAPTER_DENIED` under the
+        # offline default. None of them is in `02` §8's `MAP_*` exit table, so
+        # `map_exit_code_for` raised `KeyError` **by design** -- correctly saying
+        # a caller took the wrong table -- and an operator saw a traceback instead
+        # of a complete map. Found by running it; no test could have, because
+        # every earlier path in this command raises only `MAP_*` codes.
+        log.warn("agent_pass_unavailable", agent_error=error.code.value)
+        return {
+            "ran": False,
+            "status": "unavailable",
+            "reason": error.code.value,
+            "detail": error.message,
+        }
+    return {
+        "ran": True,
+        "status": outcome.status,
+        "extractor_id": outcome.extractor_id or None,
+        "written": outcome.written,
+        "fact_count": outcome.fact_count,
+        "audit_rules": list(outcome.audit_rules),
+        "store_rows_written": 0,
+    }
+
+
+def _glue_runner(configured_adapter: str | None) -> Any:
+    """Build 0's seam, wrapped in Build 1's port. `04` §3.
+
+    Constructed **only after the gate opened**, so a run without `--agent` never
+    reaches an adapter, an endpoint or a credential.
+    """
+    from adopt_agent import Runner
+    from adopt_cli.commands.agent import adapter_settings, prompts_root
+    from adopt_cli.glue_runner import SeamGlueRunner
+
+    offline, adapter, model, endpoint = adapter_settings()
+    chosen = configured_adapter or adapter
+    runner = Runner(
+        annex=_null_annex(),
+        scope_ref="adopt-map-glue",
+        skills_root=prompts_root(),
+        offline=offline,
+        adapter_id=chosen,
+        model=model,
+        endpoint=endpoint,
+    )
+    return SeamGlueRunner(runner, adapter=chosen)
+
+
+def _null_annex() -> Any:
+    """The runtime annex the seam records into.
+
+    `adopt map` keeps no annex: `03` §4 gives this build eleven tables and none of
+    them is one, and Build 0's `AnnexRecords` is a separate store outside the
+    manifest (`BACKLOG.md` B-05). So the seam is handed a recorder that finds no
+    prior run and keeps none -- idempotent replay is a Build 0 optimisation this
+    pass does not get, and paying twice for the same question is the honest cost
+    of not inventing a store.
+    """
+
+    class _NoAnnex:
+        def find_run(self, *, scope_ref: str, idempotency_key: str) -> None:
+            return None
+
+        def record_run(self, *args: Any, **kwargs: Any) -> None:
+            return None
+
+    return _NoAnnex()
 
 
 def _registry() -> ExtractorRegistry:

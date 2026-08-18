@@ -1,0 +1,8 @@
+{
+  "golden_set": "fixtures/golden/label/",
+  "note": "Fifteen cases with ground truth; E6 grades restraint on the evidence-free subset, E7 top-1 precision where evidence exists.",
+  "suites": [
+    "E6",
+    "E7"
+  ]
+}

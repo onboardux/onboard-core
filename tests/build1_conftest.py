@@ -27,6 +27,7 @@ from adopt_map.scope_resolve import ResolvedScope, resolve_scope
 from adopt_map.writer import SurfaceWriter
 
 from adopt_model import MODEL_FOR_TABLE
+from adopt_model._enums import Archetype
 from adopt_scope import Scope, ScopeNode
 from adopt_store import open_store
 from adopt_store.api import SqliteStoreHandle
@@ -66,7 +67,7 @@ def surface_writer_for(handle: SqliteStoreHandle) -> SurfaceWriter:
 
 
 def build_scoped_store(
-    root: Path, *, environments: Sequence[str] = ("prod",), archetype: str = "web"
+    root: Path, *, environments: Sequence[str] = ("prod",), archetype: Archetype = "web"
 ) -> tuple[SqliteStoreHandle, dict[str, ResolvedScope]]:
     """A fresh store with one system and `environments` under it, all resolved.
 

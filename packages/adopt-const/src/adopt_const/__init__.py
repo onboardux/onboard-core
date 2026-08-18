@@ -309,6 +309,18 @@ MAP_AGENT_MAX_WALL_S: Final[int] = 600
 MAP_AGENT_MAX_FILES_SAMPLED: Final[int] = 40
 MAP_AGENT_MAX_FILE_BYTES: Final[int] = 120_000
 
+#: What the quarantine sandbox gives one agent-authored module before it is
+#: killed, and how much address space it may claim (04 §6 step 3). **These two
+#: were numbers in `04` §6's prose and in no module** -- the same defect S1.5
+#: found in `MAP_OUTSIDE_VCS_RECALL_FLOOR` and S1.6 in `MAP_XML_MAX_DEPTH`: a
+#: bound a document states and a program restates is a bound that measures
+#: whatever the program's author typed (B1-CR-83). Both are retunable against
+#: evidence, so both are tunables rather than inline waivers.
+#: **Provisional** -- S1.8 ratifies them against the glue golden set, whose
+#: reversal trigger is the first authored module that is correct and killed.
+MAP_AGENT_SANDBOX_TIMEOUT_S: Final[int] = 60
+MAP_AGENT_SANDBOX_MAX_BYTES: Final[int] = 536_870_912
+
 #: SQLite busy timeout for a map run. Distinct from `STORE_BUSY_TIMEOUT_MS`:
 #: that is the store adapter's, this is how long one run waits for another to
 #: release the store before raising `MAP_STORE_LOCKED`.

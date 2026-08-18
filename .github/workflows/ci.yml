@@ -215,6 +215,38 @@ jobs:
       - name: No DROP, ALTER ... DROP, TRUNCATE or unpredicated DELETE
         run: uv run python scripts/no_destructive_sql.py
 
+  quarantine-audit:
+    name: quarantine-audit (agent-authored code cannot forge a URI)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv sync --all-packages
+      # `04` §6 B1-CR-26: the audit reads the scheme from `adopt_const.URI_SCHEME`
+      # rather than restating it, and the proof plants a literal composed from
+      # that constant. An audit that hard-codes the value it protects goes blind
+      # the next time that value is ratified -- which is exactly what happened
+      # when Build 0 CR-06 replaced the proposed `adopt://` five days after this
+      # pack was written.
+      - name: A forged URI is rejected, and a clean module still gets through
+        run: uv run python scripts/quarantine_audit.py --self-test
+
+  evals:
+    name: evals (the E1-E9 harness, without a provider)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv sync --all-packages
+      # **This job proves the harness, not the thresholds.** With no
+      # `--eval-adapters` named, the adapter-parameterized cases collect zero
+      # items and the session header says E1-E9 did not execute; what runs is the
+      # golden-set shape, the scorer calibration and the stub-driven driver. `04`
+      # §8's thresholds need a credential, and `05` S1.7's validation lines 2 and
+      # 3 stay unchecked until a run that has one.
+      - name: Scorers, golden sets and the driver
+        run: uv run pytest -q -m evals
+
   packaged-artifact:
     name: packaged-artifact (install what we ship, then use it)
     runs-on: ubuntu-24.04

@@ -1,0 +1,236 @@
+{
+  "cases": [
+    {
+      "attributes": {
+        "auth": "bearer",
+        "method": "POST",
+        "path": "/v1/orders"
+      },
+      "forbidden_claims": [
+        "fast",
+        "reliable",
+        "legacy"
+      ],
+      "identity_kind": "endpoint",
+      "local_key": "POST /v1/orders"
+    },
+    {
+      "attributes": {
+        "method": "GET",
+        "path": "/v1/orders/{id}"
+      },
+      "forbidden_claims": [
+        "cached",
+        "deprecated"
+      ],
+      "identity_kind": "endpoint",
+      "local_key": "GET /v1/orders/{id}"
+    },
+    {
+      "attributes": {
+        "queue": "settlements",
+        "retries": 5
+      },
+      "forbidden_claims": [
+        "nightly",
+        "critical"
+      ],
+      "identity_kind": "job",
+      "local_key": "SettlementJob"
+    },
+    {
+      "attributes": {
+        "nullable": false,
+        "type": "integer"
+      },
+      "forbidden_claims": [
+        "money",
+        "audited"
+      ],
+      "identity_kind": "db_field",
+      "local_key": "orders.total_cents"
+    },
+    {
+      "attributes": {
+        "default": "100",
+        "source": "env"
+      },
+      "forbidden_claims": [
+        "safe",
+        "tuned"
+      ],
+      "identity_kind": "config_key",
+      "local_key": "RATE_LIMIT"
+    },
+    {
+      "attributes": {
+        "tokens": 800,
+        "version": "3"
+      },
+      "forbidden_claims": [
+        "accurate",
+        "tested"
+      ],
+      "identity_kind": "prompt",
+      "local_key": "support/triage.md#TRIAGE"
+    },
+    {
+      "attributes": {
+        "provider_neutral": true
+      },
+      "forbidden_claims": [
+        "best",
+        "cheapest"
+      ],
+      "identity_kind": "model_pin",
+      "local_key": "gpt-4o-2024-08-06"
+    },
+    {
+      "attributes": {
+        "parameters": 3
+      },
+      "forbidden_claims": [
+        "dangerous",
+        "audited"
+      ],
+      "identity_kind": "tool_schema",
+      "local_key": "refund_order"
+    },
+    {
+      "attributes": {
+        "top_k": 8
+      },
+      "forbidden_claims": [
+        "accurate",
+        "semantic"
+      ],
+      "identity_kind": "retrieval_config",
+      "local_key": "support-kb"
+    },
+    {
+      "attributes": {
+        "default": "off"
+      },
+      "forbidden_claims": [
+        "risky",
+        "abandoned"
+      ],
+      "identity_kind": "flag",
+      "local_key": "checkout.v2"
+    },
+    {
+      "attributes": {
+        "guard": "payment_captured"
+      },
+      "forbidden_claims": [
+        "common",
+        "slow"
+      ],
+      "identity_kind": "state_transition",
+      "local_key": "order.paid->shipped"
+    },
+    {
+      "attributes": {
+        "arity": 2,
+        "language": "python"
+      },
+      "forbidden_claims": [
+        "complex",
+        "legacy"
+      ],
+      "identity_kind": "symbol",
+      "local_key": "billing.charge.refund"
+    },
+    {
+      "attributes": {
+        "data_type": "currency"
+      },
+      "forbidden_claims": [
+        "credit",
+        "financial"
+      ],
+      "identity_kind": "metadata_component",
+      "local_key": "Customer.ZFIELD_003"
+    },
+    {
+      "attributes": {
+        "type": "text",
+        "unique": true
+      },
+      "forbidden_claims": [
+        "personal",
+        "gdpr"
+      ],
+      "identity_kind": "db_field",
+      "local_key": "customers.email"
+    },
+    {
+      "attributes": {
+        "schedule_declared": true
+      },
+      "forbidden_claims": [
+        "nightly",
+        "batch"
+      ],
+      "identity_kind": "job",
+      "local_key": "nightly_invoice_sweep"
+    },
+    {
+      "attributes": {
+        "binding": "kv",
+        "source": "wrangler"
+      },
+      "forbidden_claims": [
+        "fast",
+        "global"
+      ],
+      "identity_kind": "config_key",
+      "local_key": "SESSION_KV"
+    },
+    {
+      "attributes": {
+        "method": "DELETE",
+        "path": "/v1/sessions"
+      },
+      "forbidden_claims": [
+        "destructive",
+        "rare"
+      ],
+      "identity_kind": "endpoint",
+      "local_key": "DELETE /v1/sessions"
+    },
+    {
+      "attributes": {
+        "language": "python"
+      },
+      "forbidden_claims": [
+        "core",
+        "hot"
+      ],
+      "identity_kind": "symbol",
+      "local_key": "orders.api.OrderDetailView.get"
+    },
+    {
+      "attributes": {
+        "default": "on"
+      },
+      "forbidden_claims": [
+        "stable",
+        "mature"
+      ],
+      "identity_kind": "flag",
+      "local_key": "map.moves.enabled"
+    },
+    {
+      "attributes": {
+        "parameters": 1
+      },
+      "forbidden_claims": [
+        "read-only",
+        "safe"
+      ],
+      "identity_kind": "tool_schema",
+      "local_key": "lookup_customer"
+    }
+  ]
+}

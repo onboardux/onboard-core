@@ -47,6 +47,40 @@ from adopt_store.sqlite.records import SqliteKnowledgeRecords  # noqa: E402
 S4_START = _dt.datetime(2026, 8, 5, 9, 0, 0, tzinfo=_dt.UTC)
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Command-line options for the whole suite. **B1-CR-100.**
+
+    `--eval-adapters` is declared *here* rather than in `tests/evals/conftest.py`,
+    beside the suites that read it, because pytest registers options only from
+    the conftest files it loads while parsing the command line: the rootdir's,
+    and those of the paths named as arguments. A conftest one directory deeper is
+    loaded at **collection** time, which is after argument parsing has already
+    rejected the flag.
+
+    So the command `04` §8 and `05` S1.7 both give an operator --
+    `uv run pytest -q -m evals --eval-adapters=openai=...,anthropic=...` --
+    exited with *"unrecognized arguments"* every time it was run, and the only
+    way to reach the E1-E9 thresholds was to also name `tests/evals` on the
+    command line, which nothing documented. `testpaths = ["tests"]` makes this
+    file an initial conftest, so the documented form now works.
+
+    **This is why the harness could be complete and the thresholds still
+    unmeasured.** The CI `evals` job passes no adapter, so it never touched the
+    flag; every local attempt died in argparse before a model was contacted. The
+    defect was invisible to the one instrument watching it.
+    """
+    parser.addoption(
+        "--eval-adapters",
+        action="store",
+        default="",
+        help=(
+            "Comma-separated `id=model` pairs the E1-E9 suites run against, e.g. "
+            "--eval-adapters=openai=gpt-5.6-terra,anthropic=claude-sonnet-5. Empty "
+            "means the model-calling suites do not run and the session says so."
+        ),
+    )
+
+
 @pytest.fixture
 def s4_clock() -> ManualClock:
     return ManualClock(S4_START)

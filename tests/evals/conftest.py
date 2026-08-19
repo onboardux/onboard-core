@@ -21,18 +21,18 @@ share a model id (Build 0 CR-51).
 
 import pytest
 
-
-def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--eval-adapters",
-        action="store",
-        default="",
-        help=(
-            "Comma-separated `id=model` pairs the E1-E9 suites run against, e.g. "
-            "--eval-adapters=openai=gpt-4o,anthropic=claude-sonnet-4. Empty means "
-            "the model-calling suites do not run and the session says so."
-        ),
-    )
+# `pytest_addoption` is **not** here, and that is the whole point of B1-CR-100.
+# pytest registers options only from conftest files it loads while parsing the
+# command line -- the rootdir's, and those of the paths named as arguments. This
+# file sits under `tests/evals/`, which is neither, so `--eval-adapters` did not
+# exist for the command `04` §8 and `05` S1.7 both tell an operator to run:
+#
+#     uv run pytest -q -m evals --eval-adapters=openai=...,anthropic=...
+#     ERROR: unrecognized arguments: --eval-adapters=...
+#
+# The option now lives in `tests/conftest.py`, which `testpaths = ["tests"]`
+# makes an initial conftest. Everything that *reads* the option stays here,
+# beside the suites that use it.
 
 
 def eval_targets(config: pytest.Config) -> list[tuple[str, str]]:

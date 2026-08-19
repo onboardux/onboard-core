@@ -185,17 +185,47 @@ def test_suites_exist_when_adapters_named(request: pytest.FixtureRequest) -> Non
     which is the `pytest_generate_tests` hook being checked.
     """
     raw = str(request.config.getoption("--eval-adapters")).strip()
-    collected = [item.nodeid for item in request.session.items if "eval_target" in item.nodeid]
-    if not raw:
+
+    # **B1-CR-100.** This once read `"eval_target" in item.nodeid`, and the ids
+    # `pytest_generate_tests` builds are `f"{adapter}={model}"` -- so the fixture
+    # name appears in no node id and the match was always empty. The `not raw`
+    # branch passed anyway (empty is what it wants), and the `raw` branch could
+    # not be reached at all, because `--eval-adapters` was declared in a conftest
+    # pytest never loaded during argument parsing. **A guard against vacuity,
+    # itself vacuous, behind a flag that could not be passed.**
+    #
+    # The check is now against the **option string**, parsed here rather than
+    # imported from the hook under test: every `adapter=model` the operator named
+    # must appear as a collected id. Two independent sources, which is B1-CR-69's
+    # rule -- a guard built from the parameterization it is checking proves only
+    # that the code agrees with itself.
+    #
+    # `[NOTSET]` is pytest's own id for a parametrize call given an **empty**
+    # list: the function is still collected, as a single placeholder that reports
+    # as skipped. It is therefore exactly what "no adapters were named" looks
+    # like from here, and counting it as a real case would make the empty run
+    # indistinguishable from a populated one -- the same confusion in the
+    # opposite direction.
+    named = [chunk.strip() for chunk in raw.split(",") if chunk.strip()]
+    collected = [
+        item.nodeid
+        for item in request.session.items
+        if "test_e1_e9_over_one_adapter" in item.nodeid and "[NOTSET]" not in item.nodeid
+    ]
+
+    if not named:
         assert not collected, (
             "no --eval-adapters were named but adapter-parameterized cases were "
             "collected; something is supplying a default, which is how a suite "
             "reports green against a model nobody chose"
         )
         return
-    assert collected, (
-        f"--eval-adapters named {raw!r} and zero adapter-parameterized cases were "
-        "collected. The suites did not run; a green session here is not evidence."
+
+    missing = [target for target in named if not any(f"[{target}]" in node for node in collected)]
+    assert not missing, (
+        f"--eval-adapters named {named!r} and {missing!r} parameterized no case. "
+        f"Collected: {collected!r}. The suites did not run for those adapters; a "
+        "green session here is not evidence about any `04` §8 threshold."
     )
 
 

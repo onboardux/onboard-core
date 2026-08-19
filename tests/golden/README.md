@@ -49,9 +49,25 @@ At each release tag:
    ```
 
 4. **Attach `/tmp/golden-vN` to the release** as the version's reference bundle,
-   and record its `manifest.json` digests in the release notes. From `0.3.0` the
-   export format is a contract for third-party integrators (contracts §1.6), and
-   a published bundle is what they test against.
+   and record its `manifest.json` digests. From `0.3.0` the export format is a
+   contract for third-party integrators (contracts §1.6), and a published bundle
+   is what they test against. The record lives in
+   [`reference/`](reference/) rather than only in release notes, so it is
+   diffable and reviewable.
+
+   **The digests do not reproduce, and the record must say so.** Ids are ULIDs
+   and timestamps advance, so a second cut of the same procedure shares **none**
+   of them -- measured at 0 of 36. The record pins *the published artefact*, not
+   the procedure: it answers "is the bundle on the release still the bundle we
+   cut?", which step 5 makes worth asking. It is not a test oracle and cannot
+   become one; the reproducible claim is the byte-identical round trip that
+   `golden-g0` asserts per pull request.
+
+   **Cut it only from a binary whose provenance you have verified.** The `0.3.0`
+   binary wrote `written_by: adopt-core/0.0.0+unknown` into every manifest while
+   reporting its version correctly, so a bundle cut from it would have carried
+   false provenance into the one artefact integrators read -- permanently, under
+   step 5. Check `written_by` before attaching.
 5. **Never edit a published bundle.** A format change is a new `export_version`
    with its own reference bundle, exactly as a prompt change is a new version id.
 

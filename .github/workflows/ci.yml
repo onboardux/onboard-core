@@ -199,6 +199,25 @@ jobs:
       - name: The audited set is the recorded set
         run: uv run python scripts/licence_gate.py --check --strict-verify
 
+  first-party-deps:
+    name: first-party-deps (each distribution installs on its own)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv sync --all-packages
+      # Two distributions shipped in v0.3.0 importing a first-party module they
+      # never declared, and no gate here could see it: every test runs under
+      # `uv sync --all-packages`, where all fifteen are present whatever any one
+      # of them declares, and `packaged-artifact` installs `adopt-cli`, which
+      # supplies the missing name transitively. The workspace is not a consumer.
+      # `adopt-plane` was the first thing to install a subset, and it failed at
+      # import. See BACKLOG.md B-06.
+      - name: Prove the gate still rejects
+        run: uv run python scripts/first_party_deps.py --self-test
+      - name: Every first-party import is declared by the manifest
+        run: uv run python scripts/first_party_deps.py --check
+
   no-destructive-sql:
     name: no-destructive-sql (the store never loses data)
     runs-on: ubuntu-24.04

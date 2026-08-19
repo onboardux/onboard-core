@@ -1,6 +1,6 @@
 [project]
 name = "adopt-policy"
-version = "0.3.0"
+version = "0.3.1"
 description = "Capability-manifest validation, outbound-envelope validation, the signature interface. Implemented in S6."
 requires-python = ">=3.12"
 license = "Apache-2.0"

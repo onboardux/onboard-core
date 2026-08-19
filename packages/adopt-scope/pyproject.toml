@@ -1,6 +1,6 @@
 [project]
 name = "adopt-scope"
-version = "0.3.0"
+version = "0.3.1"
 description = "The firm-engagement-system-environment hierarchy, slugs, lifecycle events."
 requires-python = ">=3.12"
 license = "Apache-2.0"

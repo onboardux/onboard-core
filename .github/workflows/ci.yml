@@ -299,6 +299,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The ratchet step below runs `-m "not bench and not e2e"`, which
+          # collects the unit suite, which asserts what `build0_untouched`
+          # reports -- so this job needs the baseline for the same reason `unit`
+          # and `coverage-floor` do. Three jobs, one selector each, one cause.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # `03` §7 runs the journeys on main and the integration suite per PR. Both

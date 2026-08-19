@@ -1,6 +1,6 @@
 [project]
 name = "adopt-freshness"
-version = "0.3.0"
+version = "0.3.1"
 description = "resolve_freshness: multi-level, load-bearing propagation, sensor override. Implemented in S4."
 requires-python = ">=3.12"
 license = "Apache-2.0"

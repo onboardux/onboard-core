@@ -8,17 +8,18 @@ The CLI is offline by default and has no telemetry switch. Network access is an
 explicit per-invocation choice, and client content is structurally excluded from
 logs.
 
-> **Status: `0.3.0` is released** — fifteen distributions on PyPI, plus three
-> signed single-file binaries, a CycloneDX SBOM and SLSA provenance on the
-> [GitHub Release](https://github.com/onboardux/onboard-core/releases/tag/v0.3.0).
+> **Status: `0.3.1` is released** — fifteen distributions on PyPI, plus three
+> signed single-file binaries, a CycloneDX SBOM, SLSA provenance and the v3
+> reference bundle on the
+> [GitHub Release](https://github.com/onboardux/onboard-core/releases/tag/v0.3.1).
 > A workflow artifact is still not a release; only the tagged, signed bundle is.
 >
-> **Known issue in `0.3.0`.** `adopt-store` imports `adopt_identity` and
-> `adopt-cli` imports `adopt_model` without declaring them, so installing one of
-> those distributions **on its own** raises `ModuleNotFoundError` on first use.
-> `pip install adopt-cli` — the supported path below — is **unaffected**, because
-> it declares `adopt-identity` itself and reaches `adopt-model` transitively.
-> Fixed on `main`; see [CHANGELOG.md](CHANGELOG.md).
+> **Upgrading from `0.3.0` is a straight replacement.** No schema change, so a
+> `0.3.0` store opens unchanged. `0.3.1` fixes two defects: the single-file
+> binary stamped `adopt-core/0.0.0+unknown` as provenance into every bundle and
+> store it wrote, and two distributions were missing a dependency declaration so
+> installing them alone raised `ModuleNotFoundError`. Neither affected a
+> `pip install adopt-cli` journey. See [CHANGELOG.md](CHANGELOG.md).
 
 ## What is included
 

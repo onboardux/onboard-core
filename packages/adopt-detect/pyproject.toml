@@ -1,6 +1,6 @@
 [project]
 name = "adopt-detect"
-version = "0.3.0"
+version = "0.3.1"
 description = "Archetype detection, tier negotiation, the observability boundary. Implemented in S6."
 requires-python = ">=3.12"
 license = "Apache-2.0"

@@ -1,6 +1,6 @@
 [project]
 name = "adopt-model"
-version = "0.3.0"
+version = "0.3.1"
 description = "GENERATED typed models, one per table, enum and wire shape. Never hand-edited."
 requires-python = ">=3.12"
 license = "Apache-2.0"

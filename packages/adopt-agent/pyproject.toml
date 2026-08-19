@@ -1,6 +1,6 @@
 [project]
 name = "adopt-agent"
-version = "0.3.0"
+version = "0.3.1"
 description = "The single model seam: budget, tracing, idempotency, adapters. Implemented in S7."
 requires-python = ">=3.12"
 license = "Apache-2.0"

@@ -24,6 +24,19 @@ dependencies = [
     # records is the same one, one sprint earlier.
     "adopt-map",
     "adopt-extractors-common",
+    # The five archetype packs, declared for the same reason `adopt-model` below
+    # is: `commands/map_command.py` imports every one of them by name to build
+    # the registry, and they arrived only because a workspace sync installs the
+    # whole workspace. `pip install adopt-cli` alone raised ModuleNotFoundError
+    # on the first `adopt map` -- a working binary that fails at the verb it was
+    # built for. S1.1 declared the two packs that existed then and S1.4-S1.6
+    # added five imports without touching this list, which is the defect the
+    # note below records arriving a third time.
+    "adopt-extractors-ai",
+    "adopt-extractors-data",
+    "adopt-extractors-lowcode",
+    "adopt-extractors-platform",
+    "adopt-extractors-web",
     # `adopt_model._enums` is imported directly by `commands/init.py` and
     # `commands/boundary.py`. It arrived transitively through `adopt-store` until
     # someone installed a subset that did not include it, which is why an

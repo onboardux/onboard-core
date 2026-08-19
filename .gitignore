@@ -40,3 +40,13 @@ runtime-constraints.txt
 ci-metrics.jsonl
 .coverage
 cov.json
+
+# The poisoned fixture's dotenv is a test artefact, not a credential: every value
+# in it is a literal canary (`hunter2-should-never-appear`,
+# `sk-should-never-appear`) whose whole purpose is to be searched for in the run's
+# output. The blanket `.env` rule above kept it untracked, so CI checked out the
+# fixture without it, `common.secrets` found nothing, and the two "no secret
+# reached an artifact" assertions in `test_no_client_import.py` passed over an
+# empty result -- `01` N9 tested on one developer's machine and nowhere else.
+# Only the positive control asserting the *key name* is present caught it.
+!fixtures/repos/poisoned-import/.env

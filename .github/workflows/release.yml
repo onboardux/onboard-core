@@ -314,22 +314,31 @@ jobs:
           set -euo pipefail
           MAIN="$("$PY" -c 'import importlib.util as u; print(u.find_spec("adopt_cli.main").origin)')"
           echo "packing $MAIN"
-          # Metadata for EVERY first-party distribution, not just `adopt-cli`.
-          # `importlib.metadata` is how three separate modules resolve their own
-          # version, and they do not all ask about the same distribution:
-          # `version --json` asks for `adopt-cli`, and `adopt_store.writer_identity`
-          # -- the value stamped into `schema_meta.written_by` and into every
-          # exported bundle's manifest -- asks for `adopt-store`. Packing only
-          # `adopt-cli` left the second unresolvable, so the 0.3.0 binary wrote
+          # Metadata for every first-party distribution THE BINARY CONTAINS.
+          #
+          # `importlib.metadata` is how modules resolve their own version, and
+          # they do not all ask about the same distribution: `version --json`
+          # asks for `adopt-cli`, while `adopt_store.writer_identity` -- the
+          # value stamped into `schema_meta.written_by` and into every exported
+          # bundle manifest -- asks for `adopt-store`. Packing only `adopt-cli`
+          # left the second unresolvable, so the 0.3.0 binary wrote
           # `adopt-core/0.0.0+unknown` into a contract-governed field while its
-          # own `version --json` correctly said `0.3.0`. The fallback carries a
-          # `# pragma: no cover -- source checkout only` comment, which is exactly
-          # the assumption that was false in the artefact. Enumerated from the
-          # build job's own list so a new distribution cannot be forgotten.
-          metadata_flags=()
-          for distribution in $FIRST_PARTY_DISTRIBUTIONS; do
-            metadata_flags+=("--include-distribution-metadata=${distribution}")
-          done
+          # own `version --json` correctly said `0.3.0`.
+          #
+          # The set is the dependency closure of `adopt-cli`, not all fifteen.
+          # Nuitka refuses metadata for a distribution whose package it is not
+          # compiling -- `FATAL: including metadata for distribution X without
+          # including related package Y` -- and `adopt-workflow` is a library the
+          # CLI does not depend on, so it is not in the binary and must not be
+          # named here. Passing all fifteen failed on all three platforms.
+          #
+          # Derived, never listed, and the derivation is trustworthy *because*
+          # `first-party-deps` gates every import as declared: the declared
+          # closure and the compiled closure are the same set only when no
+          # module imports something its manifest omits.
+          mapfile -t metadata_flags < <(FIRST_PARTY="$FIRST_PARTY_DISTRIBUTIONS" "$PY" scripts/pack_metadata_flags.py)
+          test "${#metadata_flags[@]}" -ge 2
+          echo "packing metadata for ${#metadata_flags[@]} distribution(s)"
           "$PY" -m nuitka \
             --onefile \
             --assume-yes-for-downloads \

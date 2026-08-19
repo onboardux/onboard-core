@@ -334,6 +334,16 @@ jobs:
       # `unshare -rn` gives an unprivileged network namespace with nothing but a
       # down loopback, which is available on GitHub's Ubuntu runners without root.
       # The whole test process runs inside it.
+      # Ubuntu 23.10 onward restricts unprivileged user namespaces through
+      # AppArmor, so `unshare -rn` on a 24.04 runner fails with *"write failed
+      # /proc/self/uid_map: Operation not permitted"* -- and the command then
+      # runs **outside** any namespace, with the runner's full network. The
+      # proof step below caught exactly that on this job's first execution and
+      # refused, which is what it is for. Lifting the restriction is what makes
+      # the namespace available; the proof stays, because the restriction is not
+      # the only way the namespace can fail to exist.
+      - name: Permit unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Prove the namespace really has no network
         run: |
           set -euo pipefail
@@ -406,6 +416,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `build0_untouched` resolves its baseline against `main`, and the unit
+          # suite asserts what that gate reports. A default checkout fetches one
+          # ref at depth 1, so `main` is not a valid object name and the gate
+          # reports that it cannot list packages -- true, useless, and red.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # The ratchet is a hard failure: a green suite over budget still fails.
@@ -604,6 +620,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Same reason as `unit`: this job runs the whole unit suite to compute
+          # the figure, so it inherits `build0_untouched`'s baseline lookup.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
       # `COVERAGE_FLOOR_CORE` reached S9 with no consumer anywhere in either

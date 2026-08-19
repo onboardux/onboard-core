@@ -87,11 +87,21 @@ def _git(*args: str) -> str:
 
 
 def baseline(base_ref: str) -> str:
-    """The merge base with `base_ref`, or `base_ref` itself when unrelated."""
-    try:
-        return _git("merge-base", "HEAD", base_ref).strip()
-    except RuntimeError:
-        return base_ref
+    """The merge base with `base_ref`, or `base_ref` itself when unrelated.
+
+    `origin/<ref>` is tried second because a CI checkout has no local branch for
+    anything but the ref it checked out: `git ls-tree main:packages` then fails
+    with *"Not a valid object name"*, and rule 2 reports that as a violation
+    saying it cannot list packages. That is a gate whose failure names its own
+    plumbing rather than the tree it was pointed at -- it fails closed, which is
+    right, and it says nothing useful, which is not.
+    """
+    for candidate in (base_ref, f"origin/{base_ref}"):
+        try:
+            return _git("merge-base", "HEAD", candidate).strip()
+        except RuntimeError:
+            continue
+    return base_ref
 
 
 def packages_at(commit: str) -> set[str]:

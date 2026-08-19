@@ -82,8 +82,11 @@ DEFAULT_REGISTRY_DOCUMENTS: Final[tuple[RegistryDocument, ...]] = (
         label="build_1 §1.4",
         section="1.4",
         relative_hint=Path("build_1") / "02-contracts.md",
-        enforce_completeness=False,
-        required=False,
+        # Flipped by S1.8 with its sibling in `constants_sync` -- `03` §11 item 8
+        # names **both** gates and reports zero pending for both, so flipping one
+        # would close half a condition.
+        enforce_completeness=True,
+        required=True,
     ),
 )
 

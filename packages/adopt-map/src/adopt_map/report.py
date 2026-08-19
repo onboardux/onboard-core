@@ -12,10 +12,17 @@ because `FileEntry` and `SourceRef` have held them that way since they were read
 -- there is nothing to strip and nothing to forget to strip, and this module is
 the backstop rather than the mechanism.
 
-**`peak_rss_bytes` is `None` where the platform cannot answer.** `resource` is
-POSIX-only. Reporting a zero would put a number in an NFR field that no
-measurement produced, and `01` N11's whole point is that the memory ceiling is
-measured rather than asserted.
+**`peak_rss_bytes` is `None` where the platform cannot answer**, and S1.8 shrank
+the set of platforms that cannot. `resource` is POSIX-only, so until here this
+returned `None` on Windows -- which made `01` **N11** unmeasurable on the machine
+this build was authored on, and an NFR whose instrument returns `None` is an NFR
+nobody can breach visibly. That is the same shape as the four measurements Build 0
+found succeeding by having nothing to measure. Windows answers through PSAPI's
+`GetProcessMemoryInfo`, reached with `ctypes` from the standard library: `psutil`
+would be a runtime distribution added for one field, which is the trade B1-CR-50,
+B1-CR-65 and B1-CR-87 each refused in the other direction. Reporting a zero is
+still forbidden -- a platform that cannot answer returns `None`, because a zero is
+a number no measurement produced.
 """
 
 import datetime as _dt
@@ -56,19 +63,84 @@ RUN_REPORT_NAME: Final[str] = "run_report.json"
 TELEMETRY_NAME: Final[str] = "telemetry.jsonl"
 
 
-def peak_rss_bytes() -> int | None:
-    """Peak resident set size, or `None` where the platform cannot answer.
+def _peak_rss_windows() -> int | None:
+    """Peak working set in bytes via PSAPI, or `None` if the call does not answer.
 
-    `resource` is POSIX-only, so this returns `None` on Windows. The paired
-    `type: ignore` codes are both needed and neither is redundant: on Windows the
-    module resolves with no attributes (`attr-defined`), and on Linux it resolves
-    fully so the first code would itself be unused (`unused-ignore`). A single
-    code would make `mypy --strict` fail on one of the two platforms CI checks.
+    `PROCESS_MEMORY_COUNTERS` is two `DWORD`s followed by eight `SIZE_T`s;
+    `PeakWorkingSetSize` is the second `SIZE_T`. The struct is declared here rather
+    than assumed, because getting the field order wrong reports a *different real
+    number* -- `WorkingSetSize` instead of its peak -- which is the failure mode a
+    smoke test cannot see. `GetProcessMemoryInfo` returns zero on failure, and a
+    zero is returned as `None`: `01` N11 is a ceiling, and a ceiling compared
+    against a fabricated zero passes forever.
     """
+    import ctypes
+    from ctypes import wintypes
+
+    class _Counters(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
+
+    counters = _Counters()
+    counters.cb = ctypes.sizeof(_Counters)
+    try:
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined, unused-ignore]
+        psapi = ctypes.windll.psapi  # type: ignore[attr-defined, unused-ignore]
+        # **Declaring these is what makes the call answer at all.** Left to
+        # ctypes' defaults every argument is an `int`, the 64-bit pseudo-handle
+        # is truncated, `GetProcessMemoryInfo` returns 0, and this function
+        # reports `None` -- indistinguishable from "this platform cannot answer".
+        # Measured, not assumed: the undeclared form returns 0 here and the
+        # declared form returns a real peak on the same process.
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        psapi.GetProcessMemoryInfo.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(_Counters),
+            wintypes.DWORD,
+        ]
+        psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+        ok = psapi.GetProcessMemoryInfo(
+            kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb
+        )
+    except (AttributeError, OSError):
+        return None
+    if not ok:
+        return None
+    peak = int(counters.PeakWorkingSetSize)
+    return peak or None
+
+
+def peak_rss_bytes() -> int | None:
+    """Peak resident set size in bytes, or `None` where the platform cannot answer.
+
+    Two implementations, one contract. POSIX answers through `resource`; Windows
+    answers through PSAPI (`_peak_rss_windows`). The paired `type: ignore` codes on
+    the POSIX call are both needed and neither is redundant: on Windows the module
+    resolves with no attributes (`attr-defined`), and on Linux it resolves fully so
+    the first code would itself be unused (`unused-ignore`). A single code would
+    make `mypy --strict` fail on one of the two platforms CI checks.
+    """
+    # **Dispatch on the module, not on `sys.platform`.** A statement-level
+    # `sys.platform == "win32"` guard is narrowed by mypy against the platform it
+    # is running on, so `warn_unreachable` would fail the other platform's branch
+    # -- and CI type-checks both. `resource` is the POSIX half by definition and
+    # its absence is the Windows half by definition, so the import *is* the
+    # dispatch and neither branch is dead on either machine.
     try:
         import resource
     except ImportError:
-        return None
+        return _peak_rss_windows()
     usage = resource.getrusage(resource.RUSAGE_SELF)  # type: ignore[attr-defined, unused-ignore]
     # `ru_maxrss` is kilobytes on Linux and bytes on macOS. The kilobyte reading
     # is the one that would silently understate by 1024x, so it is the one
@@ -177,7 +249,21 @@ class RunResult:
         return sum(len(batch.facts) for batch in self.batches)
 
     def extractor_timings(self) -> list[dict[str, object]]:
-        """Per-extractor timings and fact counts -- `02` §9.3."""
+        """Per-extractor timings, fact counts and **why a failure happened** -- `02` §9.3.
+
+        **`detail` was computed and dropped here until S1.8 (B1-CR-97).**
+        `run_extractor` classifies every failure with a cause -- a registered error
+        code, or the exception type for anything else -- and this projection kept
+        `status` and discarded it. So a run report could say `common.secrets`
+        failed and could not say why, which is what the S1.8 soak hit on a real
+        repository: one extractor failed on the second of two runs over an
+        unchanged 930k-LoC tree, the map silently lost an identity, and the only
+        artefact anybody had afterwards recorded the failure with no cause.
+
+        The cause is a *type name* or an error code, never a message: `02` §9.3 is
+        **no client source content**, and an exception's `str()` is the one field
+        of an exception that routinely carries the line it choked on.
+        """
         return [
             {
                 "extractor": outcome.extractor_id,
@@ -185,6 +271,7 @@ class RunResult:
                 "facts": len(outcome.facts),
                 "elapsed_s": round(outcome.elapsed_s, _SECONDS_PRECISION),
                 "fallback": outcome.fallback,
+                "detail": outcome.detail,
             }
             for outcome in self.outcomes
         ]

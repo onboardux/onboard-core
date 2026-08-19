@@ -1,0 +1,221 @@
+{
+  "corpus_version": 2,
+  "metric": "01 section 6 M4 -- move precision on the labeled rename corpus, >= 0.95, ambiguous cases declined rather than guessed",
+  "how_to_read": "Each case is a pair of tree states and the answer a human gives. `expect: move` means exactly one moved revision per listed pair. `expect: decline` means zero moves and, where stated, one conflict row -- a declination is a correct answer here, not a miss, which is why precision and declination are scored separately.",
+  "provenance": "Cases 1-6 are the behaviours 01 F5 and 02 section 10 C11 specify. Cases 7-9 are rename shapes taken from real commit history in the S1.8 soak corpus (perf/soak/corpus.json) and replayed against the fixture tree, so the corpus is not made only of the cases the implementation was written against. Every case is labelled by hand. Corpus v2: one case was mislabelled at v1 and the evaluator caught it -- see `rename-plus-an-added-function-still-moves-the-old-ones`.",
+  "cases": [
+    {
+      "id": "clean-module-rename",
+      "expect": "move",
+      "why": "01 F5.1 -- the same declarations at a new path. The digest matches, so the identity moved and did not disappear.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "rename",
+          "from": "orders/api.py",
+          "to": "orders/views.py"
+        }
+      ],
+      "expected_pairs": [
+        {
+          "from_contains": "orders.api.",
+          "to_contains": "orders.views."
+        }
+      ]
+    },
+    {
+      "id": "package-move",
+      "expect": "move",
+      "why": "A module moved into a package is the commonest real rename and the one that most looks like a delete plus an add.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "mkdir",
+          "path": "orders/http"
+        },
+        {
+          "op": "rename",
+          "from": "orders/api.py",
+          "to": "orders/http/api.py"
+        }
+      ],
+      "expected_pairs": [
+        {
+          "from_contains": "orders.api.",
+          "to_contains": "orders.http.api."
+        }
+      ]
+    },
+    {
+      "id": "rename-plus-signature-change-is-not-a-move",
+      "expect": "no-move",
+      "why": "01 F5 -- a move is an exact semantic-digest match, and the digest is per REFERENT rather than per file. Every declaration in the file changes its own signature here (the class gains a base, both functions gain a parameter), so no referent is the one it was and none may move. Labelling this took two attempts: changing only a METHOD's signature left the class declaration untouched, and the class correctly moved -- which is the distinction between a file that changed and a referent that changed.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "rename",
+          "from": "orders/api.py",
+          "to": "orders/views.py"
+        },
+        {
+          "op": "write",
+          "path": "orders/views.py",
+          "text": "\"\"\"Order endpoints. Never imported by the tool -- read as text only.\"\"\"\n\n\nclass BaseView:\n    pass\n\n\nclass OrderDetailView(BaseView):\n    def get(self, request, order_id, include_lines):\n        return {\"id\": order_id}\n\n\ndef reconcile_payments(window_days, currency):\n    return window_days\n"
+        }
+      ]
+    },
+    {
+      "id": "rename-plus-an-added-function-still-moves-the-old-ones",
+      "expect": "move",
+      "why": "The case the corpus got wrong first, kept because getting it wrong is the point. A file that moved AND gained a declaration is not one event: the pre-existing referents moved with unchanged digests and the new one is new. `01` F5's rule is per referent, not per file, and a corpus that labelled this `no-move` would have been demanding that a correct mover orphan two identities because an unrelated function was added beside them.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "rename",
+          "from": "orders/api.py",
+          "to": "orders/views.py"
+        },
+        {
+          "op": "append",
+          "path": "orders/views.py",
+          "text": "\n\ndef refund(order_id):\n    return order_id\n"
+        }
+      ],
+      "expected_pairs": [
+        {
+          "from_contains": "orders.api.",
+          "to_contains": "orders.views."
+        }
+      ]
+    },
+    {
+      "id": "two-identical-copies-decline",
+      "expect": "decline",
+      "conflict_reason": "ambiguous_move",
+      "why": "02 section 10 C11 -- two candidates match one prior identity. 01 section 8 gives ambiguous-move resolution to nobody in Build 1, so the only correct answer is to decline and record the conflict for Build 3.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "copy",
+          "from": "orders/api.py",
+          "to": "orders/views.py"
+        },
+        {
+          "op": "copy",
+          "from": "orders/api.py",
+          "to": "orders/handlers.py"
+        },
+        {
+          "op": "delete",
+          "path": "orders/api.py"
+        }
+      ]
+    },
+    {
+      "id": "three-identical-copies-decline",
+      "expect": "decline",
+      "conflict_reason": "ambiguous_move",
+      "why": "The same ambiguity at higher cardinality. A rule that declines at two and picks at three would be a rule nobody could state.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "copy",
+          "from": "orders/api.py",
+          "to": "orders/a.py"
+        },
+        {
+          "op": "copy",
+          "from": "orders/api.py",
+          "to": "orders/b.py"
+        },
+        {
+          "op": "copy",
+          "from": "orders/api.py",
+          "to": "orders/c.py"
+        },
+        {
+          "op": "delete",
+          "path": "orders/api.py"
+        }
+      ]
+    },
+    {
+      "id": "deletion-is-not-a-move",
+      "expect": "no-move",
+      "why": "01 F5.3 and 00 section 5 -- absence and parse failure are indistinguishable from here, so a vanished referent is never a move and never a death. Nothing is written.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "delete",
+          "path": "orders/api.py"
+        }
+      ]
+    },
+    {
+      "id": "real-shape-module-to-subpackage",
+      "expect": "move",
+      "why": "Replays the commonest rename shape in the soak corpus's own history: a module promoted into a subpackage of the same app, contents unchanged.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "mkdir",
+          "path": "orders/v2"
+        },
+        {
+          "op": "rename",
+          "from": "orders/api.py",
+          "to": "orders/v2/api.py"
+        }
+      ],
+      "expected_pairs": [
+        {
+          "from_contains": "orders.api.",
+          "to_contains": "orders.v2.api."
+        }
+      ]
+    },
+    {
+      "id": "real-shape-directory-rename",
+      "expect": "move",
+      "why": "A whole directory renamed -- every identity beneath it moves at once. Replays a real reorganisation shape; the failure mode it guards is a mover that handles one file and orphans a package.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "rename",
+          "from": "orders",
+          "to": "ordering"
+        }
+      ],
+      "expected_pairs": [
+        {
+          "from_contains": "orders.",
+          "to_contains": "ordering."
+        }
+      ]
+    },
+    {
+      "id": "real-shape-rename-with-unrelated-addition",
+      "expect": "move",
+      "why": "A rename in the same commit as an unrelated new file, which is what real commits look like. The addition must not make the move ambiguous.",
+      "fixture": "stub",
+      "operations": [
+        {
+          "op": "rename",
+          "from": "orders/api.py",
+          "to": "orders/views.py"
+        },
+        {
+          "op": "write",
+          "path": "orders/metrics.py",
+          "text": "def counter(name: str) -> int:\n    return 0\n"
+        }
+      ],
+      "expected_pairs": [
+        {
+          "from_contains": "orders.api.",
+          "to_contains": "orders.views."
+        }
+      ]
+    }
+  ]
+}

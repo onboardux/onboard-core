@@ -1,0 +1,160 @@
+{
+  "archetypes": [
+    {
+      "archetype": "web",
+      "facts": 354,
+      "fixture": "fixtures/repos/django-orders",
+      "m2_deterministic_share": 0.7909604519774012,
+      "method_counts": {
+        "declared": 71,
+        "grammar": 274,
+        "reflection": 6,
+        "regex": 3
+      },
+      "non_model_share": 0.9915254237288136,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "archetype": "ai",
+      "facts": 42,
+      "fixture": "fixtures/repos/langgraph-support",
+      "m2_deterministic_share": 0.6190476190476191,
+      "method_counts": {
+        "declared": 16,
+        "grammar": 26
+      },
+      "non_model_share": 1.0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "archetype": "platform",
+      "facts": 17,
+      "fixture": "fixtures/repos/sf-metadata-bundle",
+      "m2_deterministic_share": 1.0,
+      "method_counts": {
+        "reflection": 17
+      },
+      "non_model_share": 1.0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "archetype": "lowcode",
+      "facts": 12,
+      "fixture": "fixtures/repos/powerapps-export",
+      "m2_deterministic_share": 1.0,
+      "method_counts": {
+        "reflection": 12
+      },
+      "non_model_share": 1.0,
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    {
+      "archetype": "data",
+      "facts": 9,
+      "fixture": "fixtures/repos/dbt-warehouse",
+      "m2_deterministic_share": 0.0,
+      "method_counts": {
+        "declared": 9
+      },
+      "non_model_share": 1.0,
+      "precision": 1.0,
+      "recall": 1.0
+    }
+  ],
+  "m4": {
+    "cases": [
+      {
+        "conflicts": 0,
+        "correct": true,
+        "expect": "move",
+        "id": "clean-module-rename",
+        "moves": 2,
+        "note": ""
+      },
+      {
+        "conflicts": 0,
+        "correct": true,
+        "expect": "move",
+        "id": "package-move",
+        "moves": 2,
+        "note": ""
+      },
+      {
+        "conflicts": 2,
+        "correct": true,
+        "expect": "no-move",
+        "id": "rename-plus-signature-change-is-not-a-move",
+        "moves": 0,
+        "note": ""
+      },
+      {
+        "conflicts": 0,
+        "correct": true,
+        "expect": "move",
+        "id": "rename-plus-an-added-function-still-moves-the-old-ones",
+        "moves": 2,
+        "note": ""
+      },
+      {
+        "conflicts": 2,
+        "correct": true,
+        "expect": "decline",
+        "id": "two-identical-copies-decline",
+        "moves": 0,
+        "note": ""
+      },
+      {
+        "conflicts": 2,
+        "correct": true,
+        "expect": "decline",
+        "id": "three-identical-copies-decline",
+        "moves": 0,
+        "note": ""
+      },
+      {
+        "conflicts": 2,
+        "correct": true,
+        "expect": "no-move",
+        "id": "deletion-is-not-a-move",
+        "moves": 0,
+        "note": ""
+      },
+      {
+        "conflicts": 0,
+        "correct": true,
+        "expect": "move",
+        "id": "real-shape-module-to-subpackage",
+        "moves": 2,
+        "note": ""
+      },
+      {
+        "conflicts": 0,
+        "correct": true,
+        "expect": "move",
+        "id": "real-shape-directory-rename",
+        "moves": 2,
+        "note": ""
+      },
+      {
+        "conflicts": 0,
+        "correct": true,
+        "expect": "move",
+        "id": "real-shape-rename-with-unrelated-addition",
+        "moves": 2,
+        "note": ""
+      }
+    ],
+    "declination_accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0
+  },
+  "m5": {
+    "decided": 0,
+    "reason": "no review ledger exists. The glue pass has never called a model in this environment (no adapter credential), so no module has been authored, quarantined or reviewed -- `05` S1.7's three open items.",
+    "rewrite_rate": null
+  }
+}

@@ -1,0 +1,18 @@
+G3 soak -- `01` N1, N2, N3, N11 on the reference corpus
+machine   win32 / 12 cpu / 8 workers -- NOT the reference runner
+
+saleor                 web        930095 loc    4552 files   27269 facts  exit 0
+                       stage1   51.00s / 900s   total   238.76s / 3600s   rss 301 MiB / 2048 MiB
+                       re-run  195.64s / 300s   revisions {'binding': 0, 'identity': 0, 'knowledge': 0}   store 97444 KiB -> 97444 KiB
+langchain              ai         413497 loc    2896 files    9208 facts  exit 0
+                       stage1   29.41s / 900s   total   114.94s / 3600s   rss 146 MiB / 2048 MiB
+                       re-run   85.50s / 300s   revisions {'binding': 0, 'identity': 0, 'knowledge': 0}   store 33060 KiB -> 33060 KiB
+jaffle-shop-classic    data          440 loc      18 files       5 facts  exit 0
+                       stage1    4.42s / 900s   total     7.78s / 3600s   rss 56 MiB / 2048 MiB
+                       re-run    6.41s / 300s   revisions {'binding': 0, 'identity': 0, 'knowledge': 0}   store 412 KiB -> 412 KiB
+
+note      archetypes covered: ['ai', 'data', 'web']
+note      largest repository: 930095 LoC
+note      corpus is PRD Q4's stated fallback, taken flagged under OD-18. `01` section 11's claims discipline applies: none of these numbers may be quoted outside engineering until the founder's corpus is ruled and re-measured.
+
+no breaches -- every repository inside every budget

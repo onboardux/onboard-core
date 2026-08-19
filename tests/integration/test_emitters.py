@@ -31,6 +31,7 @@ from adopt_map.emit.mermaid import collapsed, render_mermaid
 from adopt_map.orchestrator import run as run_map
 from adopt_map.plugins import ExtractorRegistry
 from adopt_map.report import RunResult, absolute_paths_in
+from adopt_map.scheduler import ExtractorOutcome
 from adopt_map.writer import FactBatch
 
 from adopt_const import MAP_DIAGRAM_MAX_NODES, SURFACE_REPORT_VERSION
@@ -284,3 +285,78 @@ def _with(result: RunResult, **changes: object) -> RunResult:
     from dataclasses import replace
 
     return replace(result, **changes)  # type: ignore[arg-type]
+
+
+def test_a_failed_extractor_appears_in_the_first_screen_with_its_cause(
+    result: RunResult,
+) -> None:
+    """B1-CR-97 -- a failed extractor was invisible everywhere a human looks.
+
+    *Fails when* an extractor raises and the map says nothing about it. *Matters
+    because* the run still exits 0 -- `02` section 8's *"Complete"* -- while
+    holding fewer identities than the run before it, so an operator reads an
+    absence as evidence that a system has no surface of that kind. *No other
+    instrument catches it because* the degradations block one section above is the
+    **ladder's**: it reports a family that dropped a rung, not a plugin that threw,
+    and the two are different events with different remedies.
+
+    Found by the S1.8 soak on `saleor`: `common.secrets` succeeded on the first run
+    and failed on the second over an unchanged tree, and the second map lost an
+    identity with nothing anywhere saying so.
+    """
+    failed = _with(
+        result,
+        outcomes=(
+            ExtractorOutcome(
+                extractor_id="common.secrets",
+                status="failed",
+                facts=(),
+                elapsed_s=0.7,
+                detail="UnicodeDecodeError",
+            ),
+        ),
+    )
+
+    markdown = render_markdown(failed)
+    body = markdown.split("## 8. Inventory")[0]
+    assert "common.secrets" in body, "a failed extractor is below the inventory"
+    assert "UnicodeDecodeError" in body, "the failure is reported without its cause"
+
+    # The positive control: a run with nothing failed emits no callout at all. A
+    # standing "every extractor succeeded" line is one readers learn to skip, and
+    # without this half the assertion above would pass on an emitter that printed
+    # the block unconditionally.
+    assert "extractor(s) failed" not in render_markdown(result)
+
+
+def test_the_run_report_keeps_the_cause_of_a_failed_extractor(result: RunResult) -> None:
+    """`02` section 9.3's `detail`, which was computed and dropped until S1.8.
+
+    *Fails when* `run_report.json` records that an extractor failed without
+    recording why. *Matters because* the report is the only artefact that survives
+    the run, and an intermittent failure diagnosed from it is the difference
+    between a bug report and a shrug. *No other instrument catches it because*
+    `run_extractor` classifies the cause correctly -- the loss happened one layer
+    later, in the projection, where every test asserting on `status` still passed.
+    """
+    failed = _with(
+        result,
+        outcomes=(
+            ExtractorOutcome(
+                extractor_id="common.secrets",
+                status="failed",
+                facts=(),
+                elapsed_s=0.7,
+                detail="UnicodeDecodeError",
+            ),
+        ),
+    )
+
+    rows = failed.as_report()["extractors"]
+    assert isinstance(rows, list)
+    assert rows[0]["detail"] == "UnicodeDecodeError"
+
+    # `02` section 9.3 is "no client source content": the cause is a type name or a
+    # registered error code, never a message, because an exception's `str()` is the
+    # one field that routinely carries the line it choked on.
+    assert " " not in str(rows[0]["detail"])

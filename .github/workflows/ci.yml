@@ -247,6 +247,93 @@ jobs:
       - name: Scorers, golden sets and the driver
         run: uv run pytest -q -m evals
 
+  build1-gates:
+    name: build1-gates (append_only, idempotence, env_isolation, determinism)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv sync --all-packages
+      # **These four gates existed from S1.1 and ran in no CI job until S1.8**
+      # (B1-CR-98). `03` §8 lists them as hard-fail gates in order, `00` §11 item
+      # 3 makes "CI green including append-only, idempotence,
+      # environment-isolation and determinism" a **build** Definition-of-Done
+      # condition, and the job above named `append-only` runs import contracts and
+      # a grep -- not `pytest -m append_only`. So the four markers were green on
+      # whichever developer machine last ran them, and the DoD condition could not
+      # have been satisfied by anything in the repository.
+      #
+      # Run as four steps rather than one selector, because `-m "append_only or
+      # idempotence or ..."` reports one failure for four different invariants and
+      # the point of separate gates is knowing which one broke.
+      - name: append_only -- zero UPDATEs on *_revision, zero DELETEs
+        run: uv run pytest -q -m append_only
+      - name: idempotence -- an unchanged re-run writes zero revisions
+        run: uv run pytest -q -m idempotence
+      - name: env_isolation -- a staging run cannot emit a production URI
+        run: uv run pytest -q -m env_isolation
+      - name: determinism -- identical URI set and source_versions across runs
+        run: uv run pytest -q -m determinism
+
+  build1-journeys:
+    name: build1-journeys (the six CUJ journeys and the integration suite)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv sync --all-packages
+      # `03` §7 runs the journeys on main and the integration suite per PR. Both
+      # had 368 and 47 collected tests respectively and no job.
+      - name: E2E journeys
+        run: uv run pytest -q -m e2e
+      - name: Integration suite
+        run: uv run pytest -q -m integration
+      # The PR ratchet's subject, and it is narrower than `-m "not bench"` on
+      # purpose: `03` §7's Gate column puts E2E journeys on `main` and integration
+      # per-PR. Measured at 720.2s with the journeys in and 519.4s with them out,
+      # against a 600s budget -- so the widened selector was the defect rather than
+      # the suite, and no test was deleted to reach the number (B1-CR-99).
+      - name: The whole suite, ratcheted
+        run: |
+          uv run python scripts/ci_ratchet.py --budget pr --             uv run pytest -q -m "not bench and not e2e"
+
+  cuj5-network-down:
+    name: cuj5-network-down (the interface is administratively down, not merely guarded)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv sync --all-packages
+      # `05` S1.8: *"CUJ-5 runs with the network interface administratively down
+      # in CI"*, and that is a stronger claim than the socket guard being on. The
+      # guard proves **our code** refuses; an interface that is down proves nothing
+      # in the process could have reached a network by a path nobody thought of --
+      # a library that opens its own socket, a dependency that resolves a name at
+      # import, a subprocess. Those are exactly the paths a guard written against
+      # known callers does not cover.
+      #
+      # `unshare -rn` gives an unprivileged network namespace with nothing but a
+      # down loopback, which is available on GitHub's Ubuntu runners without root.
+      # The whole test process runs inside it.
+      - name: Prove the namespace really has no network
+        run: |
+          set -euo pipefail
+          if unshare -rn python3 -c "
+          import socket, sys
+          try:
+              socket.create_connection(('1.1.1.1', 53), timeout=3)
+          except OSError:
+              sys.exit(0)
+          sys.exit(1)
+          "; then
+            echo "network namespace confirmed down"
+          else
+            echo "::error::the namespace reached the network -- this job would pass vacuously"
+            exit 1
+          fi
+      - name: CUJ-5 with the interface down
+        run: unshare -rn uv run pytest -q tests/e2e/test_map_cuj5.py
+
   packaged-artifact:
     name: packaged-artifact (install what we ship, then use it)
     runs-on: ubuntu-24.04
@@ -708,7 +795,16 @@ jobs:
     # measuring -- D1 is a *pass rate* and a run that only records its green days
     # reports 1.0 forever.
     if: always()
-    needs: [golden-g0, schema-lint, append-only, lint, durability, conformance-matrix]
+    needs:
+      [
+        golden-g0,
+        schema-lint,
+        append-only,
+        lint,
+        durability,
+        conformance-matrix,
+        build1-gates,
+      ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0

@@ -456,6 +456,14 @@ class TestErrorRegistrySync:
         the moment S1.1 registered the fourteen real codes, that construction
         made all fourteen "implemented but documented nowhere" and the test
         failed for a reason that had nothing to do with what it asserts.
+
+        **S1.8 broke this test by closing a build, which is the right way to find
+        out.** It inherited `enforce_completeness` from Build 1's real document,
+        and `03` §11 item 8 flipped that document to `True` -- so a test about the
+        *pending* path started exercising the *enforcing* one. The flag is now set
+        explicitly here: the pending path is a real capability that the **next**
+        build's in-progress document will need, and a test of it should not depend
+        on which build happens to be in flight.
         """
         build1 = tmp_path / "b1.md"
         implemented = sorted(
@@ -481,7 +489,11 @@ class TestErrorRegistrySync:
                     )
                 ),
             ),
-            replace(error_registry_sync.DEFAULT_REGISTRY_DOCUMENTS[1], path=build1),
+            replace(
+                error_registry_sync.DEFAULT_REGISTRY_DOCUMENTS[1],
+                path=build1,
+                enforce_completeness=False,
+            ),
         )
         if not documents[0].path.exists():
             pytest.skip("handoff pack not reachable; the CI job is the authoritative instrument")
@@ -490,6 +502,57 @@ class TestErrorRegistrySync:
 
         assert report.ok, report.violations
         assert any("MAP_NOT_BUILT_YET" in p for p in report.pending), report.pending
+
+    def test_an_unimplemented_code_in_an_enforcing_document_fails_the_gate(
+        self, tmp_path: Path
+    ) -> None:
+        """The other half of the flip, and the one `03` §11 item 8 actually buys.
+
+        *Fails when* `enforce_completeness=True` still prints a documented-but-unbuilt
+        code as a pending count instead of failing. *Matters because* item 8 is the
+        condition that converts *specified* into *shipped* for `02` §1.4, and a flag
+        that changed nothing observable would close a build DoD condition by moving a
+        boolean. *No other instrument catches it because* the sibling test above
+        asserts the **pending** path, and a gate stuck permanently in pending mode
+        satisfies it perfectly.
+        """
+        build1 = tmp_path / "b1.md"
+        implemented = sorted(
+            code for code in ERROR_CATEGORIES if str(code).startswith(_BUILD_1_CODE_PREFIX)
+        )
+        rows = "".join(
+            f"| `{code}` | {ERROR_CATEGORIES[code].value} | see contracts §1.4 |\n"
+            for code in implemented
+        )
+        build1.write_text(
+            "### 1.4 Errors\n\n"
+            "| Code | Category | Raised when |\n|---|---|---|\n"
+            f"{rows}"
+            "| `MAP_NOT_BUILT_YET` | policy | never, so far |\n",
+            encoding="utf-8",
+        )
+        documents = (
+            replace(
+                error_registry_sync.DEFAULT_REGISTRY_DOCUMENTS[0],
+                path=Path(
+                    os.environ.get(
+                        "ADOPT_CONTRACTS_PATH", error_registry_sync.DEFAULT_CONTRACTS_PATH
+                    )
+                ),
+            ),
+            replace(
+                error_registry_sync.DEFAULT_REGISTRY_DOCUMENTS[1],
+                path=build1,
+                enforce_completeness=True,
+            ),
+        )
+        if not documents[0].path.exists():
+            pytest.skip("handoff pack not reachable; the CI job is the authoritative instrument")
+
+        report = error_registry_sync.run(documents)
+
+        assert not report.ok, "an enforcing document accepted a documented-but-unbuilt code"
+        assert any("MAP_NOT_BUILT_YET" in v for v in report.violations), report.violations
 
 
 @pytest.mark.unit

@@ -1,0 +1,123 @@
+{
+  "breaches": [],
+  "budgets": {
+    "N1": {
+      "constant": "MAP_STAGE1_BUDGET_S",
+      "limit": 900.0,
+      "what": "stage1_seconds"
+    },
+    "N11": {
+      "constant": "MAP_MAX_RSS_BYTES",
+      "limit": 2147483648.0,
+      "what": "peak_rss_bytes"
+    },
+    "N2": {
+      "constant": "MAP_TOTAL_BUDGET_S",
+      "limit": 3600.0,
+      "what": "total_seconds"
+    },
+    "N3": {
+      "constant": "MAP_INCREMENTAL_BUDGET_S",
+      "limit": 300.0,
+      "what": "rerun_total_seconds"
+    }
+  },
+  "corpus": {
+    "decision": "docs/pack/OPEN-DECISIONS.md OD-18 -- PRD Q4's stated fallback, exercised",
+    "manifest": "perf\\soak\\corpus.json"
+  },
+  "generated_at": "2026-08-18T14:14:12Z",
+  "machine": {
+    "cpu_count": 12,
+    "machine": "AMD64",
+    "platform": "win32",
+    "processor": "Intel64 Family 6 Model 154 Stepping 4, GenuineIntel",
+    "python": "3.12.12",
+    "reading": "a developer machine, not `bench/RUNNER.md`'s pinned runner. `01` N1-N3 and N11 are claims about a client repository on an engineer's own machine, which is what G3 measures; they are not runner-pinned micro-benchmarks like Build 0's seven.",
+    "reference_runner": false,
+    "workers": 8
+  },
+  "notes": [
+    "archetypes covered: ['ai', 'data', 'web']",
+    "largest repository: 930095 LoC",
+    "corpus is PRD Q4's stated fallback, taken flagged under OD-18. `01` section 11's claims discipline applies: none of these numbers may be quoted outside engineering until the founder's corpus is ruled and re-measured."
+  ],
+  "repos": [
+    {
+      "archetype": "web",
+      "client_imports_attempted": 0,
+      "degradations": 2,
+      "error": null,
+      "exit_code": 0,
+      "facts": 27269,
+      "files_indexed": 4552,
+      "licence": "BSD-3-Clause",
+      "loc": 930095,
+      "name": "saleor",
+      "network_attempted": 0,
+      "peak_rss_bytes": 315330560,
+      "rerun_revisions_written": {
+        "binding": 0,
+        "identity": 0,
+        "knowledge": 0
+      },
+      "rerun_stage1_seconds": 49.047,
+      "rerun_total_seconds": 195.64,
+      "stage1_seconds": 51.0,
+      "store_bytes_after_first": 99782656,
+      "store_bytes_after_rerun": 99782656,
+      "total_seconds": 238.765
+    },
+    {
+      "archetype": "ai",
+      "client_imports_attempted": 0,
+      "degradations": 4,
+      "error": null,
+      "exit_code": 0,
+      "facts": 9208,
+      "files_indexed": 2896,
+      "licence": "MIT",
+      "loc": 413497,
+      "name": "langchain",
+      "network_attempted": 0,
+      "peak_rss_bytes": 152797184,
+      "rerun_revisions_written": {
+        "binding": 0,
+        "identity": 0,
+        "knowledge": 0
+      },
+      "rerun_stage1_seconds": 23.766,
+      "rerun_total_seconds": 85.5,
+      "stage1_seconds": 29.406,
+      "store_bytes_after_first": 33853440,
+      "store_bytes_after_rerun": 33853440,
+      "total_seconds": 114.937
+    },
+    {
+      "archetype": "data",
+      "client_imports_attempted": 0,
+      "degradations": 0,
+      "error": null,
+      "exit_code": 0,
+      "facts": 5,
+      "files_indexed": 18,
+      "licence": "Apache-2.0",
+      "loc": 440,
+      "name": "jaffle-shop-classic",
+      "network_attempted": 0,
+      "peak_rss_bytes": 59236352,
+      "rerun_revisions_written": {
+        "binding": 0,
+        "identity": 0,
+        "knowledge": 0
+      },
+      "rerun_stage1_seconds": 3.328,
+      "rerun_total_seconds": 6.406,
+      "stage1_seconds": 4.422,
+      "store_bytes_after_first": 421888,
+      "store_bytes_after_rerun": 421888,
+      "total_seconds": 7.781
+    }
+  ],
+  "soak_version": 1
+}

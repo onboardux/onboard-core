@@ -239,6 +239,15 @@ MAP_TOTAL_BUDGET_S: Final[int] = 3600
 #: An unchanged re-run must finish inside this. CUJ-2's whole claim.
 MAP_INCREMENTAL_BUDGET_S: Final[int] = 300
 
+#: `01` N11's memory ceiling -- 2 GiB of peak RSS at `MAP_MAX_WORKERS_CEILING`
+#: workers. **Stated in the PRD since v3.0 and, until S1.8, in no module at all**
+#: (B1-CR-95): `03` §3's table did not carry it, so the only bound the soak could
+#: have compared against was whatever its author typed. That is the sixth
+#: instance of the shape `MAP_OUTSIDE_VCS_RECALL_FLOOR`, `MAP_XML_MAX_DEPTH` and
+#: the two `MAP_AGENT_SANDBOX_*` bounds each arrived as. Consumer:
+#: `bench/map_soak.py`. Ratification gate: S1.8, against the reference corpus.
+MAP_MAX_RSS_BYTES: Final[int] = 2_147_483_648
+
 #: Per-extractor watchdog, and the variant for a `heavy = true` manifest. A
 #: timeout degrades to the declared fallback and is recorded; it never fails the
 #: run (PRD F7.3).

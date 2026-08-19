@@ -228,12 +228,53 @@ def _unlabeled(result: RunResult) -> list[str]:
     ]
 
 
+def _failed_extractors(result: RunResult) -> list[str]:
+    """The third unnumbered callout: an extractor that failed, and what it cost.
+
+    **A failed extractor was invisible everywhere a human looks, until S1.8**
+    (B1-CR-97). `01` F7.4 isolates an extractor exception, records it and lets the
+    run continue -- which is right, and is not the same as *saying so*. The
+    degradations block one section above is the **ladder's**: it reports a family
+    that dropped a rung, not a plugin that raised. So a run whose secrets extractor
+    failed printed a clean first screen, exited 0 -- `02` §8's *"Complete"* -- and
+    handed back a map with one fewer identity than the run before it.
+
+    The S1.8 soak found exactly that on `saleor`: `common.secrets` succeeded on the
+    first run and failed on the second over an **unchanged** tree, and the map lost
+    a `config_key/secret:env/SECRET_KEY` identity with nothing anywhere saying a
+    thing. The intermittency is `BACKLOG.md` B-08; this is the half that makes the
+    next occurrence diagnosable instead of invisible.
+
+    **Unnumbered**, on B1-CR-75's precedent: numbering a block that appears only
+    when something went wrong would make the inventory's number depend on whether
+    the run had a bad day. Emitted only when there is a failure -- a standing
+    "every extractor succeeded" line is a line readers learn to skip.
+    """
+    failed = [outcome for outcome in result.outcomes if outcome.status == "failed"]
+    if not failed:
+        return []
+    return [
+        f"> **{len(failed)} extractor(s) failed. This map is smaller than it should be.**",
+        "> A failed extractor is isolated so the run can finish (`01` F7.4); the run",
+        "> is still complete in the sense that everything else ran, and it is **not**",
+        "> complete in the sense a reader assumes. Re-run before treating an absence",
+        "> here as evidence that a system has none of that kind of surface.",
+        ">",
+        *[
+            f"> - `{outcome.extractor_id}` — {outcome.detail or 'cause not recorded'}"
+            for outcome in failed[:MAP_FIRST_SCREEN_LIST_MAX]
+        ],
+        "",
+    ]
+
+
 def _first_screen(result: RunResult) -> list[str]:
     lines: list[str] = ["# System surface map", ""]
     for index, heading in enumerate(FIRST_SCREEN, start=1):
         lines.append(f"## {index}. {heading}")
         lines.extend(_RENDERERS[heading](result))
         lines.append("")
+    lines.extend(_failed_extractors(result))
     lines.extend(_unlabeled(result))
     lines.extend(_floating_pins(result))
     return lines

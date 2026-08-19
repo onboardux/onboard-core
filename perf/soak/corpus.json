@@ -1,0 +1,39 @@
+{
+  "corpus_version": 1,
+  "decision": "docs/pack/OPEN-DECISIONS.md OD-18 -- PRD Q4's stated fallback, exercised",
+  "ruled_by": "not ruled; the founder's corpus supersedes this one and re-runs the soak",
+  "claims_discipline": "01 section 11: no number measured on this corpus may reach a deck, a proposal or a security-review answer until it is re-verified on the corpus the founder rules.",
+  "constraints": {
+    "05_S1.8": "at least one repository >200k LoC and at least three archetypes",
+    "licence": "permissive only -- these are cloned into a contributor's machine and named in a public artefact"
+  },
+  "repositories": [
+    {
+      "name": "saleor",
+      "url": "https://github.com/saleor/saleor.git",
+      "ref": "main",
+      "licence": "BSD-3-Clause",
+      "archetype": "web",
+      "why": "01 section 4 CUJ-1 is specified against 'a ~180k-LoC Django + Celery + Postgres repo'. This is that repository at scale -- the corpus entry the journey was written from, not one chosen to be easy.",
+      "large": true
+    },
+    {
+      "name": "langchain",
+      "url": "https://github.com/langchain-ai/langchain.git",
+      "ref": "master",
+      "licence": "MIT",
+      "archetype": "ai",
+      "why": "Prompts, model pins, tool schemas and retrieval configuration in a real tree, which is what 01 F8.2 and the outside-VCS discipline were written for.",
+      "large": false
+    },
+    {
+      "name": "jaffle-shop-classic",
+      "url": "https://github.com/dbt-labs/jaffle-shop-classic.git",
+      "ref": "main",
+      "licence": "Apache-2.0",
+      "archetype": "data",
+      "why": "A real dbt project -- YAML and SQL a person wrote. B1-CR-78 is ruled against this archetype's numbers, so the corpus has to contain one.",
+      "large": false
+    }
+  ]
+}

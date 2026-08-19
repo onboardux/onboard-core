@@ -116,8 +116,16 @@ DEFAULT_SPEC_DOCUMENTS: Final[tuple[SpecDocument, ...]] = (
         label="build_1 §3",
         core_sections=("3",),
         relative_hint=Path("build_1") / "03-implementation-spec.md",
-        enforce_completeness=False,
-        required=False,
+        # **S1.8 flipped this, which is `03` §11 item 8 and the build's own last
+        # Definition-of-Done condition.** Until here Build 1's §3 rows printed as
+        # `pending:` with a count and failed nothing, which is what let the table
+        # be written a sprint ahead of the module. From now a documented-but-unbuilt
+        # tunable fails CI, which is the difference between "specified" and
+        # "shipped" for that table. `03` §3 says this is deliberately last:
+        # flipping it earlier would have made the gate unrunnable for the whole
+        # build.
+        enforce_completeness=True,
+        required=True,
     ),
 )
 

@@ -34,6 +34,7 @@ jobs:
   lint:
     name: lint (ruff, mypy --strict, twelve import contracts)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,6 +63,7 @@ jobs:
   constants-sync:
     name: constants-sync
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     # The handoff pack is private. Fork and Dependabot pull requests never
     # receive its token, and a fork's own `main` may not configure a pack at
     # all. Skip this trusted-boundary comparison before allocating a runner;
@@ -103,6 +105,7 @@ jobs:
   error-registry-sync:
     name: error-registry-sync
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     if: >-
       ${{
         vars.ADOPT_PACK_REPOSITORY != '' &&
@@ -136,6 +139,7 @@ jobs:
   licence-gate:
     name: licence-gate
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -148,6 +152,7 @@ jobs:
   pricing-freshness:
     name: pricing-freshness (warns; never blocks)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -170,6 +175,7 @@ jobs:
   vuln-audit:
     name: vuln-audit (pip-audit over the resolved tree)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -202,6 +208,7 @@ jobs:
   first-party-deps:
     name: first-party-deps (each distribution installs on its own)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -221,6 +228,7 @@ jobs:
   no-destructive-sql:
     name: no-destructive-sql (the store never loses data)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -237,6 +245,7 @@ jobs:
   quarantine-audit:
     name: quarantine-audit (agent-authored code cannot forge a URI)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -253,6 +262,7 @@ jobs:
   evals:
     name: evals (the E1-E9 harness, without a provider)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -269,6 +279,7 @@ jobs:
   build1-gates:
     name: build1-gates (append_only, idempotence, env_isolation, determinism)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -297,6 +308,7 @@ jobs:
   build1-journeys:
     name: build1-journeys (the six CUJ journeys and the integration suite)
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -325,6 +337,7 @@ jobs:
   cuj5-network-down:
     name: cuj5-network-down (the interface is administratively down, not merely guarded)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -372,6 +385,7 @@ jobs:
   packaged-artifact:
     name: packaged-artifact (install what we ship, then use it)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -397,6 +411,7 @@ jobs:
   artifact-licence:
     name: artifact-licence (the licence ships inside what we publish)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -420,6 +435,7 @@ jobs:
   unit:
     name: unit (ratcheted to CI_UNIT_MAX_MINUTES)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -438,6 +454,7 @@ jobs:
   property:
     name: property
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -450,6 +467,7 @@ jobs:
   durability:
     name: durability (kill and resume, in-process backend)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -485,6 +503,7 @@ jobs:
   conformance-matrix:
     name: conformance-matrix (>= 2 non-test adapters green)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     # PRD N12 and D5, AI spec §7.1's gate. **A pipeline exercising one vendor is a
     # failing pipeline** -- below two real adapters the BYO-model argument is
     # decorative and the seam is a vendor wrapper with extra steps.
@@ -584,6 +603,7 @@ jobs:
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     # **No soft-fail, no continue-on-error, ever.** G0 is the executable form of
     # the commercial promise -- stop paying and you keep the knowledge -- and
     # that promise has no degraded mode either. PRD D1 measures this job's pass
@@ -624,6 +644,7 @@ jobs:
   coverage-floor:
     name: coverage-floor (an alarm, never a target)
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -650,6 +671,7 @@ jobs:
   append-only:
     name: append-only (no UPDATE on a revision, no covered_cache write outside adopt_coverage)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -726,6 +748,7 @@ jobs:
   schema-check:
     name: schema-check (generated artifacts match the manifest)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -746,6 +769,7 @@ jobs:
   schema-lint:
     name: schema-lint (additive-only against the base branch)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -780,6 +804,14 @@ jobs:
   schema-realize:
     name: schema-realize (SQLite and Postgres 16 apply the generated DDL)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # A hang is not a failure until something says so. On 2026-08-19 this job's
+    # `apt-get update` blocked on the apt lock for **45 minutes** and would have
+    # run to GitHub's 360-minute default before anyone was told. The step below
+    # can no longer block that way; this is the backstop for the next thing that
+    # can, because "it stopped" and "it is still working" are the same
+    # observation without a deadline.
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
@@ -799,10 +831,38 @@ jobs:
           - 5432:5432
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Three separate defects, all of which fired at once on 2026-08-19:
+      #
+      # 1. **It installed what the runner already has.** `ubuntu-24.04` ships
+      #    `sqlite3` and `psql`. The whole step was avoidable work on the happy
+      #    path and a hang risk on the unhappy one, so it now asks first. The
+      #    check is not an optimization -- it is what removes the apt path
+      #    entirely on a normal runner.
+      # 2. **`apt-get update` waits on the apt lock forever.** The `apt-daily`
+      #    and `unattended-upgrades` timers hold it for the first minutes after
+      #    a runner boots, and this job drew a runner inside that window: the
+      #    step emitted nothing for 45 minutes. `DPkg::Lock::Timeout` makes apt
+      #    give up and exit non-zero instead, so a lock becomes a failure with a
+      #    message rather than a job that never ends.
+      # 3. **`-qq` suppressed the one line that explained it.** apt prints
+      #    "Waiting for cache lock" at normal verbosity; `-qq` silences it, so
+      #    the log recorded a step that had started and said nothing. That is
+      #    `extractor_timings()` dropping `detail` (B1-CR-97) in a shell script:
+      #    the quiet flag removed the diagnosis, not the noise.
       - name: Database clients
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends sqlite3 postgresql-client
+          set -euo pipefail
+          missing=()
+          command -v sqlite3 >/dev/null || missing+=(sqlite3)
+          command -v psql >/dev/null || missing+=(postgresql-client)
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "sqlite3 $(sqlite3 --version | cut -d' ' -f1) and $(psql --version) already present; nothing to install"
+            exit 0
+          fi
+          echo "installing: ${missing[*]}"
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends "${missing[@]}"
       - name: SQLite -- create version 3 and read it back
         run: |
           set -euo pipefail
@@ -836,6 +896,7 @@ jobs:
   metrics:
     name: metrics (PRD §6 success metrics)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     # `always()`, because a red gate is a data point rather than a reason to stop
     # measuring -- D1 is a *pass rate* and a run that only records its green days
     # reports 1.0 forever.

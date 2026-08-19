@@ -34,6 +34,8 @@ jobs:
   perf:
     name: perf -- seven benchmark budgets, on the reference runner
     runs-on: ubuntu-24.04
+    # A benchmark that hangs is a benchmark nobody is told about.
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:16
@@ -58,10 +60,21 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       - run: uv sync --all-packages
 
+      # Same three defects `schema-realize` carried until 2026-08-19: it
+      # installed what `ubuntu-24.04` already ships, `apt-get update` could
+      # block on the apt lock indefinitely, and `-qq` suppressed the "Waiting
+      # for cache lock" line that would have explained the silence. A perf run
+      # that hangs here burns a runner and produces no measurement.
       - name: PostgreSQL client
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends postgresql-client
+          set -euo pipefail
+          if command -v psql >/dev/null; then
+            echo "$(psql --version) already present; nothing to install"
+            exit 0
+          fi
+          export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends postgresql-client
 
       - name: Capture the reference runner profile
         run: |

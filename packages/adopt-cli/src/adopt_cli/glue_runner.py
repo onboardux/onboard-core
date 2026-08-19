@@ -69,13 +69,38 @@ class SeamGlueRunner:
         )
         elapsed_s = result.cost.wall_ms / _MS_PER_S
         if result.status != "ok" or not isinstance(result.output, dict):
+            # **`AgentResult.error` carries the cause, and this raise used to drop
+            # it.** Its own docstring says a failed run still has a cost and a
+            # trace and that "raising would throw both away at exactly the moment
+            # they matter" -- and then the one consumer threw away the error too,
+            # reporting `status 'error' and no object` for a bad key, an unknown
+            # model, a refused parameter and a network failure alike. That is
+            # B1-CR-97's defect (a cause computed and discarded) in the one path
+            # where the operator has no other artefact to read.
+            #
+            # The **code** and message are surfaced, never the provider's raw
+            # payload: `02` §9.3 is no client content, and a provider error body
+            # can echo the request.
+            cause = result.error
+            detail = (
+                f" -- {cause.code.value}: {cause}"
+                if isinstance(cause, AdoptError)
+                else " -- the adapter reported no error object"
+            )
+            _log.error(
+                "agent_run_failed",
+                prompt=prompt_ref,
+                agent_status=str(result.status),
+                error_code=cause.code.value if isinstance(cause, AdoptError) else "none",
+            )
             raise AdoptError(
                 ErrorCode.AGENT_OUTPUT_SCHEMA,
-                message=f"{prompt_ref} returned status {result.status!r} and no object",
+                message=f"{prompt_ref} returned status {result.status!r} and no object{detail}",
                 hint="`04` §5: a second schema failure aborts that prompt's "
                 "contribution and leaves the deterministic output untouched. The map "
-                "you already have is complete.",
-            )
+                "you already have is complete. If the code above names a credential, "
+                "a model or a parameter, that is the thing to fix -- not the prompt.",
+            ) from (cause if isinstance(cause, AdoptError) else None)
         try:
             return model.model_validate(result.output), result.cost.usd, elapsed_s
         except ValidationError as error:

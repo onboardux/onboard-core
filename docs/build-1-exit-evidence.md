@@ -272,14 +272,42 @@ arithmetic.
 | # | Condition | Verdict |
 |---|---|---|
 | 1 | All thirteen features implemented behind their flags, acceptance signals demonstrated | **MET** — F1–F13 implemented; every acceptance signal has a named test, and the six journeys exercise them end to end |
-| 2 | All seventeen NFRs **measured on the reference set and archived**, not asserted | **NOT MET** — N1, N2, N3, N4, N5, N6, N7, N8, N9, N11, N12, N16, N17 measured and archived. **N13** (deterministic-plugin coverage) is measured and its *reading* is an open decision (OD-19). **N14** (glue rewrite rate) is **undefined** — no review has ever been decided. **N10** (kill at any statement boundary) and **N15** (release-artefact licence conformance) are not measured this sprint |
-| 3 | CI green including append-only, idempotence, environment-isolation, determinism and both lints | **NOT MET** — all four markers and both lints are green **locally**, and until this sprint **no CI job ran any of the four** (B1-CR-98). Three jobs now exist and **none has executed**. This condition says *CI*, and CI has not run |
+| 2 | All seventeen NFRs **measured on the reference set and archived**, not asserted | **NOT MET** — N1, N2, N3, N4, N5, N6, N7, N8, N9, N11, N12, N16, N17 measured and archived. **N13** (deterministic-plugin coverage) is measured and its *reading* is an open decision (OD-19). **N14** (glue rewrite rate) is **undefined** — no review has ever been decided. **N10** is **measured as of 2026-08-19** -- `tests/durability/test_map_store_atomicity.py` kills a child with `os._exit` at thirteen statement boundaries inside `write_run` and asserts the store reopens, passes `PRAGMA integrity_check` and is byte-identical to its pre-write fingerprint; **it holds at every point**, with a positive control proving the uninterrupted write does change the store and a planted pre-kill commit turning 13 of 13 red. **N15** (release-artefact licence conformance) is still unmeasured, and is now *possible* since Build 0 DoD condition 6 closed and `v0.3.1` shipped |
+| 3 | CI green including append-only, idempotence, environment-isolation, determinism and both lints | **MET 2026-08-19** — the three jobs B1-CR-98 added have now executed. Run [`32237536569`](https://github.com/onboardux/onboard-core/actions/runs/32237536569) on `build1/s1.1-write-path`: **23 green, 0 failed**, `build1-gates` running the four markers as four separate steps (13 · 15 · 7 · 5 tests). **Reaching it took five dispatches and surfaced seven defects that had never been exposed**, because the branch had never been pushed in eight sprints — among them a broken `pip install adopt-cli`, a vacuous end-to-end secret assertion, and this job list having no `timeout-minutes` at all. Two caveats stand: `constants-sync` and `error-registry-sync` **skip** on branch dispatches (they need `vars.ADOPT_PACK_REPOSITORY` and a token), so condition 8 is proven on `main` and locally rather than here; and `conformance-matrix` skips without credentials |
 | 4 | The six E2E journeys pass | **MET** — `tests/e2e/test_map_cuj{1..6}.py`, 16 tests, green |
 | 5 | The add-on §5 exit criteria all met | **MET, with one stated limit** — nine of nine ticked with a named test or archived report; *"the G3 hour holds on ≥3 real repos"* is ticked for the **clock** and explicitly not for *useful*, which is the cold-FDE exercise |
 | 6 | Exit evidence produced: coverage per archetype, glue rewrite rate, move precision | **NOT MET** — M2 and M4 measured (§1, §2). **M5 is `null`** and stays so until a credential exists |
 | 7 | Every clarification is a row in `00` §6 | **MET** — 95 rows; S1.8 added B1-CR-89 … B1-CR-99 |
 | 8 | **Both sync gates enforce completeness, reporting zero pending** | **MET** — `constants_sync` and `error_registry_sync` both carry Build 1's documents with `enforce_completeness=True` and both report **zero pending**. This is the item that converts *specified* into *shipped* for both tables, and it is the last one deliberately |
 
-**Four met, four not** — and the four that are not name a **person** rather than a
-task: a founder's corpus ruling, an adapter credential, a CI run, and a release run.
-No implementation work is outstanding against them.
+**Five met, three not**, as of 2026-08-19 — conditions 1, 3, 4, 5, 7 and 8 are met,
+which is six by the table's own rows, and **condition 5 is counted here as met with
+its limit stated rather than as a sixth clean pass**: G3's *"useful"* half has not
+been measured and cannot be by anything in this repository. Read the rows, not this
+sentence — an earlier revision of this document said *"four met, four not"* while
+the table above showed five, and a summary that disagrees with its own table is the
+defect this build has spent eight sprints naming in other people's instruments.
+
+The three that are not met name an **input** rather than a task:
+
+| # | Blocked on | Who |
+|---|---|---|
+| 2 | **N10 has no instrument at all** — it must be written · N14 needs an adapter credential · N15 needs verifying against the shipped `v0.3.1` artefacts · N13's *reading* is OD-19 | engineering + owner |
+| 6 | one adapter credential; M5 is `null` until a review is decided | owner |
+| 2, 6 | — | — |
+
+**A correction to the standing claim that "no implementation work is
+outstanding": it was wrong, and the work has now been done.** `01` N10 —
+*"kill at any statement boundary leaves the store openable and unchanged"* — had
+no test, no drill and no harness anywhere in this build, while sitting inside a
+**checked** feature box: `01` F3's acceptance signal ends *"a kill at any
+statement boundary leaves the store clean"*. The only kill test in the repository
+was Build 0's workflow drill, which names neither `adopt_map` nor `SurfaceWriter`.
+The instrument now exists and N10 passes.
+
+**What building it exposed about instruments generally.** The drill failed at
+*every* kill point on its first run, including statement 1 where nothing had been
+written — because `schema_meta` gains a row on **every `open_store`**, so the
+parent changed the fingerprint by opening the file to measure it. The store was
+correct and the instrument was not. That is the same shape as the six earlier
+findings, arriving in the tool built to close the seventh.

@@ -114,12 +114,18 @@ def test_cuj2_branch_a_bumped_extractor_version_writes_revisions_and_names_the_c
     # Every fact this run wrote is attributable to a named extractor, which is what
     # makes the branch's "the report names the bumped extractor as the cause"
     # answerable at all.
-    # The vocabulary is **derived, never re-typed**. This set was written as
-    # `{"ok", "timeout", "error", "skipped"}`: two members the scheduler cannot
-    # produce, and neither `failed` nor `truncated`, which it can. It passed
-    # everywhere no extractor deviated from the happy path and tripped on the
-    # first CI run where one did -- asserting a shape against a vocabulary that
-    # does not exist. `get_args` makes that particular mistake unavailable.
+    #
+    # **Two assertions, because the vocabulary and the outcome are two questions.**
+    # This loop once read `entry["status"] in {"ok", "timeout", "error", "skipped"}`
+    # -- two members the scheduler cannot produce, and neither `failed` nor
+    # `truncated`, which it can. Correcting that set to the real vocabulary is
+    # right and is *not sufficient*: the wrong set had been rejecting `failed`
+    # by accident, so replacing it with an accurate one silently removed the only
+    # thing in this journey that noticed an extractor had failed. A correction
+    # that deletes a detection is a regression wearing a fix's clothes.
+    #
+    # So the shape check is derived from the source of truth, and the outcome
+    # check is stated separately and on purpose.
     for entry in facts:
         assert entry["extractor"]
         assert entry["status"] in set(get_args(OutcomeStatus)), (
@@ -129,3 +135,17 @@ def test_cuj2_branch_a_bumped_extractor_version_writes_revisions_and_names_the_c
             f"unknown status for {entry['extractor']}: {entry['status']!r} "
             f"(detail: {entry.get('detail')!r})"
         )
+
+    # CUJ-2's fixture is a tree this repository controls, on which every
+    # registered extractor either applies cleanly or is skipped before it runs.
+    # A `failed` or `truncated` outcome here is therefore never expected, and the
+    # one time CI produced one (2026-08-19, an extractor that has not been
+    # reproduced since) it was the signal, not the noise. `BACKLOG.md` B-08 is
+    # the open case; this is the instrument that will name it if it recurs in a
+    # journey rather than in a soak nobody runs on every push.
+    degraded = [e for e in facts if e["status"] in {"failed", "truncated"}]
+    assert not degraded, (
+        "an extractor did not complete on a fixture engineered so that all of "
+        "them can; `01` F5.3 keeps the identity, so the store hides this and "
+        f"only the map shrinks: {[(e['extractor'], e['status'], e.get('detail')) for e in degraded]}"
+    )

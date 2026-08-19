@@ -16,8 +16,10 @@ the second time.
 
 import re
 from pathlib import Path
+from typing import get_args
 
 import pytest
+from adopt_map.scheduler import OutcomeStatus
 
 from tests.e2e.map_journey import Journey
 
@@ -112,6 +114,18 @@ def test_cuj2_branch_a_bumped_extractor_version_writes_revisions_and_names_the_c
     # Every fact this run wrote is attributable to a named extractor, which is what
     # makes the branch's "the report names the bumped extractor as the cause"
     # answerable at all.
+    # The vocabulary is **derived, never re-typed**. This set was written as
+    # `{"ok", "timeout", "error", "skipped"}`: two members the scheduler cannot
+    # produce, and neither `failed` nor `truncated`, which it can. It passed
+    # everywhere no extractor deviated from the happy path and tripped on the
+    # first CI run where one did -- asserting a shape against a vocabulary that
+    # does not exist. `get_args` makes that particular mistake unavailable.
     for entry in facts:
         assert entry["extractor"]
-        assert entry["status"] in {"ok", "timeout", "error", "skipped"}
+        assert entry["status"] in set(get_args(OutcomeStatus)), (
+            # `02` §9.3's `detail` is the whole reason B1-CR-97 put it in the
+            # report; an assertion that hides it makes the next occurrence as
+            # undiagnosable as the soak's was.
+            f"unknown status for {entry['extractor']}: {entry['status']!r} "
+            f"(detail: {entry.get('detail')!r})"
+        )

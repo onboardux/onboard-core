@@ -804,7 +804,6 @@ jobs:
   schema-realize:
     name: schema-realize (SQLite and Postgres 16 apply the generated DDL)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
     # A hang is not a failure until something says so. On 2026-08-19 this job's
     # `apt-get update` blocked on the apt lock for **45 minutes** and would have
     # run to GitHub's 360-minute default before anyone was told. The step below

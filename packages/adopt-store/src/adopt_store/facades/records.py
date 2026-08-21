@@ -23,6 +23,7 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 
 from adopt_model import (
+    AudienceTag,
     Binding,
     BindingRevision,
     Identity,
@@ -32,10 +33,13 @@ from adopt_model import (
     ObservabilityBoundary,
     ProbeDefinition,
     ProbeDefinitionRevision,
+    Provenance,
+    ReviewBatch,
+    ReviewItem,
     Sensor,
     SensorHeartbeat,
 )
-from adopt_model._enums import FreshnessState, SensorHealth
+from adopt_model._enums import FreshnessState, ReviewResolution, SensorHealth
 
 __all__ = [
     "BindingRecords",
@@ -43,6 +47,7 @@ __all__ = [
     "KnowledgeRecords",
     "ObservabilityBoundaryRecords",
     "ProbeRecords",
+    "ReviewRecords",
     "RevisionRecords",
     "SensorRecords",
 ]
@@ -71,7 +76,15 @@ class IdentityRecords(Protocol):
 
 
 class KnowledgeRecords(Protocol):
-    """`knowledge_item` and `knowledge_revision`."""
+    """`knowledge_item`, `knowledge_revision`, `provenance` and `audience_tag`.
+
+    The last two arrive with Build 2, which is the first code that writes them.
+    Both hang off a knowledge row and neither is a revision family, so both are
+    plain inserts: `provenance` is append-only by use rather than by rule -- a
+    claim's source is a fact about a revision that already exists, and a
+    revision is immutable -- and `audience_tag` is a set membership whose
+    primary key is `(item_id, audience)`.
+    """
 
     def transaction(self) -> AbstractContextManager[None]: ...
     def insert_item(self, row: KnowledgeItem) -> None: ...
@@ -80,6 +93,25 @@ class KnowledgeRecords(Protocol):
         self, item_id: str, freshness_state: FreshnessState, updated_at: _dt.datetime
     ) -> None:
         """The parent's denormalized freshness (contracts §5 obligation 6)."""
+        ...
+
+    def insert_provenance(self, row: Provenance) -> None:
+        """Record where one revision's claim came from.
+
+        There is no update and no delete, for the reason the revision tables
+        have none: provenance that could be rewritten is provenance that cannot
+        distinguish `artifact_observed` from `authored` after the fact, which is
+        the one distinction v6.1 §6 Build 2 makes non-negotiable.
+        """
+        ...
+
+    def insert_audience_tag(self, row: AudienceTag) -> None:
+        """Tag an item with one audience. `(item_id, audience)` is the key."""
+        ...
+
+    def audiences_for_item(self, item_id: str) -> Sequence[str]:
+        """The audiences already tagged, so a re-tag is a no-op rather than a
+        constraint violation."""
         ...
 
 
@@ -91,6 +123,43 @@ class BindingRecords(Protocol):
     def get_binding(self, binding_id: str) -> Binding | None: ...
     def find_binding(self, item_id: str, identity_id: str) -> Binding | None: ...
     def list_bindings_for_identity(self, identity_id: str) -> Sequence[Binding]: ...
+
+
+class ReviewRecords(Protocol):
+    """`review_batch` and `review_item` -- the one queue (v6.1 §6 F5).
+
+    Introduced by Build 2 for harvest candidates and suggested bindings, and
+    extended rather than replaced by Build 6's change items and Build 8's
+    managed batches. One surface, one habit, one implementation: a second queue
+    would be a second place a reviewer has to remember to look.
+
+    **`resolution` is the only mutable column on either table**, and it moves
+    once, from `NULL` to a terminal value. Neither table is a revision family,
+    so `no-revision-update` does not reach them -- which is exactly why the
+    narrowness is stated here rather than assumed. A queue row records a human's
+    disposition; it never holds knowledge, and nothing here can rewrite what the
+    reviewer was shown.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+    def insert_batch(self, row: ReviewBatch) -> None: ...
+    def insert_item(self, row: ReviewItem) -> None: ...
+    def get_batch(self, review_batch_id: str) -> ReviewBatch | None: ...
+    def get_item(self, review_item_id: str) -> ReviewItem | None: ...
+    def items_in_batch(self, review_batch_id: str) -> Sequence[ReviewItem]: ...
+
+    def set_item_resolution(self, review_item_id: str, resolution: ReviewResolution) -> None:
+        """Stamp one item's disposition. Never un-stamps: the caller checks."""
+        ...
+
+    def set_batch_resolution(
+        self,
+        review_batch_id: str,
+        resolution: ReviewResolution,
+        resolved_at: _dt.datetime,
+    ) -> None:
+        """Close a batch once every item in it is resolved."""
+        ...
 
 
 class ProbeRecords(Protocol):

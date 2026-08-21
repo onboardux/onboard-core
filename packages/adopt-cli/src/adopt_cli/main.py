@@ -27,6 +27,7 @@ from adopt_cli.commands import freshness as freshness_commands
 from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import init as init_command
 from adopt_cli.commands import interchange as interchange_commands
+from adopt_cli.commands import knowledge as knowledge_commands
 from adopt_cli.commands import map_command as map_commands
 from adopt_cli.commands import policy as policy_commands
 from adopt_cli.commands import store as store_commands
@@ -62,6 +63,14 @@ app.command("boundary")(boundary_command.boundary)
 # `CLI_COLD_START_MS` is measured against `adopt version`, which must not pay
 # for six extractors it never runs.
 app.command("map")(map_commands.map_command)
+
+# Build 2, registered the same way and for the same reason: `knowledge` imports
+# `adopt_knowledge` inside each command body, so `adopt version` pays for four
+# typer signatures and nothing else.
+app.command("ingest")(knowledge_commands.ingest)
+app.command("bind")(knowledge_commands.bind)
+app.command("gaps")(knowledge_commands.gaps)
+app.command("review")(knowledge_commands.review)
 
 # Registered as bare commands rather than a group: contracts §14 names them
 # `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the

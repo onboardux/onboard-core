@@ -71,12 +71,28 @@ REASON_NO_OBSERVABILITY_BOUNDARY: Final[str] = "no_observability_boundary"
 #: Input 6 -- "verification requirements". A `conflicted` verification is Bet 4
 #: working as designed: intent and reality disagree, the disagreement is
 #: representable, and the identity is **not** reported as covered while it
-#: stands. `unverified` passes, because it is the honest state every item starts
-#: in and requiring `verified` would make coverage unreachable by construction.
+#: stands.
 REASON_VERIFICATION_CONFLICTED: Final[str] = "verification_conflicted"
 
-#: Every reason, in evaluation order. Exported so a caller can enumerate the six
-#: without re-deriving the list and getting five.
+#: Input 6, second half -- **only `verified` knowledge counts** (v6.1 §6 Build 2,
+#: F6; plan decision D5).
+#:
+#: This tightens what Build 0 shipped, and the reason the original rule was
+#: written the other way is worth keeping: until Build 2 nothing could *make* an
+#: item verified, so requiring it would have made coverage unreachable by
+#: construction. Build 2 supplies both doors -- `adopt ingest` writes a
+#: human-authored document as `verified`, and confirming in `adopt review`
+#: promotes a mined candidate -- so the objection no longer holds, and the rule
+#: v6.1 actually requires can be enforced.
+#:
+#: What it buys is the honesty invariant: an unverified harvest candidate bound
+#: to an identity must not make `adopt gaps` stop asking for that identity's
+#: knowledge. A machine's unreviewed guess is not coverage, and counting it as
+#: coverage is how a gap report becomes a report about itself.
+REASON_NOT_VERIFIED: Final[str] = "knowledge_not_verified"
+
+#: Every reason, in evaluation order. Exported so a caller can enumerate them
+#: without re-deriving the list and getting one fewer.
 COVERAGE_REASONS: Final[tuple[str, ...]] = (
     REASON_IDENTITY_NOT_ACTIVE,
     REASON_NO_LIVE_BINDING,
@@ -84,6 +100,7 @@ COVERAGE_REASONS: Final[tuple[str, ...]] = (
     REASON_AUDIENCE_OR_ENVIRONMENT,
     REASON_NO_OBSERVABILITY_BOUNDARY,
     REASON_VERIFICATION_CONFLICTED,
+    REASON_NOT_VERIFIED,
 )
 
 #: The `identity_status` that counts as live. `moved` and `dead` do not: a moved
@@ -100,8 +117,14 @@ _RETIRED_BINDING_STATUS: Final[str] = "retired"
 #: obligation 4), so this is where "the revision is not active" is read.
 _RETIRED_ITEM_FRESHNESS: Final[str] = "retired"
 
-#: The `verification` that blocks coverage.
+#: The `verification` that blocks coverage as a contradiction.
 _CONFLICTED_VERIFICATION: Final[str] = "conflicted"
+
+#: The only `verification` that carries coverage. A `NULL` verification blocks
+#: exactly as `unverified` does: a revision that never stated its verification
+#: has not been verified, and treating the absence as permission would let any
+#: writer that omitted the field manufacture coverage.
+_VERIFIED_VERIFICATION: Final[str] = "verified"
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,9 +244,13 @@ def _binding_blockers(
     if audience_count == 0 or not _environment_applies(item, environment_id):
         blockers.add(REASON_AUDIENCE_OR_ENVIRONMENT)
 
-    # Input 6 -- verification requirements.
+    # Input 6 -- verification requirements. Two distinct failures, reported
+    # separately because they send an operator to different places: a conflict
+    # needs adjudicating, an unverified item needs reviewing.
     if has_verification_row and verification == _CONFLICTED_VERIFICATION:
         blockers.add(REASON_VERIFICATION_CONFLICTED)
+    elif verification != _VERIFIED_VERIFICATION:
+        blockers.add(REASON_NOT_VERIFIED)
 
     return frozenset(blockers)
 

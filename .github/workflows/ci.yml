@@ -489,23 +489,24 @@ jobs:
       # planted miss that does not exit 4. The rules live in the test, not in
       # this file: a gate written as shell here is a gate nobody writes a
       # negative test for.
-      - name: The v6.1 §6 Build 1 demo, run literally on both repositories
-        env:
-          ADOPT_REFERENCE_REPO_ROOT: ${{ runner.temp }}/reference
-        run: uv run pytest tests/e2e/test_map_journey.py -v
-      # A skip is not a pass. The journey skips when the clones are absent,
+      #
+      # **A skip is not a pass**, and `ADOPT_REFERENCE_REPOS_REQUIRED` is what
+      # makes that true here. The journey skips when the clones are absent,
       # which is the ordinary state of a developer machine and must never be the
       # state of this job -- a silently skipped Definition of Done is exactly
       # the `0/0 covered (100%)` failure CR-67 found in a gate that had gone
-      # blind, in a different costume.
-      - name: Refuse a run in which the journey skipped
+      # blind. With the flag set, every one of those skips is a failure.
+      #
+      # That rule was shell for one run: it counted
+      # `pytest --collect-only -q | grep -c "::test_"`, and `-q` prints a
+      # per-file summary rather than test ids, so it counted zero and failed a
+      # job whose journey had just passed on both repositories. It now lives in
+      # the test, where a negative case can drive it.
+      - name: The v6.1 §6 Build 1 demo, run literally on both repositories
         env:
           ADOPT_REFERENCE_REPO_ROOT: ${{ runner.temp }}/reference
-        run: |
-          set -euo pipefail
-          collected=$(uv run pytest tests/e2e/test_map_journey.py --collect-only -q | grep -c "::test_")
-          echo "collected $collected journey cases"
-          test "$collected" -ge 14
+          ADOPT_REFERENCE_REPOS_REQUIRED: "1"
+        run: uv run pytest tests/e2e/test_map_journey.py -v
 
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)

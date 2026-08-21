@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _pytest.outcomes import Failed, Skipped
 
 from adopt_obs import ExitCode
 
@@ -41,6 +42,18 @@ from adopt_obs import ExitCode
 #: that silently found half the repositories would report half a journey as a
 #: whole one.
 REFERENCE_ROOT_ENV = "ADOPT_REFERENCE_REPO_ROOT"
+
+#: Set by the `map-journey` job. **Turns every skip below into a failure**, and
+#: it exists because a skipped Definition of Done is indistinguishable from a
+#: met one in a green run -- CR-67's `0/0 covered (100%)` in a different
+#: costume. The rule lives here rather than in the workflow on purpose: the
+#: first version of it *was* shell, counting `pytest --collect-only -q` output
+#: with `grep -c "::test_"`, and `-q` prints a per-file summary rather than
+#: test ids, so it counted zero and failed a run whose journey had just passed
+#: on both repositories. A gate written as shell is a gate nobody writes a
+#: negative test for -- `test_the_required_flag_turns_a_skip_into_a_failure` is
+#: that test.
+REFERENCE_REQUIRED_ENV = "ADOPT_REFERENCE_REPOS_REQUIRED"
 
 REFERENCE_DIR = Path(__file__).resolve().parents[1] / "reference"
 ENTRY_POINT = (
@@ -94,15 +107,55 @@ REFERENCES = _references()
 _IDS = [reference.slug for reference in REFERENCES] or ["none"]
 
 
+def _required() -> bool:
+    """Whether a missing checkout is a failure rather than a skip."""
+    return os.environ.get(REFERENCE_REQUIRED_ENV, "").strip().lower() in {"1", "true", "yes"}
+
+
+def _absent(reason: str) -> None:
+    """Skip on a developer machine; **fail** wherever the journey is required."""
+    if _required():
+        pytest.fail(
+            f"{reason} -- and {REFERENCE_REQUIRED_ENV} is set, so this is a failure "
+            "rather than a skip. The Build 1 demo is this build's Definition of Done; "
+            "a run that skipped it is indistinguishable from a run that met it."
+        )
+    pytest.skip(f"{reason}; the map-journey CI job supplies it")
+
+
 @pytest.fixture(params=REFERENCES or [None], ids=_IDS)
 def reference(request: pytest.FixtureRequest) -> Reference:
     """A pinned checkout, or a skip naming exactly what is missing."""
     subject = request.param
     if subject is None:
-        pytest.skip(f"{REFERENCE_ROOT_ENV} is unset; the map-journey CI job sets it")
+        _absent(f"{REFERENCE_ROOT_ENV} is unset")
     if not subject.checkout.is_dir():
-        pytest.skip(f"{subject.slug} is not checked out at {subject.checkout}")
+        _absent(f"{subject.slug} is not checked out at {subject.checkout}")
     return subject
+
+
+@pytest.mark.e2e
+def test_the_required_flag_turns_a_skip_into_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The anti-skip rule, watched failing.
+
+    *Fails when* `ADOPT_REFERENCE_REPOS_REQUIRED` stops converting a missing
+    checkout into a failure. *Matters because* this is the whole of what makes
+    the `map-journey` job evidence: without it a job whose clones failed reports
+    seven green skips and a passing run, which is exactly CR-67's
+    `0/0 covered (100%)`. *No other instrument catches it because* on every
+    healthy run the flag changes nothing -- the clones are present, nothing
+    skips, and the rule is never exercised.
+    """
+    monkeypatch.setenv(REFERENCE_REQUIRED_ENV, "1")
+
+    with pytest.raises(Failed, match=REFERENCE_REQUIRED_ENV):
+        _absent("a checkout that is not there")
+
+    monkeypatch.setenv(REFERENCE_REQUIRED_ENV, "0")
+    with pytest.raises(Skipped):
+        _absent("a checkout that is not there")
 
 
 def _run(*argv: str, cwd: Path) -> subprocess.CompletedProcess[str]:

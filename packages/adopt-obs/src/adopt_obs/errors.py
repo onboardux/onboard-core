@@ -137,6 +137,13 @@ class ErrorCode(StrEnum):
     MAP_EXPECTED_IDENTITY_MISSING = "MAP_EXPECTED_IDENTITY_MISSING"
     MAP_EXPECTED_LIST_UNREADABLE = "MAP_EXPECTED_LIST_UNREADABLE"
 
+    KNOWLEDGE_SOURCE_UNREADABLE = "KNOWLEDGE_SOURCE_UNREADABLE"
+    BIND_TARGET_NOT_FOUND = "BIND_TARGET_NOT_FOUND"
+    REVIEW_ITEM_NOT_FOUND = "REVIEW_ITEM_NOT_FOUND"
+    REVIEW_ITEM_RESOLVED = "REVIEW_ITEM_RESOLVED"
+    HARVEST_NOT_A_GIT_REPO = "HARVEST_NOT_A_GIT_REPO"
+    HARVEST_RANGE_UNKNOWN = "HARVEST_RANGE_UNKNOWN"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -207,6 +214,29 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # so it exits 2 -- and never 4, which would report a missing *file* as a
     # perfect recall floor over nothing.
     ErrorCode.MAP_EXPECTED_LIST_UNREADABLE: ErrorCategory.USAGE,
+    # Build 2. A document named for ingest that cannot be read is refused rather
+    # than skipped, on `MAP_EXPECTED_LIST_UNREADABLE`'s precedent: silently
+    # ingesting nothing from an unreadable path reports a successful run over a
+    # corpus that is not there.
+    ErrorCode.KNOWLEDGE_SOURCE_UNREADABLE: ErrorCategory.USAGE,
+    ErrorCode.BIND_TARGET_NOT_FOUND: ErrorCategory.USAGE,
+    ErrorCode.REVIEW_ITEM_NOT_FOUND: ErrorCategory.USAGE,
+    # Policy rather than usage: the id was right and the operator did nothing
+    # malformed -- the queue is refusing to record a second disposition over a
+    # decision already made. Confirming twice would bind twice, and rejecting
+    # something already confirmed would leave a binding whose review says it was
+    # rejected.
+    ErrorCode.REVIEW_ITEM_RESOLVED: ErrorCategory.POLICY,
+    # Harvest mines what is locally present (v6.1 §6 F7), so the absence of a
+    # repository -- or of the `git` binary that reads one -- is the operator
+    # pointing the verb at something it cannot mine. Usage, so it exits 2.
+    ErrorCode.HARVEST_NOT_A_GIT_REPO: ErrorCategory.USAGE,
+    # A **second** code rather than a reuse of the one above, on CR-38's
+    # precedent and S2.1's: "there is no history here" and "the history is here
+    # but the point you named is not in it" send an operator to two different
+    # places -- install git or run in a checkout, versus `git tag -l`. The first
+    # code covering both would say only "harvest cannot read this".
+    ErrorCode.HARVEST_RANGE_UNKNOWN: ErrorCategory.USAGE,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

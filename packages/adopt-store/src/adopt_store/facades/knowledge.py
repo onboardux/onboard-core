@@ -14,12 +14,32 @@ normal path.
 """
 
 import datetime as _dt
+from collections.abc import Sequence
 
-from adopt_model import Binding, KnowledgeItem, ProbeDefinition
-from adopt_model._enums import ItemKind
+from adopt_model import (
+    AudienceTag,
+    Binding,
+    KnowledgeItem,
+    ProbeDefinition,
+    Provenance,
+    ReviewBatch,
+    ReviewItem,
+)
+from adopt_model._enums import (
+    AuthorityClass,
+    ItemKind,
+    ReviewResolution,
+    SourceType,
+    Verification,
+)
 from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, new_id, truncate_to_millisecond
 from adopt_scope import Scope
-from adopt_store.facades.records import BindingRecords, KnowledgeRecords, ProbeRecords
+from adopt_store.facades.records import (
+    BindingRecords,
+    KnowledgeRecords,
+    ProbeRecords,
+    ReviewRecords,
+)
 from adopt_store.revisions import (
     FAMILIES,
     INITIAL_BINDING_FRESHNESS,
@@ -29,7 +49,7 @@ from adopt_store.revisions import (
     RevisionWriter,
 )
 
-__all__ = ["BindingFacade", "KnowledgeFacade", "ProbeFacade"]
+__all__ = ["BindingFacade", "GovernanceFacade", "KnowledgeFacade", "ProbeFacade"]
 
 
 class KnowledgeFacade:
@@ -55,6 +75,269 @@ class KnowledgeFacade:
 
     def get(self, item_id: str) -> KnowledgeItem | None:
         return self._records.get_item(item_id)
+
+    def record(
+        self,
+        *,
+        scope: Scope,
+        kind: ItemKind,
+        title: str,
+        body_md: str,
+        authority_class: AuthorityClass,
+        verification: Verification | None = None,
+        confidence: float | None = None,
+        source_version: str | None = None,
+        actor_id: str | None = None,
+    ) -> tuple[str, str]:
+        """Create an item from primitives. Returns `(item_id, revision_id)`.
+
+        The door for packages that may not import `adopt_store` -- exactly the
+        shape and the reason `IdentityFacade.observe` has one. `adopt_knowledge`
+        declares a narrow writer protocol and is handed this facade
+        structurally; a draft-typed signature would force it to depend on this
+        package, and through it on `sqlite3`, which `no-raw-sqlite` forbids.
+
+        `create` remains for callers that already hold a `KnowledgeRevisionDraft`.
+        Both go through the one `RevisionWriter`, so there is still exactly one
+        path that writes a `knowledge_revision`.
+        """
+        return self._writer.create_item(
+            scope=scope,
+            kind=kind,
+            title=title,
+            revision=KnowledgeRevisionDraft(
+                authority_class=authority_class,
+                body_md=body_md,
+                verification=verification,
+                confidence=confidence,
+                source_version=source_version,
+            ),
+            actor_id=actor_id,
+        )
+
+    def append(
+        self,
+        *,
+        item_id: str,
+        expected_head_id: str | None,
+        body_md: str,
+        authority_class: AuthorityClass,
+        verification: Verification | None = None,
+        confidence: float | None = None,
+        source_version: str | None = None,
+        actor_id: str | None = None,
+    ) -> str:
+        """Append a revision from primitives, enforcing `expected_head_id`.
+
+        Raises:
+            AdoptError: ``REVISION_CHAIN_FORK`` when the head moved under the
+                caller. Nothing is written.
+        """
+        return self._writer.append_revision(
+            parent_id=item_id,
+            draft=KnowledgeRevisionDraft(
+                authority_class=authority_class,
+                body_md=body_md,
+                verification=verification,
+                confidence=confidence,
+                source_version=source_version,
+            ),
+            expected_head_id=expected_head_id,
+            actor_id=actor_id,
+        )
+
+    def record_provenance(
+        self,
+        *,
+        revision_id: str,
+        source_type: SourceType,
+        source_ref: str,
+        observed_at: _dt.datetime | None = None,
+    ) -> str:
+        """Record where one revision's claim came from. Returns the row id.
+
+        Provenance is written *about* a revision that already exists, so it is
+        appended and never amended. `source_type` is the manifest's enum, and
+        the distinction it carries is the one v6.1 §6 Build 2 rests on: a mined
+        field cites its commit, and anything a human or a model added is
+        `human` and can never claim to have been observed in an artifact.
+        """
+        row_id = new_id("prov")
+        self._records.insert_provenance(
+            Provenance(
+                id=row_id,
+                revision_id=revision_id,
+                source_type=source_type,
+                source_ref=source_ref,
+                observed_at=observed_at,
+            )
+        )
+        return row_id
+
+    def tag_audience(self, *, item_id: str, audience: str) -> bool:
+        """Tag an item with one audience. `True` when the tag was new.
+
+        Re-tagging is a no-op rather than an error: ingest is idempotent by
+        design, and a second run over an unchanged document must not fail on the
+        `(item_id, audience)` primary key it wrote the first time.
+        """
+        if audience in set(self._records.audiences_for_item(item_id)):
+            return False
+        self._records.insert_audience_tag(AudienceTag(item_id=item_id, audience=audience))
+        return True
+
+    def audiences(self, item_id: str) -> tuple[str, ...]:
+        return tuple(self._records.audiences_for_item(item_id))
+
+
+def _batch_resolution(outcomes: Sequence[ReviewResolution | None]) -> ReviewResolution:
+    """What a whole batch's outcome was, given its items'.
+
+    A batch closes as `confirmed` only when every item was confirmed and as
+    `rejected` only when every item was rejected. **Anything else is
+    `corrected`** -- the reviewer neither accepted the batch as offered nor
+    threw it away. Summarising a mixed session as `confirmed` would be the
+    review-queue equivalent of a green build with a failing test in it.
+    """
+    distinct = {outcome for outcome in outcomes if outcome is not None}
+    if distinct == {"confirmed"}:
+        return "confirmed"
+    if distinct == {"rejected"}:
+        return "rejected"
+    return "corrected"
+
+
+class GovernanceFacade:
+    """`review_batch` / `review_item` -- the one review queue (v6.1 §6 F5).
+
+    The queue holds **dispositions, never knowledge**. A batch names what a
+    human was shown in one sitting; an item names one knowledge row inside it
+    and, once resolved, what the human decided. Confirming is what creates a
+    binding or appends a verified revision, and that work belongs to the caller
+    -- this facade records the decision and nothing else, so a reviewer's
+    disposition can never be manufactured by the code that acts on it.
+    """
+
+    def __init__(
+        self,
+        records: ReviewRecords,
+        *,
+        clock: Clock | None = None,
+    ) -> None:
+        self._records = records
+        self._clock: Clock = clock if clock is not None else SystemClock()
+
+    def _now(self) -> _dt.datetime:
+        return truncate_to_millisecond(self._clock.now())
+
+    def open_batch(
+        self,
+        *,
+        system_id: str,
+        batch_key: str,
+        items: Sequence[tuple[str, str | None]],
+        owner_actor_id: str | None = None,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Open a batch over `(item_id, proposed_revision_id)` pairs.
+
+        Returns:
+            `(review_batch_id, review_item_ids)`.
+
+        Raises:
+            ValueError: When no items are supplied. An empty batch opens, shows
+                a reviewer nothing and can never be resolved. This is a caller
+                mistake rather than a runtime condition -- a run that produced
+                nothing to review says so and opens no batch -- so it is refused
+                the way an unregistered table name is, and carries no error code
+                a client could receive.
+        """
+        if not items:
+            raise ValueError(
+                "a review batch needs at least one item. A run with nothing to review "
+                "reports that plainly rather than queueing an empty session."
+            )
+
+        opened = self._now()
+        batch_id = new_id("rb")
+        item_ids: list[str] = []
+
+        with self._records.transaction():
+            self._records.insert_batch(
+                ReviewBatch(
+                    id=batch_id,
+                    system_id=system_id,
+                    batch_key=batch_key,
+                    item_count=len(items),
+                    owner_actor_id=owner_actor_id,
+                    opened_at=opened,
+                )
+            )
+            for item_id, proposed_revision_id in items:
+                review_item_id = new_id("ri")
+                self._records.insert_item(
+                    ReviewItem(
+                        id=review_item_id,
+                        review_batch_id=batch_id,
+                        item_id=item_id,
+                        proposed_revision_id=proposed_revision_id,
+                    )
+                )
+                item_ids.append(review_item_id)
+
+        return batch_id, tuple(item_ids)
+
+    def get_batch(self, review_batch_id: str) -> ReviewBatch | None:
+        return self._records.get_batch(review_batch_id)
+
+    def get_item(self, review_item_id: str) -> ReviewItem | None:
+        return self._records.get_item(review_item_id)
+
+    def items_in(self, review_batch_id: str) -> tuple[ReviewItem, ...]:
+        return tuple(self._records.items_in_batch(review_batch_id))
+
+    def resolve(self, *, review_item_id: str, resolution: ReviewResolution) -> ReviewItem:
+        """Stamp one item's disposition, closing its batch when it was the last.
+
+        Returns:
+            The item **as it was before resolution**, which is what a caller
+            acting on the decision needs: the proposed revision and the item it
+            belongs to.
+
+        Raises:
+            AdoptError: ``REVIEW_ITEM_NOT_FOUND`` when the id names nothing, and
+                ``REVIEW_ITEM_RESOLVED`` when it is already stamped. A second
+                resolution is refused rather than applied, because confirming
+                twice would bind twice and rejecting a confirmed item would
+                leave a binding whose review says it was rejected.
+        """
+        item = self._records.get_item(review_item_id)
+        if item is None:
+            raise AdoptError(
+                ErrorCode.REVIEW_ITEM_NOT_FOUND,
+                message=f"no review item {review_item_id!r}",
+                hint="Run `adopt review` to list the open queue. Ids are per item, not "
+                "per knowledge row.",
+            )
+        if item.resolution is not None:
+            raise AdoptError(
+                ErrorCode.REVIEW_ITEM_RESOLVED,
+                message=f"review item {review_item_id} is already {item.resolution}",
+                hint="A disposition is recorded once. Re-reviewing the same subject means "
+                "a new item in a new batch, so the queue keeps what was decided and "
+                "when.",
+            )
+
+        with self._records.transaction():
+            self._records.set_item_resolution(review_item_id, resolution)
+            outcomes = [
+                row.resolution for row in self._records.items_in_batch(item.review_batch_id)
+            ]
+            if all(outcome is not None for outcome in outcomes):
+                self._records.set_batch_resolution(
+                    item.review_batch_id, _batch_resolution(outcomes), self._now()
+                )
+
+        return item
 
 
 class BindingFacade:
@@ -133,6 +416,42 @@ class BindingFacade:
             )
 
         return binding_id, revision_id
+
+    def bind(
+        self,
+        *,
+        item_id: str,
+        identity_id: str,
+        is_load_bearing: bool,
+        extractor: str | None = None,
+        extractor_version: str | None = None,
+        confidence: float | None = None,
+        actor_id: str | None = None,
+    ) -> tuple[str, str]:
+        """Bind from primitives -- the door for packages that cannot import a draft.
+
+        The same door, for the same reason, as `KnowledgeFacade.record`.
+
+        **`locator_rung` is deliberately not offered here.** Contracts §9 fixes
+        that column's meaning as the *semantic locator hierarchy* -- how a
+        rendered referent is located, product id through fragile selector -- and
+        Build 2's tiers (a written URI, a resolved path, a confirmed name) are
+        not points on it. `extractor` already means "what produced this
+        observation", so the tier is recorded there and the rung stays NULL
+        rather than being given a second, private meaning that Build 4's recipe
+        work would later have to unpick.
+        """
+        return self.create(
+            item_id=item_id,
+            identity_id=identity_id,
+            is_load_bearing=is_load_bearing,
+            revision=BindingRevisionDraft(
+                extractor=extractor,
+                extractor_version=extractor_version,
+                confidence=confidence,
+            ),
+            actor_id=actor_id,
+        )
 
     def get(self, binding_id: str) -> Binding | None:
         return self._records.get_binding(binding_id)

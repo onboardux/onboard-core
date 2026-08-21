@@ -22,11 +22,14 @@ touch.
 **Facades arrive with their tables.** §10.3 declares eleven accessors. `scope()`
 came with S2's tables; `identities()`, `items()`, `bindings()`, `probes()` and
 `revisions()` arrived at S3 with the identity and revision families; `sensors()`
-came with the channel whose health gates freshness; and `boundary()` arrives with
-the tier negotiation that first has something to declare. The remaining three --
-`changes()`, `governance()` and `value()` -- land in the sprints that write the
-tables they front. An accessor that raises is not a seam, it is a placeholder
-wearing one.
+came with the channel whose health gates freshness; `boundary()` arrives with
+the tier negotiation that first has something to declare; and `governance()`
+arrives with Build 2, which writes the first of the tables §10.3 assigns it --
+the review queue. Its other subjects (approval, escalation, ownership, audit)
+gain methods in the build that writes them, on the same rule: an accessor that
+raises is not a seam, it is a placeholder wearing one, and a method that has no
+table yet is the same thing one level down. The remaining two -- `changes()`
+and `value()` -- land in the sprints that write the tables they front.
 
 **Two ports are exposed that §10.3 does not declare**, and deliberately so:
 `coverage_records()` and `freshness_records()` are the storage halves of
@@ -53,7 +56,12 @@ from adopt_schema.migrate import apply as apply_migrations
 from adopt_scope import ScopeFacade
 from adopt_store.facades.boundary import BoundaryFacade
 from adopt_store.facades.identity import IdentityFacade
-from adopt_store.facades.knowledge import BindingFacade, KnowledgeFacade, ProbeFacade
+from adopt_store.facades.knowledge import (
+    BindingFacade,
+    GovernanceFacade,
+    KnowledgeFacade,
+    ProbeFacade,
+)
 from adopt_store.facades.records import RevisionRecords
 from adopt_store.facades.sensors import SensorFacade
 from adopt_store.revisions import RevisionWriter
@@ -67,6 +75,7 @@ from adopt_store.sqlite.records import (
     SqliteImportRecords,
     SqliteKnowledgeRecords,
     SqliteProbeRecords,
+    SqliteReviewRecords,
     SqliteRevisionRecords,
     SqliteScopeRecords,
     SqliteSensorRecords,
@@ -91,8 +100,12 @@ COUNTED_TABLES: Final[tuple[str, ...]] = (
     "identity_revision",
     "knowledge_item",
     "knowledge_revision",
+    "provenance",
+    "audience_tag",
     "binding",
     "binding_revision",
+    "review_batch",
+    "review_item",
     "probe_definition",
     "probe_definition_revision",
     "sensor",
@@ -154,6 +167,7 @@ class Store(Protocol):
     def bindings(self) -> BindingFacade: ...
     def probes(self) -> ProbeFacade: ...
     def sensors(self) -> SensorFacade: ...
+    def governance(self) -> GovernanceFacade: ...
     def boundary(self) -> BoundaryFacade: ...
     def revisions(self) -> RevisionWriter: ...
     def close(self) -> None: ...
@@ -222,6 +236,12 @@ class SqliteStoreHandle:
             lambda: BindingFacade(
                 SqliteBindingRecords(self.backend), self.revisions(), clock=self.clock
             ),
+        )
+
+    def governance(self) -> GovernanceFacade:
+        return self._cached(
+            "governance",
+            lambda: GovernanceFacade(SqliteReviewRecords(self.backend), clock=self.clock),
         )
 
     def probes(self) -> ProbeFacade:

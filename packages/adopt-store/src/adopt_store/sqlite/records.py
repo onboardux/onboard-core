@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from adopt_model import (
     MODEL_FOR_TABLE,
+    AudienceTag,
     Binding,
     BindingRevision,
     Engagement,
@@ -34,12 +35,15 @@ from adopt_model import (
     ObservabilityBoundary,
     ProbeDefinition,
     ProbeDefinitionRevision,
+    Provenance,
+    ReviewBatch,
+    ReviewItem,
     Sensor,
     SensorHeartbeat,
     System,
     SystemLifecycleEvent,
 )
-from adopt_model._enums import FreshnessState, LifecycleState, SensorHealth
+from adopt_model._enums import FreshnessState, LifecycleState, ReviewResolution, SensorHealth
 from adopt_obs import format_timestamp
 from adopt_store.sqlite.store import SqliteStore
 
@@ -53,6 +57,7 @@ __all__ = [
     "SqliteImportRecords",
     "SqliteKnowledgeRecords",
     "SqliteProbeRecords",
+    "SqliteReviewRecords",
     "SqliteRevisionRecords",
     "SqliteScopeRecords",
     "SqliteSensorRecords",
@@ -363,6 +368,72 @@ class SqliteKnowledgeRecords:
         self._store.execute(
             "UPDATE knowledge_item SET freshness_state = ?, updated_at = ? WHERE id = ?",
             (freshness_state, format_timestamp(updated_at), item_id),
+        )
+
+    def insert_provenance(self, row: Provenance) -> None:
+        _insert(self._store, "provenance", row)
+
+    def insert_audience_tag(self, row: AudienceTag) -> None:
+        _insert(self._store, "audience_tag", row)
+
+    def audiences_for_item(self, item_id: str) -> Sequence[str]:
+        rows = self._store.query(
+            "SELECT audience FROM audience_tag WHERE item_id = ? ORDER BY audience", (item_id,)
+        )
+        return [str(row["audience"]) for row in rows]
+
+
+class SqliteReviewRecords:
+    """The SQLite implementation of `ReviewRecords`.
+
+    Two `UPDATE`s live here and both write the same column, `resolution`, on a
+    table that is not a revision family. `no-revision-update` therefore does not
+    reach them, which is why the facade states the narrowness as a rule instead
+    of relying on the gate to enforce it.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_batch(self, row: ReviewBatch) -> None:
+        _insert(self._store, "review_batch", row)
+
+    def insert_item(self, row: ReviewItem) -> None:
+        _insert(self._store, "review_item", row)
+
+    def get_batch(self, review_batch_id: str) -> ReviewBatch | None:
+        return _one(
+            self._store, ReviewBatch, "SELECT * FROM review_batch WHERE id = ?", (review_batch_id,)
+        )
+
+    def get_item(self, review_item_id: str) -> ReviewItem | None:
+        return _one(
+            self._store, ReviewItem, "SELECT * FROM review_item WHERE id = ?", (review_item_id,)
+        )
+
+    def items_in_batch(self, review_batch_id: str) -> Sequence[ReviewItem]:
+        rows = self._store.query(
+            "SELECT * FROM review_item WHERE review_batch_id = ? ORDER BY id", (review_batch_id,)
+        )
+        return [_from_row(ReviewItem, dict(row)) for row in rows]
+
+    def set_item_resolution(self, review_item_id: str, resolution: ReviewResolution) -> None:
+        self._store.execute(
+            "UPDATE review_item SET resolution = ? WHERE id = ?", (resolution, review_item_id)
+        )
+
+    def set_batch_resolution(
+        self,
+        review_batch_id: str,
+        resolution: ReviewResolution,
+        resolved_at: _dt.datetime,
+    ) -> None:
+        self._store.execute(
+            "UPDATE review_batch SET resolution = ?, resolved_at = ? WHERE id = ?",
+            (resolution, format_timestamp(resolved_at), review_batch_id),
         )
 
 

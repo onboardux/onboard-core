@@ -508,6 +508,66 @@ jobs:
           ADOPT_REFERENCE_REPOS_REQUIRED: "1"
         run: uv run pytest tests/e2e/test_map_journey.py -v
 
+  knowledge-journey:
+    name: knowledge-journey (the Build 2 demo, on two real repositories)
+    runs-on: ubuntu-24.04
+    # **Build 2's Definition of Done, executed.** Same shape and same argument as
+    # `map-journey` one job above: v6.1 §4 R1 makes every build end in a verb an
+    # FDE runs on a real engagement, and this clones two real repositories at
+    # pinned commits and runs v6.1 §6's Build 2 demo against them line by line --
+    # ingest, harvest, the one review queue, gaps, and the G2 move check.
+    #
+    # **Its own job rather than a step in `unit`.** It clones from the network,
+    # maps two trees and mines forty commits in each; putting that inside the
+    # pytest jobs would spend the `CI_UNIT_MAX_MINUTES` ratchet on work that is
+    # not a unit test.
+    #
+    # **A skip is not a pass.** `ADOPT_REFERENCE_REPOS_REQUIRED` turns every
+    # missing-clone skip into a failure, which is the whole of what makes this
+    # job evidence -- the rule lives in the test, where a negative case drives
+    # it, and `test_map_journey` owns that negative case for both journeys.
+    #
+    # **Full history, not a shallow clone.** `--filter=blob:none` fetches every
+    # commit and no blobs; `--depth 1` would leave `adopt harvest --since` with
+    # one commit to mine and this job green over nothing.
+    #
+    # **The CLI stays offline.** The network belongs to `git clone` and to `uv`.
+    # Nothing here passes `--allow-network`, and harvest refuses it anyway.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Clone each reference repository at its pinned commit
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/reference"
+          for manifest in tests/reference/*/repo.json; do
+            slug=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['slug'])" "$manifest")
+            url=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['url'])" "$manifest")
+            commit=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['commit'])" "$manifest")
+            echo "--- $slug @ $commit"
+            git clone --quiet --filter=blob:none "$url" "${RUNNER_TEMP}/reference/${slug}"
+            git -C "${RUNNER_TEMP}/reference/${slug}" checkout --quiet "$commit"
+          done
+      # The journey runs `git mv` inside the clone and moves the file back in a
+      # `finally`. A committer identity is configured because a repository with
+      # none refuses some git operations on a fresh runner, and the journey must
+      # fail on a defect rather than on a missing `user.email`.
+      - name: Give each clone a committer identity for the G2 move
+        run: |
+          set -euo pipefail
+          for slug in $(ls "${RUNNER_TEMP}/reference"); do
+            git -C "${RUNNER_TEMP}/reference/${slug}" config user.name "adopt ci"
+            git -C "${RUNNER_TEMP}/reference/${slug}" config user.email "ci@example.invalid"
+          done
+      - name: The v6.1 §6 Build 2 demo, run literally on both repositories
+        env:
+          ADOPT_REFERENCE_REPO_ROOT: ${{ runner.temp }}/reference
+          ADOPT_REFERENCE_REPOS_REQUIRED: "1"
+        run: uv run pytest tests/e2e/test_knowledge_journey.py -v
+
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
     runs-on: ubuntu-24.04

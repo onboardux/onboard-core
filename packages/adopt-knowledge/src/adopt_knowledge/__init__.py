@@ -1,4 +1,4 @@
-"""`adopt ingest` / `adopt bind` / `adopt review` / `adopt gaps` -- Build 2.
+"""`adopt ingest` / `harvest` / `bind` / `review` / `gaps` -- Build 2.
 
 The store's first knowledge corpus, bound **honestly** to the identities Build 1
 mapped, and the coverage gap made visible.
@@ -21,8 +21,11 @@ Three further postures, each inherited rather than invented:
 
 * **No model call anywhere.** v6.1 §4 R3; the optional summarization pass is
   Build 4's generation module and is not built here.
-* **Offline.** Harvest mines what is locally present (F7). Forge enrichment is
-  a `--allow-network` option that does not exist yet.
+* **Offline.** Harvest mines what is locally present (F7) through the system
+  `git` binary, confined to `gitlog`. Forge enrichment is a `--allow-network`
+  option that is **declared and refused**, so an operator who read the
+  architecture gets a sentence naming the deferral rather than an
+  unknown-option error.
 * **Mined and authored never merge.** `artifact_observed` is a claim about
   where something was read from, and nothing a human or a model writes can
   acquire it after the fact.
@@ -39,6 +42,18 @@ from adopt_knowledge.documents import (
     split_frontmatter,
 )
 from adopt_knowledge.gaps import CoverageEntry, Gap, rank_gaps
+from adopt_knowledge.gitlog import Commit, head_sha, read_commits
+from adopt_knowledge.harvest import (
+    HARVEST_EXTRACTOR,
+    HARVEST_EXTRACTOR_VERSION,
+    Candidate,
+    HarvestReport,
+    Signal,
+    batch_key,
+    decision_record_titles,
+    mine,
+    run_harvest,
+)
 from adopt_knowledge.ingest import (
     CREATED,
     INGEST_EXTRACTOR_VERSION,
@@ -57,44 +72,73 @@ from adopt_knowledge.matchers import (
     MatchOutcome,
     match_document,
     name_matches,
+    path_matches,
     structural_matches,
 )
 from adopt_knowledge.ports import BindingWriter, KnowledgeWriter, ReviewWriter
-from adopt_knowledge.review import PendingItem, confirm, derive_suggestions, reject
+from adopt_knowledge.review import (
+    SOURCE_HARVEST,
+    SOURCE_INGEST,
+    Outcome,
+    PendingItem,
+    confirm,
+    derive_suggestions,
+    edit,
+    reject,
+    source_of,
+)
 
 __all__ = [
     "AUDIENCES",
     "CREATED",
     "DEFAULT_AUDIENCE",
     "DEFAULT_KIND",
+    "HARVEST_EXTRACTOR",
+    "HARVEST_EXTRACTOR_VERSION",
     "INGEST_EXTRACTOR_VERSION",
     "NAME_TIER",
+    "SOURCE_HARVEST",
+    "SOURCE_INGEST",
     "STRUCTURAL_TIERS",
     "UNCHANGED",
     "UPDATED",
     "BindingWriter",
+    "Candidate",
+    "Commit",
     "CoverageEntry",
     "Document",
     "DocumentOutcome",
     "Gap",
+    "HarvestReport",
     "IdentityView",
     "IngestReport",
     "KnowledgeWriter",
     "Match",
     "MatchOutcome",
+    "Outcome",
     "PendingItem",
     "ReviewWriter",
+    "Signal",
     "StoredDocument",
+    "batch_key",
     "body_digest",
     "confirm",
+    "decision_record_titles",
     "derive_suggestions",
     "discover",
+    "edit",
+    "head_sha",
     "match_document",
+    "mine",
     "name_matches",
+    "path_matches",
     "rank_gaps",
+    "read_commits",
     "read_document",
     "reject",
+    "run_harvest",
     "run_ingest",
+    "source_of",
     "split_frontmatter",
     "structural_matches",
 ]

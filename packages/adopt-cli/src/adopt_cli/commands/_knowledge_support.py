@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from adopt_knowledge import IdentityView, PendingItem, StoredDocument, derive_suggestions
+from adopt_knowledge.review import SOURCE_INGEST, source_of
 from pydantic import BaseModel
 
 from adopt_model import (
@@ -34,6 +35,7 @@ from adopt_scope import Scope, ScopeFacade
 __all__ = [
     "KnowledgeStoreView",
     "bound_pairs",
+    "harvested_commits",
     "identity_views",
     "pending_items",
     "presented_revisions",
@@ -44,6 +46,9 @@ __all__ = [
 #: `provenance.source_type` for a document a human wrote, which is what ingest
 #: records and therefore what maps an item back to its file.
 _INGEST_SOURCE_TYPE = "human"
+#: `provenance.source_type` harvest records, and therefore what maps a candidate
+#: back to the commit it was mined from -- the key a re-harvest recognises.
+_HARVEST_SOURCE_TYPE = "commit"
 
 
 class _ExportReader(Protocol):
@@ -187,6 +192,40 @@ def stored_documents(handle: KnowledgeStoreView, scope: Scope) -> dict[str, Stor
     return stored
 
 
+def harvested_commits(handle: KnowledgeStoreView, scope: Scope) -> dict[str, str]:
+    """`commit sha -> item_id` for every candidate harvest has already written.
+
+    **This is harvest's idempotence**, and it is deliberately the same mechanism
+    ingest uses: the link from an item back to the thing it was mined from is
+    the `provenance` row, not a column on the item. One rule, one place, and a
+    candidate that lost its provenance would be a candidate a re-harvest creates
+    again -- which is why the provenance write sits in the same loop iteration
+    as the revision it cites.
+    """
+    if scope.system is None:
+        return {}
+    system_id = str(scope.system.id)
+    items = {
+        row.id
+        for row in _rows(handle, "knowledge_item", KnowledgeItem)
+        if row.system_id == system_id
+    }
+    revisions = {
+        row.id: row.item_id
+        for row in _rows(handle, "knowledge_revision", KnowledgeRevision)
+        if row.item_id in items
+    }
+
+    known: dict[str, str] = {}
+    for provenance in _rows(handle, "provenance", Provenance):
+        if provenance.source_type != _HARVEST_SOURCE_TYPE:
+            continue
+        item_id = revisions.get(provenance.revision_id)
+        if item_id is not None:
+            known.setdefault(provenance.source_ref, item_id)
+    return known
+
+
 def bound_pairs(handle: KnowledgeStoreView) -> frozenset[tuple[str, str]]:
     """Every `(item_id, identity_id)` that already has a binding.
 
@@ -264,12 +303,20 @@ def pending_items(
     scope: Scope,
     identities: Sequence[IdentityView],
 ) -> list[PendingItem]:
-    """Every unresolved queue entry, with its suggestions **re-derived now**.
+    """Every unresolved queue entry, with what each population needs to be read.
 
-    Plan decision D3: nothing provisional was stored, so this is where a
-    suggestion comes back into existence. A registry that grew since the ingest
-    therefore produces current suggestions, and one that shrank produces fewer
-    -- in both cases what the reviewer sees is what the matcher would say today.
+    Plan decision D3: nothing provisional was stored, so **suggestions come
+    back into existence here**. A registry that grew since the ingest therefore
+    produces current suggestions, and one that shrank produces fewer -- in both
+    cases what the reviewer sees is what the matcher would say today.
+
+    **Candidates are not given suggestions**, and the asymmetry is deliberate.
+    A harvest candidate already carries the bindings its commit's files
+    justified, and a name match inside a commit message is weak evidence about
+    a question the reviewer was never asked -- offering it beside "is this a
+    real decision?" is how one keystroke comes to mean two things. What a
+    candidate carries instead is its `provenance`: the sha, and any decision
+    record the commit touched.
     """
     if scope.system is None:
         return []
@@ -282,6 +329,7 @@ def pending_items(
     items = {row.id: row for row in _rows(handle, "knowledge_item", KnowledgeItem)}
     revisions = {row.id: row for row in _rows(handle, "knowledge_revision", KnowledgeRevision)}
     already_bound = bound_pairs(handle)
+    evidence = _evidence_by_revision(handle)
 
     pending: list[PendingItem] = []
     for review_item in _rows(handle, "review_item", ReviewItem):
@@ -291,7 +339,10 @@ def pending_items(
         item = items.get(review_item.item_id)
         if item is None:
             continue
-        body = _body_of(review_item, item, revisions)
+        revision = _revision_of(review_item, item, revisions)
+        body = (revision.body_md if revision is not None else None) or ""
+        head = revisions.get(item.current_revision_id or "")
+        is_ingest = source_of(batch.batch_key) == SOURCE_INGEST
         pending.append(
             PendingItem(
                 review_item_id=review_item.id,
@@ -307,18 +358,40 @@ def pending_items(
                         for bound_item, identity_id in already_bound
                         if bound_item == item.id
                     ),
-                ),
+                )
+                if is_ingest
+                else (),
+                body_md=body,
+                head_revision_id=item.current_revision_id,
+                source_version=head.source_version if head is not None else None,
+                evidence=evidence.get(revision.id, ()) if revision is not None else (),
             )
         )
     return sorted(pending, key=lambda entry: entry.review_item_id)
 
 
-def _body_of(
+def _evidence_by_revision(
+    handle: KnowledgeStoreView,
+) -> dict[str, tuple[tuple[str, str], ...]]:
+    """`revision_id -> ((source_type, source_ref), ...)`, sorted.
+
+    Sorted because it is rendered: two runs over one store must produce one
+    listing, the same rule the export writer applies to rows.
+    """
+    collected: dict[str, list[tuple[str, str]]] = {}
+    for provenance in _rows(handle, "provenance", Provenance):
+        collected.setdefault(provenance.revision_id, []).append(
+            (provenance.source_type, provenance.source_ref)
+        )
+    return {revision_id: tuple(sorted(rows)) for revision_id, rows in collected.items()}
+
+
+def _revision_of(
     review_item: ReviewItem,
     item: KnowledgeItem,
     revisions: dict[str, KnowledgeRevision],
-) -> str:
-    """The text a suggestion was derived from.
+) -> KnowledgeRevision | None:
+    """The revision a queue entry is *about*.
 
     `proposed_revision_id` is preferred over the item's current head, because it
     records **what the reviewer was shown**. If the document changed after the
@@ -328,4 +401,4 @@ def _body_of(
     candidate = revisions.get(review_item.proposed_revision_id or "")
     if candidate is None:
         candidate = revisions.get(item.current_revision_id or "")
-    return (candidate.body_md if candidate is not None else None) or ""
+    return candidate

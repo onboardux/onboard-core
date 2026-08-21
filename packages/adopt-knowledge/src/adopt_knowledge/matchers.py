@@ -38,6 +38,7 @@ __all__ = [
     "MatchOutcome",
     "match_document",
     "name_matches",
+    "path_matches",
     "structural_matches",
 ]
 
@@ -190,6 +191,49 @@ def structural_matches(
     for token in sorted(backticked | bare):
         if "/" not in token and "." not in token:
             continue
+        candidates = _path_candidates(token, index)
+        distinct = {candidate.identity_id: candidate for candidate in candidates}
+        if len(distinct) == 1:
+            identity = next(iter(distinct.values()))
+            matches.setdefault(
+                identity.identity_id,
+                Match(
+                    identity_id=identity.identity_id,
+                    uri=identity.uri,
+                    tier=PATH_TIER,
+                    evidence=token,
+                ),
+            )
+        elif len(distinct) > 1:
+            ambiguous.add(token)
+
+    return tuple(matches[key] for key in sorted(matches)), tuple(sorted(ambiguous))
+
+
+def path_matches(
+    paths: Sequence[str], identities: Sequence[IdentityView]
+) -> tuple[tuple[Match, ...], tuple[str, ...]]:
+    """`(matches, ambiguous paths)` for a caller that already holds paths.
+
+    The **same rule** `structural_matches` applies to path tokens it finds in
+    prose, exposed for harvest, whose input is a commit's files-touched list
+    rather than a document body. One rule with two doors, never two rules: the
+    thing that makes a path structural evidence is that it resolves to exactly
+    one identity, and that must not mean something different depending on
+    whether a human typed the path or git reported it.
+
+    The ambiguity case is load-bearing here in a way it is not for prose. A
+    commit touching `pyproject.toml` names every dependency identity extracted
+    from that file, and binding a decision to all of them would attach one
+    sentence about one library to forty. Several identities means the path says
+    nothing about which one the commit was *about*, so it is reported and
+    dropped.
+    """
+    index = _path_index(identities)
+    matches: dict[str, Match] = {}
+    ambiguous: set[str] = set()
+
+    for token in sorted(set(paths)):
         candidates = _path_candidates(token, index)
         distinct = {candidate.identity_id: candidate for candidate in candidates}
         if len(distinct) == 1:

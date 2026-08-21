@@ -160,11 +160,11 @@ class TestBindingHonesty:
         review_item = s4_store.backend.query("SELECT id, item_id FROM review_item")[0]
         suggestions = derive_suggestions(NOISY_PROSE, noisy_registry)
 
-        created = confirm(
+        outcome = confirm(
             PendingItem(
                 review_item_id=str(review_item["id"]),
                 review_batch_id="unused",
-                batch_key="unused",
+                batch_key="ingest:1-of-1",
                 item_id=str(review_item["item_id"]),
                 title="Operating notes",
                 suggestions=suggestions,
@@ -174,7 +174,12 @@ class TestBindingHonesty:
             actor_id="alice",
         )
 
-        assert len(created) == len(noisy_registry)
+        assert len(outcome.bindings) == len(noisy_registry)
+        assert outcome.resolution == "confirmed"
+        assert outcome.revision_id is None, (
+            "a suggestion's document is already verified -- confirming one binds, "
+            "and must not append a revision nobody asked for"
+        )
         assert len(_binding_rows(s4_store)) == len(noisy_registry)
         extractors = s4_store.backend.query(
             "SELECT DISTINCT extractor, created_by_actor_id FROM binding_revision"
@@ -209,7 +214,7 @@ class TestBindingHonesty:
             PendingItem(
                 review_item_id=str(review_item["id"]),
                 review_batch_id="unused",
-                batch_key="unused",
+                batch_key="ingest:1-of-1",
                 item_id=str(review_item["item_id"]),
                 title="Operating notes",
                 suggestions=(),

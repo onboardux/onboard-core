@@ -1,4 +1,4 @@
-"""Build 2's verbs: `adopt ingest`, `adopt bind`, `adopt gaps`, `adopt review`.
+"""Build 2's verbs: `adopt ingest`, `adopt harvest`, `adopt bind`, `adopt gaps`, `adopt review`.
 
 **Every `adopt_knowledge` import happens inside a command body**, exactly as
 `map_command` does it and for the same reason: v6.1 §2.1 requires new verbs to
@@ -15,14 +15,14 @@ everything.
 """
 
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Final
 
 import typer
 
 from adopt_cli.json_out import emit
 from adopt_cli.store_option import open_configured_store
 
-__all__ = ["bind", "gaps", "ingest", "review"]
+__all__ = ["bind", "gaps", "harvest", "ingest", "review"]
 
 PathsArgument = Annotated[
     list[Path],
@@ -122,6 +122,134 @@ def _ingest_payload(report: Any) -> dict[str, Any]:
         "ambiguous_paths": sorted(
             {path for outcome in report.outcomes for path in outcome.ambiguous_paths}
         ),
+    }
+
+
+SinceOption = Annotated[
+    str,
+    typer.Option(
+        "--since",
+        help="Mine commits reachable from HEAD but not from this ref. A tag, branch or sha.",
+    ),
+]
+RepoArgument = Annotated[
+    Path,
+    typer.Argument(help="The checkout whose history to mine. Defaults to the working directory."),
+]
+AllowNetworkOption = Annotated[
+    bool,
+    typer.Option(
+        "--allow-network",
+        help="Not implemented. Forge enrichment is deferred; harvest reads local history only.",
+    ),
+]
+
+
+def harvest(
+    since: SinceOption,
+    path: RepoArgument = Path(),
+    scope: ScopeOption = None,
+    allow_network: AllowNetworkOption = False,
+    actor: ActorOption = None,
+    store: StoreOption = None,
+    json_output: JsonOption = False,
+) -> None:
+    """Mine local git history into decision candidates -- unverified, with evidence."""
+    from adopt_knowledge.gitlog import head_sha, read_commits
+    from adopt_knowledge.harvest import batch_key, decision_record_titles, mine, run_harvest
+
+    from adopt_cli.commands._knowledge_support import (
+        bound_pairs,
+        harvested_commits,
+        identity_views,
+    )
+    from adopt_cli.commands._map_support import resolve_scope
+
+    _refuse_network(allow_network)
+
+    root = path.resolve()
+    head = head_sha(root)
+    commits = read_commits(root, since=since)
+    candidates = mine(
+        commits,
+        decision_titles=decision_record_titles(
+            root, [record for commit in commits for record in commit.files]
+        ),
+    )
+
+    handle = open_configured_store(store, read_only=False)
+    try:
+        resolved = resolve_scope(handle, scope)
+        report = run_harvest(
+            candidates,
+            scope=resolved,
+            identities=identity_views(handle, resolved),
+            known=harvested_commits(handle, resolved),
+            knowledge=handle.items(),
+            bindings=handle.bindings(),
+            reviews=handle.governance(),
+            key=batch_key(since, head),
+            bound_pairs=bound_pairs(handle),
+            actor_id=actor,
+        )
+        payload = _harvest_payload(report, since=since, head=head, commits=len(commits))
+    finally:
+        handle.close()
+
+    emit(payload, as_json=json_output, title="adopt harvest")
+
+
+def _refuse_network(allow_network: bool) -> None:
+    """`--allow-network` is declared and refused, rather than absent.
+
+    v6.1 §6 F7 names forge enrichment as the one networked half of harvest, and
+    the plan defers it behind a named trigger. Declaring the flag and refusing
+    it beats omitting it: an operator who read the architecture and typed it
+    gets a sentence naming the deferral, where an unknown-option error would
+    read as their mistake. **The refusal is the offline default speaking**, and
+    it is the same posture `adopt map` takes -- nothing in Build 2 opens a
+    socket.
+    """
+    if not allow_network:
+        return
+    from adopt_obs import AdoptError, ErrorCode
+
+    raise AdoptError(
+        ErrorCode.ADOPT_OFFLINE_DENIED,
+        message="--allow-network is not implemented for harvest",
+        hint="Harvest mines local history only (v6.1 §6 F7). Forge enrichment -- pull "
+        "request bodies and review threads -- is deferred until a real engagement's "
+        "decision history is unreachable locally. Fetch the branches you want mined "
+        "and re-run without the flag.",
+    )
+
+
+def _harvest_payload(report: Any, *, since: str, head: str, commits: int) -> dict[str, Any]:
+    """The §14 envelope for a harvest run."""
+    return {
+        "since": since,
+        "head": head,
+        "commits_read": commits,
+        "candidates": len(report.candidates),
+        "created": len(report.created),
+        "already_known": len(report.known),
+        "bindings_created": len(report.bound),
+        "review_batch": report.review_batch_id,
+        "review_items": list(report.review_item_ids),
+        "ambiguous_paths": list(report.ambiguous_paths),
+        # Signals rather than bodies: what a reader needs is why each commit
+        # qualified, and a commit message in a table is the truncation D8 exists
+        # to avoid. The bodies are in the store, under review.
+        "mined": [
+            {
+                "sha": candidate.sha,
+                "title": candidate.title,
+                "signals": list(candidate.signal_names),
+                "files": len(candidate.files),
+            }
+            for candidate in report.candidates
+        ],
+        "bindings": [{"uri": match.uri, "evidence": match.evidence} for match in report.bound],
     }
 
 
@@ -249,6 +377,14 @@ ConfirmOption = Annotated[
     str | None, typer.Option("--confirm", help="Confirm one review item by id.")
 ]
 RejectOption = Annotated[str | None, typer.Option("--reject", help="Reject one review item by id.")]
+EditOption = Annotated[
+    str | None,
+    typer.Option("--edit", help="Correct one review item by id. Needs --file."),
+]
+EditFileOption = Annotated[
+    Path | None,
+    typer.Option("--file", help="The corrected body for --edit. Markdown or text."),
+]
 ConfirmBatchOption = Annotated[
     str | None,
     typer.Option(
@@ -257,23 +393,31 @@ ConfirmBatchOption = Annotated[
     ),
 ]
 
+CONFIRM: Final[str] = "confirmed"
+CORRECT: Final[str] = "corrected"
+REJECT: Final[str] = "rejected"
+
 
 def review(
     confirm_item: ConfirmOption = None,
     reject_item: RejectOption = None,
+    edit_item: EditOption = None,
+    file: EditFileOption = None,
     confirm_batch: ConfirmBatchOption = None,
     scope: ScopeOption = None,
     actor: ActorOption = None,
     store: StoreOption = None,
     json_output: JsonOption = False,
 ) -> None:
-    """The one review queue: suggested bindings now, change items from Build 6.
+    """The one review queue: harvest candidates and suggested bindings, together.
 
-    With no flag it lists. With one it resolves. Confirming creates the
-    bindings the suggestion proposed; rejecting writes nothing but the
-    disposition.
+    With no flag it lists. With one it resolves. What confirming *does* depends
+    on which population the item belongs to -- bindings for a suggestion, a
+    verified revision for a candidate -- and `adopt_knowledge.review` is where
+    that rule lives and is documented.
     """
     from adopt_knowledge import confirm as confirm_pending
+    from adopt_knowledge import edit as edit_pending
     from adopt_knowledge import reject as reject_pending
 
     from adopt_cli.commands._knowledge_support import (
@@ -284,7 +428,8 @@ def review(
     )
     from adopt_cli.commands._map_support import resolve_scope
 
-    writing = bool(confirm_item or reject_item or confirm_batch)
+    writing = bool(confirm_item or reject_item or edit_item or confirm_batch)
+    body_md = _edit_body(edit_item, file)
     handle = open_configured_store(store, read_only=not writing)
     try:
         resolved = resolve_scope(handle, scope)
@@ -299,28 +444,38 @@ def review(
                 known_review_items(handle),
                 confirm_item,
                 reject_item,
+                edit_item,
                 confirm_batch,
             )
             resolutions: list[dict[str, Any]] = []
             for item, action in targets:
-                if action == "rejected":
-                    reject_pending(item, reviews=handle.governance())
-                    resolutions.append(
-                        {"review_item": item.review_item_id, "action": action, "bindings": 0}
+                if action == REJECT:
+                    outcome = reject_pending(item, reviews=handle.governance())
+                elif action == CORRECT:
+                    outcome = edit_pending(
+                        item,
+                        reviews=handle.governance(),
+                        knowledge=handle.items(),
+                        body_md=body_md,
+                        source_ref=str(file),
+                        actor_id=actor,
                     )
-                    continue
-                created = confirm_pending(
-                    item,
-                    reviews=handle.governance(),
-                    bindings=handle.bindings(),
-                    bound_pairs=bound_pairs(handle),
-                    actor_id=actor,
-                )
+                else:
+                    outcome = confirm_pending(
+                        item,
+                        reviews=handle.governance(),
+                        bindings=handle.bindings(),
+                        knowledge=handle.items(),
+                        bound_pairs=bound_pairs(handle),
+                        actor_id=actor,
+                    )
                 resolutions.append(
                     {
                         "review_item": item.review_item_id,
-                        "action": action,
-                        "bindings": len(created),
+                        "action": outcome.resolution,
+                        "source": item.source,
+                        "bindings": len(outcome.bindings),
+                        "revision": outcome.revision_id,
                     }
                 )
             payload = {"resolved": len(resolutions), "resolutions": resolutions}
@@ -330,11 +485,50 @@ def review(
     emit(payload, as_json=json_output, title="adopt review")
 
 
+def _edit_body(edit_item: str | None, file: Path | None) -> str:
+    """The corrected text, read **before** the store is opened.
+
+    Read first on purpose: an unreadable `--file` must refuse before anything is
+    stamped, or the queue records a correction whose text never arrived. The
+    ingest refusal code is reused because it is exactly the same sentence about
+    exactly the same kind of input -- a document path the operator named that
+    cannot be read.
+    """
+    from adopt_obs import AdoptError, ErrorCode
+
+    if edit_item and file is None:
+        raise AdoptError(
+            ErrorCode.KNOWLEDGE_SOURCE_UNREADABLE,
+            message="--edit needs --file",
+            hint="Write the corrected body to a file and pass it. The text is a knowledge "
+            "revision, so it is supplied as a document rather than typed at a prompt.",
+        )
+    if file is None:
+        return ""
+    if edit_item is None:
+        raise AdoptError(
+            ErrorCode.KNOWLEDGE_SOURCE_UNREADABLE,
+            message="--file has no effect without --edit",
+            hint="Pass --edit <review-item-id> with it. A file supplied to a confirm or a "
+            "reject would be silently ignored, which is how a correction gets lost.",
+        )
+    try:
+        return file.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise AdoptError(
+            ErrorCode.KNOWLEDGE_SOURCE_UNREADABLE,
+            message=f"{str(file)!r} could not be read as UTF-8 text",
+            hint="A correction is refused rather than recorded empty: an item stamped "
+            "`corrected` whose revision says nothing is worse than an unresolved one.",
+        ) from error
+
+
 def _targets(
     pending: list[Any],
     known: dict[str, str | None],
     confirm_item: str | None,
     reject_item: str | None,
+    edit_item: str | None,
     confirm_batch: str | None,
 ) -> list[tuple[Any, str]]:
     """Which pending items an invocation acts on, and how.
@@ -352,7 +546,7 @@ def _targets(
 
     by_id = {item.review_item_id: item for item in pending}
 
-    for candidate in (confirm_item, reject_item):
+    for candidate in (confirm_item, reject_item, edit_item):
         if candidate and candidate not in by_id and candidate in known:
             raise AdoptError(
                 ErrorCode.REVIEW_ITEM_RESOLVED,
@@ -371,9 +565,9 @@ def _targets(
                 hint="Run `adopt review` to list open batches. A batch whose items are all "
                 "resolved is closed and is not listed.",
             )
-        return [(item, "confirmed") for item in selected]
+        return [(item, CONFIRM) for item in selected]
 
-    target_id = confirm_item or reject_item
+    target_id = confirm_item or reject_item or edit_item
     item = by_id.get(target_id or "")
     if item is None:
         raise AdoptError(
@@ -381,18 +575,31 @@ def _targets(
             message=f"no open review item {target_id!r}",
             hint="Run `adopt review` to list the open queue.",
         )
-    return [(item, "confirmed" if confirm_item else "rejected")]
+    if confirm_item:
+        return [(item, CONFIRM)]
+    return [(item, CORRECT if edit_item else REJECT)]
 
 
 def _queue_payload(pending: list[Any]) -> dict[str, Any]:
+    """The queue, with each population carrying what makes it reviewable.
+
+    A candidate's `evidence` is its `provenance` rows -- the commit sha, and any
+    decision record the commit touched. A suggestion's is its matched URIs. Both
+    are listed flat rather than nested for D8's reason: a URI sharing a row with
+    a title is a URI `rich` truncates, and the URI is the point.
+    """
     return {
         "open_items": len(pending),
         "batches": sorted({item.review_batch_id for item in pending}),
+        "candidates": sum(1 for item in pending if item.is_candidate),
+        "suggested_items": sum(1 for item in pending if not item.is_candidate),
         "queue": [
             {
                 "review_item": item.review_item_id,
+                "source": item.source,
                 "title": item.title,
                 "suggested": len(item.suggestions),
+                "evidence": len(item.evidence),
             }
             for item in pending
         ],
@@ -404,5 +611,14 @@ def _queue_payload(pending: list[Any]) -> dict[str, Any]:
             }
             for item in pending
             for match in item.suggestions
+        ],
+        "evidence": [
+            {
+                "review_item": item.review_item_id,
+                "source_type": source_type,
+                "source_ref": source_ref,
+            }
+            for item in pending
+            for source_type, source_ref in item.evidence
         ],
     }

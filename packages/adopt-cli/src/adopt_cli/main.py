@@ -65,9 +65,10 @@ app.command("boundary")(boundary_command.boundary)
 app.command("map")(map_commands.map_command)
 
 # Build 2, registered the same way and for the same reason: `knowledge` imports
-# `adopt_knowledge` inside each command body, so `adopt version` pays for four
+# `adopt_knowledge` inside each command body, so `adopt version` pays for five
 # typer signatures and nothing else.
 app.command("ingest")(knowledge_commands.ingest)
+app.command("harvest")(knowledge_commands.harvest)
 app.command("bind")(knowledge_commands.bind)
 app.command("gaps")(knowledge_commands.gaps)
 app.command("review")(knowledge_commands.review)

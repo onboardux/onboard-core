@@ -674,6 +674,15 @@ class TestWorkflowsAreRunnable:
             # gates ran the verb on real code. This job is the one that does,
             # and deleting it would restore exactly that blindness.
             "map-journey",
+            # `knowledge-journey` landed at Build 2 S2.2 and is that build's
+            # **Definition of Done**: ingest, harvest, the one review queue,
+            # gaps and the G2 move check, run on the same two pinned
+            # repositories. It is on this list for a reason `map-journey` cannot
+            # cover -- Build 1's journey maps a tree and binds nothing, so it
+            # passes unchanged whether or not a move orphans every binding in
+            # the store. Only a journey that has both a move and bindings can
+            # see invariant #3 fail.
+            "knowledge-journey",
         }
     )
 

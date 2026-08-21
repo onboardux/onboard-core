@@ -108,6 +108,13 @@ DETECT_MAX_DEPTH: Final[int] = 24
 #: silently dropped.
 MAP_MAX_FILE_BYTES: Final[int] = 1_048_576
 
+#: How many passages `adopt ask` retrieves before the freshness check and the
+#: three-way branch see them. A ceiling on *candidates*, not on citations: the
+#: branch may serve fewer, and an answer citing eight sources is already more
+#: than an FDE reads. Small on purpose -- retrieval is on the interactive path
+#: (R8), and every candidate costs a `resolve_freshness` call.
+ASK_TOP_K: Final[int] = 8
+
 #: Missed heartbeats beyond this multiple of a sensor's expected cadence
 #: resolve STALE. Connector silence is never read as stability.
 SENSOR_MISSED_CADENCE_MULTIPLIER: Final[int] = 3

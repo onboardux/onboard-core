@@ -144,6 +144,8 @@ class ErrorCode(StrEnum):
     HARVEST_NOT_A_GIT_REPO = "HARVEST_NOT_A_GIT_REPO"
     HARVEST_RANGE_UNKNOWN = "HARVEST_RANGE_UNKNOWN"
 
+    ASK_OUTSIDE_BOUNDARY = "ASK_OUTSIDE_BOUNDARY"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -237,6 +239,13 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # places -- install git or run in a checkout, versus `git tag -l`. The first
     # code covering both would say only "harvest cannot read this".
     ErrorCode.HARVEST_RANGE_UNKNOWN: ErrorCategory.USAGE,
+    # Build 3. Policy rather than usage or integrity: the question was
+    # well-formed and the store's data is intact -- the negotiated observability
+    # boundary does not permit the content this answer would quote, and the
+    # assistant refuses rather than trimming the answer to fit. Exits 3 with
+    # every other policy refusal, which is what lets a caller distinguish "the
+    # boundary said no" from UNKNOWN, an ordinary answer that exits 0.
+    ErrorCode.ASK_OUTSIDE_BOUNDARY: ErrorCategory.POLICY,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

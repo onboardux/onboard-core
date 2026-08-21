@@ -17,8 +17,15 @@ authors = [{ name = "The Adopt Authors" }]
 # runtime-annex port (contracts §12, CR-08) and `adopt_store.annex` realizes it,
 # because `no-raw-sqlite` forbids the seam from reaching a driver even
 # indirectly. The edge runs one way -- `adopt_agent` imports nothing from here.
+#
+# `adopt-ask` is the third of that shape (v6.1 §6 Build 3, F1): it declares the
+# `SearchRecords` port and `adopt_store.annex.search` realizes it on FTS5, for
+# the identical reason -- `adopt_ask` is named in `no-raw-sqlite` and may not
+# reach a driver, indirectly or otherwise. The edge runs one way; `adopt_ask`
+# imports nothing from here.
 dependencies = [
     "adopt-agent",
+    "adopt-ask",
     "adopt-const",
     "adopt-coverage",
     # `adopt_store.facades.identity` imports `build_uri` and `parse_uri`. This

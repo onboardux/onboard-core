@@ -22,14 +22,16 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from adopt_cli.config import resolve_all
-from adopt_obs import AdoptError, ErrorCode
+from adopt_obs import AdoptError, Clock, ErrorCode
 from adopt_store import open_store
 from adopt_store.annex import SqliteAnnexRecords, open_annex
+from adopt_store.annex.search import SqliteSearchRecords, open_search
 from adopt_store.api import SqliteStoreHandle, writer_identity
 
 __all__ = [
     "SqliteStoreHandle",
     "configured_annex",
+    "configured_search",
     "configured_store_path",
     "open_configured_store",
     "open_for_migration",
@@ -122,6 +124,27 @@ def configured_annex() -> Iterator[SqliteAnnexRecords]:
         hint=f"Set {_RUNTIME_KEY}. It carries agent-run idempotency and in-client "
         f"audit, and is never exported.",
     )
+
+
+@contextmanager
+def configured_search(
+    handle: SqliteStoreHandle, *, clock: Clock | None = None
+) -> Iterator[SqliteSearchRecords]:
+    """The retrieval index beside `handle`'s store, opened for one command.
+
+    **Here rather than in `commands/ask.py`**, for the reason this module exists
+    (CR-36, extended by CR-47 to the annex): `no-raw-sqlite` follows indirect
+    chains into `adopt_cli` and exempts only this module by name, so a command
+    importing `adopt_store.annex.search` reaches `sqlite3` through it and breaks
+    the contract. `adopt_ask` is handed a `SearchRecords`, which this satisfies
+    structurally, and never learns which engine answered.
+
+    Unlike `configured_annex` this takes no path of its own: the index is
+    resolved from the store's path, because an index beside a *different* store
+    answers questions about knowledge that store never held.
+    """
+    with open_search(handle.backend, clock=clock) as records:
+        yield records
 
 
 def open_named_store(path: Path, *, migrate: bool = False) -> SqliteStoreHandle:

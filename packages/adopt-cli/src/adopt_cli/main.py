@@ -19,6 +19,7 @@ import click
 import typer
 
 from adopt_cli.commands import agent as agent_commands
+from adopt_cli.commands import ask as ask_commands
 from adopt_cli.commands import boundary as boundary_command
 from adopt_cli.commands import coverage as coverage_commands
 from adopt_cli.commands import detect as detect_command
@@ -72,6 +73,11 @@ app.command("harvest")(knowledge_commands.harvest)
 app.command("bind")(knowledge_commands.bind)
 app.command("gaps")(knowledge_commands.gaps)
 app.command("review")(knowledge_commands.review)
+
+# Build 3, registered the same way and for the same reason: `ask` imports
+# `adopt_ask` and the FTS index opener inside the command body, so `adopt
+# version` pays for one typer signature and nothing else.
+app.command("ask")(ask_commands.ask)
 
 # Registered as bare commands rather than a group: contracts §14 names them
 # `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the

@@ -1,0 +1,64 @@
+[project]
+name = "adopt-ask"
+version = "0.3.1"
+description = "adopt ask: honest three-way answers over the store, cited and freshness-gated. Build 3."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
+# One distribution for retrieval, the three-way branch and answer assembly, on
+# Build 1's and Build 2's precedent: the pieces are modules, not wheels. A
+# retrieval layer installable without the branch that gates it on freshness is a
+# retrieval layer someone will serve answers from directly, which is the one
+# thing invariant #5 exists to make unrepresentable.
+#
+# `adopt-store` is deliberately **absent**, exactly as for `adopt-map`,
+# `adopt-knowledge`, `adopt-detect`, `adopt-export` and `adopt-coverage` (CR-34,
+# CR-37). This package declares the `SearchRecords` port it reads through and is
+# handed a realization structurally by the CLI, which is the composition root.
+# Depending on `adopt-store` would drag `sqlite3` into the import graph and break
+# `no-raw-sqlite`, which names `adopt_ask` as a source module.
+#
+# `adopt-freshness` **is** here, and is the one dependency worth explaining: the
+# branch composer takes a `FreshnessResolution` as a required argument, so the
+# type is part of this package's public signature rather than an implementation
+# detail it could reach for. That is invariant #5's structural half.
+#
+# `adopt-detect`, `adopt-schema` and `adopt-scope` arrive with the boundary
+# check in `answer.py`: `BoundaryView` is the authority `validate_envelope`
+# takes, `Manifest` is the injected deny-list source, and `Scope` supplies the
+# four ids every envelope must carry. They were undeclared in the first draft of
+# this file and the `first-party-deps` gate named all three -- which is the gate
+# working, not a near miss: they resolve in the workspace whatever this manifest
+# says, so nothing would have failed until someone ran `pip install adopt-ask`.
+dependencies = [
+    "adopt-const",
+    "adopt-detect",
+    "adopt-freshness",
+    "adopt-identity",
+    "adopt-model",
+    "adopt-obs",
+    "adopt-policy",
+    "adopt-schema",
+    "adopt-scope",
+]
+
+[project.urls]
+Homepage = "https://github.com/onboardux/onboard-core"
+Source = "https://github.com/onboardux/onboard-core"
+Issues = "https://github.com/onboardux/onboard-core/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_ask"]
+
+# Apache-2.0 4(a) and 4(d): the licence and the NOTICE travel with every
+# redistribution. `uv build` builds the wheel from the sdist, so placing the
+# repository root's single authored copy here puts it in both artefacts and
+# leaves nothing to drift.
+[tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"

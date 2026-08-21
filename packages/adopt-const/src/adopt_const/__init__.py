@@ -100,6 +100,14 @@ DETECT_MAX_SNIFF_BYTES: Final[int] = 8_192
 DETECT_MAX_FILES: Final[int] = 200_000
 DETECT_MAX_DEPTH: Final[int] = 24
 
+#: The most `adopt map` reads from any one file. Detection's 8 KiB sniff is a
+#: classification sample; extraction needs the whole file, so the bound moves
+#: from "enough to recognise" to "large enough for real source, small enough
+#: that a vendored bundle or a checked-in dataset cannot stall the run". A file
+#: over this is skipped and counted as unmapped -- visible in the report, never
+#: silently dropped.
+MAP_MAX_FILE_BYTES: Final[int] = 1_048_576
+
 #: Missed heartbeats beyond this multiple of a sensor's expected cadence
 #: resolve STALE. Connector silence is never read as stability.
 SENSOR_MISSED_CADENCE_MULTIPLIER: Final[int] = 3

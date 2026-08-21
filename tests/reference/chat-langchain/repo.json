@@ -1,0 +1,9 @@
+{
+  "slug": "chat-langchain",
+  "url": "https://github.com/langchain-ai/chat-langchain",
+  "commit": "08cdeacec169b0bcef6413dbeed55bb1d933cafd",
+  "archetype": "ai",
+  "scope": "acme/support/docs-agent/prod",
+  "licence": "MIT",
+  "why": "A deployed AI agent rather than a framework: system prompts as module constants and as instructions.md, four @tool functions, three pinned vendor models with a fallback chain, an MCP server as its document source, one define_deep_agent root. Cloned in CI, never vendored."
+}

@@ -16,6 +16,7 @@ members = [
     "adopt-export",
     "adopt-freshness",
     "adopt-identity",
+    "adopt-map",
     "adopt-model",
     "adopt-obs",
     "adopt-policy",
@@ -68,6 +69,7 @@ dependencies = [
     { name = "adopt-export" },
     { name = "adopt-freshness" },
     { name = "adopt-identity" },
+    { name = "adopt-map" },
     { name = "adopt-model" },
     { name = "adopt-obs" },
     { name = "adopt-policy" },
@@ -88,6 +90,7 @@ requires-dist = [
     { name = "adopt-export", editable = "packages/adopt-export" },
     { name = "adopt-freshness", editable = "packages/adopt-freshness" },
     { name = "adopt-identity", editable = "packages/adopt-identity" },
+    { name = "adopt-map", editable = "packages/adopt-map" },
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },
     { name = "adopt-policy", editable = "packages/adopt-policy" },
@@ -197,6 +200,31 @@ requires-dist = [
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },
     { name = "adopt-scope", editable = "packages/adopt-scope" },
+]
+
+[[package]]
+name = "adopt-map"
+version = "0.3.1"
+source = { editable = "packages/adopt-map" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-detect" },
+    { name = "adopt-identity" },
+    { name = "adopt-model" },
+    { name = "adopt-obs" },
+    { name = "adopt-scope" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-detect", editable = "packages/adopt-detect" },
+    { name = "adopt-identity", editable = "packages/adopt-identity" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "adopt-scope", editable = "packages/adopt-scope" },
+    { name = "pyyaml", specifier = ">=6,<7" },
 ]
 
 [[package]]

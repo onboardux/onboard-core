@@ -23,6 +23,7 @@ adopt-detect = { workspace = true }
 adopt-policy = { workspace = true }
 adopt-agent = { workspace = true }
 adopt-workflow = { workspace = true }
+adopt-map = { workspace = true }
 adopt-cli = { workspace = true }
 
 [dependency-groups]

@@ -334,7 +334,23 @@ tables:
       - { name: identity_id,       type: id, nullable: false, references: identity.id }
       - { name: extractor,         type: text }
       - { name: extractor_version, type: text }
+      # Build 1 (v6.1 §6) writes the per-kind **attribute digest** here -- never a
+      # raw file hash -- so that a comment-only edit cannot manufacture
+      # staleness. Build 6 compares digests only within a matching
+      # `extractor_version`: an extractor upgrade re-baselines rather than
+      # reporting a change storm. `RevisionWriter.retire` also uses this column
+      # for an identity's terminal reason, which is why the digest comparison is
+      # scoped to revisions whose status is `active`.
       - { name: source_version,    type: text }
+      # Where the extractor saw it: `<repo-relative path>:<start>-<end>`, one
+      # line span. Added for Build 1 (v6.1 §6, decision D3): the build must record
+      # "file, span, extractor id, extractor version" per identity, and
+      # `provenance` cannot carry it -- that table's `revision_id` references
+      # `knowledge_revision`, so an identity revision has nowhere to point. The
+      # alternative considered and rejected was packing path and span into
+      # `source_version` as JSON, which would give one column two meanings and
+      # make Build 6 parse JSON to do a digest equality check.
+      - { name: source_ref,        type: text }
       - { name: confidence,        type: real }
       # The move/alias chain.
       - { name: alias_of_identity_id, type: id, references: identity.id }

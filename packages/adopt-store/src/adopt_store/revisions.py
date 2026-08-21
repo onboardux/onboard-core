@@ -206,7 +206,13 @@ class IdentityRevisionDraft:
     status: IdentityStatus = "active"
     extractor: str | None = None
     extractor_version: str | None = None
+    #: On an `active` revision this is the per-kind attribute digest (v6.1 §6
+    #: Build 1). On the `dead` revision `retire` writes, it is the retirement
+    #: reason -- so a reader comparing digests must scope the comparison to
+    #: `active` revisions.
     source_version: str | None = None
+    #: `<path>:<start>-<end>` -- where the extractor saw it.
+    source_ref: str | None = None
     confidence: float | None = None
     alias_of_identity_id: str | None = None
 
@@ -512,6 +518,7 @@ class RevisionWriter:
                     extractor=draft.extractor,
                     extractor_version=draft.extractor_version,
                     source_version=draft.source_version,
+                    source_ref=draft.source_ref,
                     confidence=draft.confidence,
                     alias_of_identity_id=draft.alias_of_identity_id,
                     status=draft.status,

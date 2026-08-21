@@ -310,6 +310,7 @@ CREATE TABLE identity_revision (
   extractor TEXT,
   extractor_version TEXT,
   source_version TEXT,
+  source_ref TEXT,
   confidence REAL,
   alias_of_identity_id TEXT REFERENCES identity(id),
   status TEXT NOT NULL CHECK (status IN ('active','moved','dead')),

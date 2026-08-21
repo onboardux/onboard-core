@@ -36,6 +36,7 @@ __all__ = [
     "REASON_NO_LIVE_BINDING",
     "REASON_NO_OBSERVABILITY_BOUNDARY",
     "REASON_VERIFICATION_CONFLICTED",
+    "REASON_VERIFICATION_UNVERIFIED",
     "CoverageResult",
     "Disagreement",
     "IdentityCoverage",
@@ -89,7 +90,7 @@ REASON_VERIFICATION_CONFLICTED: Final[str] = "verification_conflicted"
 #: to an identity must not make `adopt gaps` stop asking for that identity's
 #: knowledge. A machine's unreviewed guess is not coverage, and counting it as
 #: coverage is how a gap report becomes a report about itself.
-REASON_NOT_VERIFIED: Final[str] = "knowledge_not_verified"
+REASON_VERIFICATION_UNVERIFIED: Final[str] = "verification_unverified"
 
 #: Every reason, in evaluation order. Exported so a caller can enumerate them
 #: without re-deriving the list and getting one fewer.
@@ -100,7 +101,7 @@ COVERAGE_REASONS: Final[tuple[str, ...]] = (
     REASON_AUDIENCE_OR_ENVIRONMENT,
     REASON_NO_OBSERVABILITY_BOUNDARY,
     REASON_VERIFICATION_CONFLICTED,
-    REASON_NOT_VERIFIED,
+    REASON_VERIFICATION_UNVERIFIED,
 )
 
 #: The `identity_status` that counts as live. `moved` and `dead` do not: a moved
@@ -250,7 +251,7 @@ def _binding_blockers(
     if has_verification_row and verification == _CONFLICTED_VERIFICATION:
         blockers.add(REASON_VERIFICATION_CONFLICTED)
     elif verification != _VERIFIED_VERIFICATION:
-        blockers.add(REASON_NOT_VERIFIED)
+        blockers.add(REASON_VERIFICATION_UNVERIFIED)
 
     return frozenset(blockers)
 

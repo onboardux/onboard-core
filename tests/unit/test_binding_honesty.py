@@ -241,7 +241,7 @@ class TestBindingHonesty:
         nobody did; no other instrument catches it because the binding is
         genuinely legitimate and every row involved is correct.
         """
-        from adopt_coverage import REASON_NOT_VERIFIED, recompute_coverage
+        from adopt_coverage import REASON_VERIFICATION_UNVERIFIED, recompute_coverage
 
         assert s4_scope.system is not None
         identity = s4_store.identities().observe(
@@ -268,7 +268,7 @@ class TestBindingHonesty:
         result = recompute_coverage(s4_store.coverage_records(), s4_scope.system.id)
 
         assert result.verdict(identity.id) is False
-        assert REASON_NOT_VERIFIED in result.identities[0].reasons
+        assert REASON_VERIFICATION_UNVERIFIED in result.identities[0].reasons
 
 
 @pytest.mark.unit

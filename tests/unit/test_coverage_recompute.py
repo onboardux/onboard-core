@@ -28,8 +28,8 @@ from adopt_coverage import (
     REASON_NO_ACTIVE_KNOWLEDGE_REVISION,
     REASON_NO_LIVE_BINDING,
     REASON_NO_OBSERVABILITY_BOUNDARY,
-    REASON_NOT_VERIFIED,
     REASON_VERIFICATION_CONFLICTED,
+    REASON_VERIFICATION_UNVERIFIED,
     rebuild_cache,
     recompute_coverage,
 )
@@ -330,7 +330,7 @@ class TestTheSixInputs:
         result = recompute_coverage(s4_store.coverage_records(), s4_scope.system.id)
 
         assert result.verdict(identity_id) is False
-        assert REASON_NOT_VERIFIED in result.identities[0].reasons
+        assert REASON_VERIFICATION_UNVERIFIED in result.identities[0].reasons
 
     def test_input_6_a_missing_verification_blocks_exactly_as_unverified_does(
         self,
@@ -354,7 +354,7 @@ class TestTheSixInputs:
         result = recompute_coverage(s4_store.coverage_records(), s4_scope.system.id)
 
         assert result.verdict(identity_id) is False
-        assert REASON_NOT_VERIFIED in result.identities[0].reasons
+        assert REASON_VERIFICATION_UNVERIFIED in result.identities[0].reasons
 
     def test_a_second_live_binding_carries_coverage_when_the_first_cannot(
         self,

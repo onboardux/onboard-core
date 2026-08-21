@@ -8,6 +8,16 @@ from pathlib import Path
 from typing import Final
 
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+#: The exact set the release publishes. Frozen on purpose: the release pipeline
+#: fails closed on anything it does not name, so a package cannot reach PyPI by
+#: appearing in the workspace.
+#:
+#: **`adopt-map` was added for Build 1**, which is the ratification v6.1 §2.1
+#: amendment **A2** anticipates -- *"extending the frozen release distribution
+#: set is a one-line owner ratification at the first release including Build
+#: 1"*. Worth knowing that A2 undersells when it bites: `artifact-licence`
+#: asserts this count on **every pull request**, not only at release, so Build 1
+#: could not go green without it.
 CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
     {
         "adopt-agent",
@@ -18,6 +28,7 @@ CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
         "adopt-export",
         "adopt-freshness",
         "adopt-identity",
+        "adopt-map",
         "adopt-model",
         "adopt-obs",
         "adopt-policy",

@@ -452,6 +452,7 @@ class IdentityRevision(BaseModel):
     extractor: str | None = None
     extractor_version: str | None = None
     source_version: str | None = None
+    source_ref: str | None = None
     confidence: float | None = None
     alias_of_identity_id: str | None = None
     status: IdentityStatus

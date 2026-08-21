@@ -1,0 +1,75 @@
+# Reference repository #1 -- the curated recall floor (v6.1 §6 H1, invariant #1)
+#
+# Repository : https://github.com/fastapi/full-stack-fastapi-template
+# Pinned at  : 162344da111e833b30892728372ab95331f06873
+# Archetype  : web
+# Scope used : acme/platform/fullstack-api/prod
+#
+# WHAT THIS FILE IS. Identities an FDE would name from memory after ten minutes
+# in this repository. `adopt map --check-expected` asserts every one is present
+# and names each miss, exiting 4 on any.
+#
+# WHY IT IS CURATED RATHER THAN A COVERAGE RATIO. A recall percentage over a
+# golden corpus invites denominator games -- it improves when the denominator
+# shrinks. A named list cannot: either `POST /login/access-token` is in the map
+# or it is not, and the failure names it. The list grows when an FDE notices an
+# omission, and **each miss becomes an entry here before it becomes a fix**.
+#
+# WHAT IS DELIBERATELY ABSENT. Paths are relative to their mount point: this
+# application mounts its API under `settings.API_V1_STR`, a variable whose value
+# needs the client's configuration executed to resolve, which `adopt map` will
+# never do. So `/login/access-token` appears here, not `/api/v1/login/access-token`.
+# That boundary is stated rather than hidden -- see `_router_prefixes` in
+# `adopt_map.packs.web` for what is and is not statically decidable.
+
+# --- The endpoints an FDE would ask about first -------------------------------
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/POST%20%2Flogin%2Faccess-token
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/POST%20%2Flogin%2Ftest-token
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/POST%20%2Freset-password%2F
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/POST%20%2Fpassword-recovery%2F%7Bemail%7D
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/GET%20%2Fusers%2F
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/POST%20%2Fusers%2F
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/GET%20%2Fusers%2Fme
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/PATCH%20%2Fusers%2Fme
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/DELETE%20%2Fusers%2Fme
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/PATCH%20%2Fusers%2Fme%2Fpassword
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/POST%20%2Fusers%2Fsignup
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/GET%20%2Fusers%2F%7Buser_id%7D
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/PATCH%20%2Fusers%2F%7Buser_id%7D
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/DELETE%20%2Fusers%2F%7Buser_id%7D
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/GET%20%2Fitems%2F
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/POST%20%2Fitems%2F
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/GET%20%2Fitems%2F%7Bid%7D
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/PUT%20%2Fitems%2F%7Bid%7D
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/DELETE%20%2Fitems%2F%7Bid%7D
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/GET%20%2Futils%2Fhealth-check%2F
+onboard-v1://acme/platform/fullstack-api/prod/endpoint/-/POST%20%2Futils%2Ftest-email%2F
+
+# --- The persisted shape ------------------------------------------------------
+onboard-v1://acme/platform/fullstack-api/prod/db_field/User/id
+# `email` is declared on `UserBase`, which `User(UserBase, table=True)` inherits.
+# v1 namespaces a field by the class that *declares* it; resolving inheritance
+# across modules is not attempted, and this entry records the boundary rather
+# than pretending it is not there.
+onboard-v1://acme/platform/fullstack-api/prod/db_field/UserBase/email
+onboard-v1://acme/platform/fullstack-api/prod/db_field/User/hashed_password
+onboard-v1://acme/platform/fullstack-api/prod/db_field/Item/id
+onboard-v1://acme/platform/fullstack-api/prod/db_field/Item/owner_id
+
+# --- What it needs from the environment to start at all -----------------------
+onboard-v1://acme/platform/fullstack-api/prod/config_key/env/SECRET_KEY
+onboard-v1://acme/platform/fullstack-api/prod/config_key/env/DATABASE_URL
+onboard-v1://acme/platform/fullstack-api/prod/config_key/env/FIRST_SUPERUSER
+onboard-v1://acme/platform/fullstack-api/prod/config_key/env/FIRST_SUPERUSER_PASSWORD
+onboard-v1://acme/platform/fullstack-api/prod/config_key/env/SMTP_HOST
+
+# --- How it is built and deployed ---------------------------------------------
+onboard-v1://acme/platform/fullstack-api/prod/job/ci/Test%20Backend
+onboard-v1://acme/platform/fullstack-api/prod/job/ci/Deploy
+onboard-v1://acme/platform/fullstack-api/prod/job/ci/Playwright%20Tests
+
+# --- The dependencies that define what this application is --------------------
+onboard-v1://acme/platform/fullstack-api/prod/metadata_component/dependency%3Apypi/fastapi
+onboard-v1://acme/platform/fullstack-api/prod/metadata_component/dependency%3Apypi/sqlmodel
+onboard-v1://acme/platform/fullstack-api/prod/metadata_component/dependency%3Apypi/alembic
+onboard-v1://acme/platform/fullstack-api/prod/metadata_component/dependency%3Anpm/react

@@ -18,6 +18,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
+from adopt_obs import AdoptError, ErrorCode
+
 __all__ = [
     "REGISTRY",
     "ConfigKey",
@@ -123,10 +125,26 @@ def load_config_file(path: Path) -> dict[str, str]:
     A missing file is normal. A malformed file is not silently ignored: a
     typo'd config that is quietly skipped produces the exact "it works on my
     machine" failure this module exists to answer.
+
+    The parse failure is raised **typed**, because `resolve_all` now reads these
+    files on every command rather than only under `doctor`: an untyped
+    `TOMLDecodeError` would reach the operator as a traceback from whichever
+    command they happened to run, instead of the one documented envelope naming
+    the file to fix.
     """
     if not path.exists():
         return {}
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
+        raise AdoptError(
+            ErrorCode.ADOPT_CONFIG_UNRESOLVED,
+            message=f"{path} is not valid TOML: {error}",
+            hint="Fix the file, or move it aside to fall back to the next layer. "
+            "Configuration is never resolved from a file this process could not read: "
+            "silently skipping it is what makes a value set in the documented place "
+            "have no effect and no error.",
+        ) from error
     return {str(k).upper(): str(v) for k, v in data.items() if not isinstance(v, dict)}
 
 
@@ -140,13 +158,27 @@ def resolve_all(
     """Resolve every registered key, recording the winning source.
 
     All four layers are injectable so the resolution order can be tested
-    without touching the real environment or the real filesystem.
+    without touching the real environment or the real filesystem. **An omitted
+    layer is loaded, not skipped** -- `None` means "read the real source",
+    exactly as it already did for the environment; an explicit `{}` is the test
+    override that says "this layer is empty".
+
+    That distinction is the whole of Build 0 amendment A1. The two file layers
+    previously defaulted to `{}`, so `.adopt/config.toml` and the user file were
+    silently ignored for every key including `ADOPT_STORE_PATH` -- a value set
+    in the documented place had no effect and no error, and `doctor` truthfully
+    reported the source as `default`. The resolution-order tests passed
+    throughout because they inject all four layers, which is precisely how
+    nobody noticed that the production callers injected none.
     """
     layers: tuple[tuple[Source, Mapping[str, str]], ...] = (
         (Source.FLAG, flags or {}),
         (Source.ENV, os.environ if env is None else env),
-        (Source.PROJECT_FILE, project or {}),
-        (Source.USER_FILE, user or {}),
+        (
+            Source.PROJECT_FILE,
+            load_config_file(project_config_path()) if project is None else project,
+        ),
+        (Source.USER_FILE, load_config_file(user_config_path()) if user is None else user),
     )
 
     resolutions: list[Resolution] = []

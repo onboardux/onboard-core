@@ -18,6 +18,7 @@ dependencies = [
     "adopt-export",
     "adopt-freshness",
     "adopt-identity",
+    "adopt-map",
     # `adopt_model._enums` is imported directly by `commands/init.py` and
     # `commands/boundary.py`. It arrived transitively through `adopt-store` until
     # someone installed a subset that did not include it, which is why an

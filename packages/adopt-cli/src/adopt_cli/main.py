@@ -27,6 +27,7 @@ from adopt_cli.commands import freshness as freshness_commands
 from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import init as init_command
 from adopt_cli.commands import interchange as interchange_commands
+from adopt_cli.commands import map_command as map_commands
 from adopt_cli.commands import policy as policy_commands
 from adopt_cli.commands import store as store_commands
 from adopt_cli.commands import version as version_command
@@ -55,6 +56,12 @@ app.add_typer(agent_commands.app)
 app.command("init")(init_command.init)
 app.command("detect")(detect_command.detect)
 app.command("boundary")(boundary_command.boundary)
+
+# Build 1. `map_command` imports `adopt_map` inside the function body, so
+# registering it here costs an import of typer options and nothing else --
+# `CLI_COLD_START_MS` is measured against `adopt version`, which must not pay
+# for six extractors it never runs.
+app.command("map")(map_commands.map_command)
 
 # Registered as bare commands rather than a group: contracts §14 names them
 # `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the

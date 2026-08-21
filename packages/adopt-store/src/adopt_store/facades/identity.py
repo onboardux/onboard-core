@@ -57,6 +57,8 @@ class IdentityFacade:
         key: str | tuple[str, ...],
         extractor: str | None = None,
         extractor_version: str | None = None,
+        source_version: str | None = None,
+        source_ref: str | None = None,
         confidence: float | None = None,
         actor_id: str | None = None,
     ) -> Identity:
@@ -70,6 +72,12 @@ class IdentityFacade:
             key: The local key. A bare string is one segment.
             extractor: Recorded on the first revision as provenance.
             extractor_version: The same.
+            source_version: The per-kind **attribute digest** (v6.1 §6 Build 1,
+                H5), recorded on the creating revision beside the extractor
+                version that produced it. Never a raw file hash: a digest over
+                only the extracted attributes is what makes a comment-only edit
+                incapable of manufacturing staleness.
+            source_ref: Where the extractor saw it -- `<path>:<start>-<end>`.
             confidence: The same.
             actor_id: Who caused it.
 
@@ -89,6 +97,17 @@ class IdentityFacade:
                 # The whole of CUJ-2's happy path: the same referent, seen again.
                 # No revision is written, because nothing about the identity
                 # changed -- only our knowledge of when we last looked.
+                #
+                # **A changed `source_version` does not append here, and that is
+                # deliberate.** v6.1 §6 gives Build 1 the job of *recording* the
+                # attribute digest and Build 6 the job of *comparing* digests
+                # ("Build 6 consumes this rule"): comparison is only half a
+                # feature without the `change_event` row, the five-class
+                # classification and the review queue that Build 6 owns, and an
+                # append with nowhere to report it would stale bound knowledge
+                # silently -- the precise failure H5 exists to prevent. Build 1's
+                # idempotence promise is this branch: a re-run after no change
+                # writes nothing.
                 self._records.touch_identity_last_seen(existing.id, observed)
                 return existing.model_copy(update={"last_seen": observed})
 
@@ -115,6 +134,8 @@ class IdentityFacade:
                     status="active",
                     extractor=extractor,
                     extractor_version=extractor_version,
+                    source_version=source_version,
+                    source_ref=source_ref,
                     confidence=confidence,
                 ),
                 expected_head_id=None,

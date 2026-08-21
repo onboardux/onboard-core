@@ -132,6 +132,10 @@ class ErrorCode(StrEnum):
 
     LICENCE_POLICY_VIOLATION = "LICENCE_POLICY_VIOLATION"
 
+    MAP_NO_PACK_FOR_ARCHETYPE = "MAP_NO_PACK_FOR_ARCHETYPE"
+    MAP_TREE_TOO_LARGE = "MAP_TREE_TOO_LARGE"
+    MAP_EXPECTED_IDENTITY_MISSING = "MAP_EXPECTED_IDENTITY_MISSING"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -184,12 +188,35 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     ErrorCode.WORKFLOW_BODY_IMPURE: ErrorCategory.POLICY,
     ErrorCode.WORKFLOW_DUPLICATE_START: ErrorCategory.USAGE,
     ErrorCode.LICENCE_POLICY_VIOLATION: ErrorCategory.POLICY,
+    ErrorCode.MAP_NO_PACK_FOR_ARCHETYPE: ErrorCategory.USAGE,
+    # A bound refusing to proceed, not a mistake the operator made: a client
+    # monorepo is allowed to be enormous, it is just not allowed to make the
+    # walk unbounded. The fix is to narrow what was asked for, so this reads as
+    # a refusal (exit 3) rather than a malformed invocation.
+    ErrorCode.MAP_TREE_TOO_LARGE: ErrorCategory.POLICY,
+    # Never raised -- see `_NEVER_RAISED`. The category is recorded because the
+    # registry requires one for every code, and integrity is what a missing
+    # expected identity is a statement about: the map does not contain something
+    # asserted to be in it.
+    ErrorCode.MAP_EXPECTED_IDENTITY_MISSING: ErrorCategory.INTEGRITY,
 }
 
-#: `AGENT_BUDGET_EXHAUSTED` is returned as `AgentResult.status` and is **never
-#: raised** (contracts §13). Constructing it as an exception is a programming
-#: error, not a runtime condition, so it is refused at construction.
-_NEVER_RAISED: Final[frozenset[ErrorCode]] = frozenset({ErrorCode.AGENT_BUDGET_EXHAUSTED})
+#: Codes that are **never raised** (contracts §13). Constructing one as an
+#: exception is a programming error, not a runtime condition, so it is refused at
+#: construction.
+#:
+#: * `AGENT_BUDGET_EXHAUSTED` is returned as `AgentResult.status`.
+#: * `MAP_EXPECTED_IDENTITY_MISSING` is a **finding**, carried in the
+#:   `--check-expected` payload once per miss. `adopt map --check-expected` exits
+#:   `4` -- degraded success with findings, the same contract `doctor` and
+#:   `coverage recompute` already use -- and **no category maps to `4`**, by
+#:   design: exit `4` means the command *worked* and found something a human must
+#:   see. Raising this code would therefore silently downgrade the miss to exit
+#:   `1`, turning "your map is incomplete" into "the command failed", which is a
+#:   different sentence and sends the reader somewhere else entirely.
+_NEVER_RAISED: Final[frozenset[ErrorCode]] = frozenset(
+    {ErrorCode.AGENT_BUDGET_EXHAUSTED, ErrorCode.MAP_EXPECTED_IDENTITY_MISSING}
+)
 
 
 def exit_code_for(code: ErrorCode) -> int:

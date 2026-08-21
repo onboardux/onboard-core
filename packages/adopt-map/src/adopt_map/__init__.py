@@ -25,8 +25,17 @@ The pack layout is one distribution with packs as modules (v6.1 §6), so
 """
 
 from adopt_map.digest import attribute_digest, canonical_attributes
+from adopt_map.expected import load_expected, missing_identities
+from adopt_map.moves import (
+    MoveCandidate,
+    MoveOutcome,
+    ObservedIdentity,
+    StoredIdentity,
+    detect_moves,
+)
 from adopt_map.observation import Extractor, Observation, Span
 from adopt_map.packs import registry
+from adopt_map.report import StoredRevision, build_report
 from adopt_map.runner import (
     ExtractorOutcome,
     IdentityWriter,
@@ -42,13 +51,22 @@ __all__ = [
     "ExtractorOutcome",
     "IdentityWriter",
     "MapReport",
+    "MoveCandidate",
+    "MoveOutcome",
     "Observation",
+    "ObservedIdentity",
     "Pack",
     "SourceTree",
     "Span",
+    "StoredIdentity",
+    "StoredRevision",
     "TreeFile",
     "attribute_digest",
+    "build_report",
     "canonical_attributes",
+    "detect_moves",
+    "load_expected",
+    "missing_identities",
     "registry",
     "run_map",
     "select_packs",

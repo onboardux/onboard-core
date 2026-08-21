@@ -665,6 +665,15 @@ class TestWorkflowsAreRunnable:
             # would have caught it is the cheapest thing to drop when a build
             # slows down.
             "artifact-licence",
+            # `map-journey` landed at Build 1 S1.2 and is that build's
+            # **Definition of Done**: v6.1 §6's demo, run line by line on two
+            # real repositories at pinned commits. It is on this list for the
+            # reason the whole build exists to answer -- eight sprints of the
+            # withdrawn v4 line were internally consistent, fully gated and 1604
+            # tests green, and still the wrong build, because nothing in the
+            # gates ran the verb on real code. This job is the one that does,
+            # and deleting it would restore exactly that blindness.
+            "map-journey",
         }
     )
 

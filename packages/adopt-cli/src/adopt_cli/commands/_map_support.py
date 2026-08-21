@@ -14,14 +14,23 @@ port would mean a new realization and a new escape case in the plane.
 from collections.abc import Sequence
 from typing import Protocol
 
+from adopt_map import StoredIdentity, StoredRevision
+from adopt_map.report import chain_summary
 from pydantic import BaseModel
 
-from adopt_model import Engagement, Environment, Firm, System
+from adopt_model import Engagement, Environment, Firm, Identity, IdentityRevision, System
 from adopt_model._enums import Archetype
 from adopt_obs import AdoptError, ErrorCode
 from adopt_scope import Scope, ScopeFacade
 
-__all__ = ["StoreView", "resolve_scope", "system_archetype"]
+__all__ = [
+    "StoreView",
+    "resolve_scope",
+    "scope_identities",
+    "scope_revisions",
+    "stored_identities",
+    "system_archetype",
+]
 
 
 class _ExportReader(Protocol):
@@ -110,3 +119,66 @@ def _path_of(handle: StoreView, environment: Environment) -> str:
             hint="The store is inconsistent; `adopt store doctor` reports on it.",
         )
     return f"{firm.slug}/{engagement.slug}/{system.slug}/{environment.slug}"
+
+
+def scope_identities(handle: StoreView, scope: Scope) -> list[Identity]:
+    """Every `identity` row in this environment.
+
+    Read through `export_records`, the port `adopt export` already uses, for the
+    reason plan decision D5 records: a new read port is a new `Sqlite*Records`
+    method, which `adopt-plane`'s `escape_coverage.py` immediately counts as an
+    outstanding query path needing a Postgres realization and an escape case in
+    a second repository. Filtering four hundred rows in memory costs nothing and
+    owes nothing.
+    """
+    if scope.environment is None:
+        return []
+    environment_id = str(scope.environment.id)
+    return [
+        row
+        for row in handle.export_records().table_rows("identity", Identity)
+        if row.environment_id == environment_id
+    ]
+
+
+def scope_revisions(handle: StoreView, identities: Sequence[Identity]) -> list[StoredRevision]:
+    """`identity_revision` rows for these identities, flattened for rendering."""
+    wanted = {row.id for row in identities}
+    return [
+        StoredRevision(
+            identity_id=row.identity_id,
+            extractor=row.extractor,
+            extractor_version=row.extractor_version,
+            source_ref=row.source_ref,
+            source_version=row.source_version,
+            status=row.status,
+            created_at=row.created_at.isoformat(),
+            revision_id=row.id,
+        )
+        for row in handle.export_records().table_rows("identity_revision", IdentityRevision)
+        if row.identity_id in wanted
+    ]
+
+
+def stored_identities(handle: StoreView, scope: Scope) -> list[StoredIdentity]:
+    """The scope's identities as move detection needs them: URI, digest, status.
+
+    **Call this before the run, never after.** After the run every new identity
+    is in the store, so nothing appears to have appeared and no move can be
+    detected -- a mistake that would leave the feature silently doing nothing
+    while every test that seeded state beforehand still passed.
+    """
+    identities = scope_identities(handle, scope)
+    chains = chain_summary(scope_revisions(handle, identities))
+    stored: list[StoredIdentity] = []
+    for row in identities:
+        chain = chains.get(row.id)
+        stored.append(
+            StoredIdentity(
+                identity_id=row.id,
+                uri=row.uri,
+                digest=chain[0].source_version if chain else None,
+                status=chain[1].status if chain else "active",
+            )
+        )
+    return stored

@@ -11,7 +11,7 @@ is cheap and a shared mutable registry is how one test's registration leaks into
 another's expectations.
 """
 
-from adopt_map.packs import generic, web
+from adopt_map.packs import ai, generic, web
 from adopt_map.runner import Pack
 
 __all__ = ["registry"]
@@ -45,6 +45,16 @@ def registry() -> dict[str, Pack]:
                 web.EndpointExtractor(),
                 web.MiddlewareExtractor(),
                 web.SchemaFieldExtractor(),
+            ),
+        ),
+        "ai": Pack(
+            name="ai",
+            extractors=(
+                ai.PromptExtractor(),
+                ai.ToolSchemaExtractor(),
+                ai.ModelPinExtractor(),
+                ai.RetrievalConfigExtractor(),
+                ai.AgentGraphExtractor(),
             ),
         ),
     }

@@ -425,7 +425,8 @@ class FilesOfInterestExtractor:
     """
 
     name = "generic.files_of_interest"
-    version = "1"
+    #: Bumped to `2` in S1.2: the attribute set lost `path`. See `extract`.
+    version = "2"
 
     _WELL_KNOWN: Final[frozenset[str]] = frozenset(
         {
@@ -455,7 +456,18 @@ class FilesOfInterestExtractor:
                 # identity says "this repository has a README", and a reworded
                 # README is not a change to that fact. Content-bearing knowledge
                 # is Build 2's `adopt ingest`, not Build 1's inventory.
-                attributes={"name": entry.name, "path": entry.path},
+                #
+                # **And deliberately not the path**, which this carried until
+                # S1.2. The path is where the referent sits, and `Observation`'s
+                # rule is that attributes are what a referent *is*. Carrying it
+                # made this extractor's own identities unmovable: a
+                # `docs/Dockerfile` that moves to `build/Dockerfile` changes its
+                # path-derived key *and* its digest, so move detection sees a
+                # disappearance and an unrelated arrival, and the alias that
+                # keeps the old URI resolvable is never written. An extractor
+                # that puts location in its attributes silently opts its
+                # referents out of the one mechanism protecting them.
+                attributes={"name": entry.name},
                 span=_whole_file(entry),
             )
 

@@ -440,6 +440,73 @@ jobs:
           path: ci-metrics.jsonl
           if-no-files-found: ignore
 
+  map-journey:
+    name: map-journey (the Build 1 demo, on two real repositories)
+    runs-on: ubuntu-24.04
+    # **Build 1's Definition of Done, executed.** v6.1 §4 R1 makes every build
+    # end in a verb an FDE runs on a real engagement and gets value from that
+    # day, and this job is the only instrument that can say whether that is
+    # true: it clones two real repositories at pinned commits and runs v6.1 §6's
+    # demo against them line by line.
+    #
+    # **Its own job, not a step in `unit`.** It clones from the network and maps
+    # ~400 files across two trees, and putting that inside the pytest jobs would
+    # spend the `CI_UNIT_MAX_MINUTES` ratchet on work that is not a unit test --
+    # the same argument that keeps `packaged-artifact` outside them.
+    #
+    # **The pins are the point.** A curated expected-identities list is true of
+    # one tree. `test_map_journey` reads the commit from `tests/reference/*/
+    # repo.json` and refuses a checkout that is not at it, so a clone that
+    # silently drifted to a newer default branch fails loudly instead of passing
+    # while measuring a repository nobody curated.
+    #
+    # **The CLI under test stays offline.** The network here belongs to `git
+    # clone` and to `uv`; `adopt map` opens no socket, and nothing in this job
+    # passes `--allow-network`.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      # One clone per manifest, each at its recorded commit. `--filter=blob:none`
+      # rather than `--depth 1`: a shallow clone cannot check out an arbitrary
+      # commit, and pinning is the whole reason this job exists.
+      - name: Clone each reference repository at its pinned commit
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/reference"
+          for manifest in tests/reference/*/repo.json; do
+            slug=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['slug'])" "$manifest")
+            url=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['url'])" "$manifest")
+            commit=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['commit'])" "$manifest")
+            echo "--- $slug @ $commit"
+            git clone --quiet --filter=blob:none "$url" "${RUNNER_TEMP}/reference/${slug}"
+            git -C "${RUNNER_TEMP}/reference/${slug}" checkout --quiet "$commit"
+          done
+      # **Fails on any extractor `failed` outcome** (B-08), on any missing
+      # curated identity (invariant #1), on a second run that writes, and on a
+      # planted miss that does not exit 4. The rules live in the test, not in
+      # this file: a gate written as shell here is a gate nobody writes a
+      # negative test for.
+      - name: The v6.1 §6 Build 1 demo, run literally on both repositories
+        env:
+          ADOPT_REFERENCE_REPO_ROOT: ${{ runner.temp }}/reference
+        run: uv run pytest tests/e2e/test_map_journey.py -v
+      # A skip is not a pass. The journey skips when the clones are absent,
+      # which is the ordinary state of a developer machine and must never be the
+      # state of this job -- a silently skipped Definition of Done is exactly
+      # the `0/0 covered (100%)` failure CR-67 found in a gate that had gone
+      # blind, in a different costume.
+      - name: Refuse a run in which the journey skipped
+        env:
+          ADOPT_REFERENCE_REPO_ROOT: ${{ runner.temp }}/reference
+        run: |
+          set -euo pipefail
+          collected=$(uv run pytest tests/e2e/test_map_journey.py --collect-only -q | grep -c "::test_")
+          echo "collected $collected journey cases"
+          test "$collected" -ge 14
+
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
     runs-on: ubuntu-24.04

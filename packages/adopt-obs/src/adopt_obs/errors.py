@@ -135,6 +135,7 @@ class ErrorCode(StrEnum):
     MAP_NO_PACK_FOR_ARCHETYPE = "MAP_NO_PACK_FOR_ARCHETYPE"
     MAP_TREE_TOO_LARGE = "MAP_TREE_TOO_LARGE"
     MAP_EXPECTED_IDENTITY_MISSING = "MAP_EXPECTED_IDENTITY_MISSING"
+    MAP_EXPECTED_LIST_UNREADABLE = "MAP_EXPECTED_LIST_UNREADABLE"
 
 
 #: Code -> category, verbatim from the contracts §13 table.
@@ -199,6 +200,13 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # expected identity is a statement about: the map does not contain something
     # asserted to be in it.
     ErrorCode.MAP_EXPECTED_IDENTITY_MISSING: ErrorCategory.INTEGRITY,
+    # Its own code rather than a reused one, on CR-38's precedent: an
+    # unreadable expected-list, an invalid answers document and an unresolved
+    # config key are three inputs needing three different fixes, and one code
+    # covering all of them says only "something you supplied is wrong". Usage,
+    # so it exits 2 -- and never 4, which would report a missing *file* as a
+    # perfect recall floor over nothing.
+    ErrorCode.MAP_EXPECTED_LIST_UNREADABLE: ErrorCategory.USAGE,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

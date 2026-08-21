@@ -23,18 +23,19 @@ logs.
 
 ## What is included
 
-The uv workspace contains 15 publishable packages:
+The uv workspace contains 16 publishable packages:
 
 | Area | Packages |
 |---|---|
 | CLI and workflow | `adopt-cli`, `adopt-workflow` |
 | Store and schema | `adopt-store`, `adopt-schema`, `adopt-model`, `adopt-identity`, `adopt-scope` |
-| Analysis | `adopt-detect`, `adopt-coverage`, `adopt-freshness`, `adopt-policy`, `adopt-agent` |
+| Analysis | `adopt-detect`, `adopt-map`, `adopt-coverage`, `adopt-freshness`, `adopt-policy`, `adopt-agent` |
 | Portability and operations | `adopt-export`, `adopt-obs`, `adopt-const` |
 
-The command surface includes `init`, `detect`, `boundary`, store migration and
-inspection, identity parsing, coverage and freshness evaluation, export/import,
-policy validation, adapter checks, `doctor`, and release provenance reporting.
+The command surface includes `init`, `detect`, `map`, `boundary`, store
+migration and inspection, identity parsing, coverage and freshness evaluation,
+export/import, policy validation, adapter checks, `doctor`, and release
+provenance reporting.
 
 ## Install
 
@@ -45,7 +46,7 @@ pip install adopt-cli          # or: uv tool install adopt-cli
 adopt version --json
 ```
 
-That is fourteen of the fifteen distributions. `adopt-workflow` is a library the
+That is fifteen of the sixteen distributions. `adopt-workflow` is a library the
 CLI does not depend on, so it is published but not installed by the line above.
 
 Or download a single-file binary — `adopt-linux-x86_64`, `adopt-macos-arm64` or
@@ -80,7 +81,11 @@ adopt init ./myproject \
   --scope northwind/acme-erp/support-agent/prod \
   --answers answers.json --json
 
-# 4. Look at what you have. Looking never repairs.
+# 4. Inventory what the system actually contains. Deterministic, offline.
+adopt map ./myproject --json
+
+# 5. Look at what you have. Looking never repairs.
+adopt map --report --json
 adopt store info --json
 adopt doctor --json
 ```
@@ -94,6 +99,41 @@ wrong archetype is a different set of extractors, not a slightly wrong answer, s
 detection refuses and ranks instead of guessing. Narrow the path to one system,
 or accept an archetype yourself with `adopt init --archetype <a>`. A proposal is
 never a decision: nothing is written until a human names it.
+
+### `adopt map`
+
+`map` walks the repository once and records what it finds as identities, each
+with a canonical URI and provenance — the file and line span, the extractor and
+its version. Three archetype packs ship: **generic** (declared dependencies,
+config keys, environment variables and settings classes, scheduled jobs, CI
+workflows, files of interest), **web** (HTTP endpoints, middleware and auth
+boundaries, schema fields) and **ai** (prompt files and named prompts,
+tool/function schemas, pinned model identifiers, retrieval and data-source
+config, agent graph nodes). The archetype `init` recorded chooses the packs;
+`--packs generic,web` overrides that for a mixed system.
+
+```sh
+adopt map ./myproject                             # exit 0
+adopt map ./myproject --report                    # counts by kind, listing with provenance
+adopt map ./myproject --check-expected list.txt   # exit 4, naming every miss
+```
+
+**No model is called, and nothing in the tree is executed or written.** Parsing
+is `ast` and manifest-first; extractors receive a read-only view of the tree and
+have no capability to do either.
+
+**Re-running writes nothing when nothing changed.** Observation is keyed on the
+URI, so the revision chain records what changed rather than how often you
+scanned. A file that moves is recorded as a *move* when the evidence is
+unambiguous — the old URI stays resolvable forever — and reported without being
+written when it is not.
+
+`--check-expected` takes a curated file of identity URIs, one per line with `#`
+comments, and exits `4` naming every one that is absent. It is a recall floor
+rather than a coverage percentage on purpose: a percentage improves when its
+denominator shrinks, and a named list cannot be gamed that way. See
+[tests/reference/](tests/reference/) for the two real repositories this is
+proven against.
 
 Development checkouts intentionally report `null` for `sbom_sha256` and
 `build_id`. A signed release wheel or binary embeds those immutable build facts.

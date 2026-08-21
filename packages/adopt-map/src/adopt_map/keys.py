@@ -48,6 +48,7 @@ __all__ = [
     "MIDDLEWARE_NAMESPACE",
     "dependency_namespace",
     "endpoint_key",
+    "model_provider_namespace",
     "module_key",
     "path_key",
 ]
@@ -70,6 +71,32 @@ def dependency_namespace(ecosystem: str) -> str:
     make one of them silently overwrite the other's coverage.
     """
     return f"dependency:{ecosystem}"
+
+
+def model_provider_namespace(provider: str | None) -> str | None:
+    """The provider a model pin is namespaced by, spelled one way.
+
+    `None` when the provider is unknown, which is a real answer: a bare
+    `llama-3.1-70b` is served by a dozen hosts and inventing one would record a
+    guess as a fact. `google_genai` and `google` are the same vendor written two
+    ways by two libraries, and normalizing them here is the whole reason this
+    lives in the key registry rather than in the extractor -- two spellings
+    would be two permanent namespaces for one provider.
+    """
+    if provider is None:
+        return None
+    normalized = provider.strip().lower()
+    return _PROVIDER_ALIASES.get(normalized, normalized) or None
+
+
+#: Provider spellings that name one vendor. Deliberately small: only pairs where
+#: two libraries genuinely disagree about the name of the same company.
+_PROVIDER_ALIASES = {
+    "azure": "azure_openai",
+    "google_genai": "google",
+    "mistralai": "mistral",
+    "vertexai": "google",
+}
 
 
 def endpoint_key(method: str, path: str) -> Sequence[str]:

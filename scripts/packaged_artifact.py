@@ -22,6 +22,14 @@ packaged file -- one per data set that has to travel:
                  against an artefact carrying no data at all.
 * `detect`    -- `adopt_detect/rules/*.yaml`.
 * `store migrate` + `store info` -- `adopt_schema/_assets/schema/`.
+* `init` + `map` -- **the flagship verb, run from the artefact** (B-10). The
+                 v4-line CLI imported six extractor packs while declaring one,
+                 so `pip install adopt-cli` produced a `ModuleNotFoundError` on
+                 `adopt map` for every project and every archetype -- and this
+                 journey ran `version`, `detect`, `store migrate` and `store
+                 info` past it without once invoking the command under test.
+                 B-10's standing lesson was that the journey has to include the
+                 verb the build exists for.
 
 It runs them from a working directory far from the checkout, because a relative
 fallback is exactly what hid the defect, and a gate that a stray parent
@@ -61,6 +69,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -91,8 +100,42 @@ class Probe:
     allow_failure: bool = False
 
 
+def seed_tree(work: Path) -> None:
+    """The smallest repository `adopt map` can find something real in.
+
+    Six lines of FastAPI and a dotenv template, because the probe's question is
+    "does the packaged artefact contain a working `adopt map`", not "how good
+    are the extractors" -- that is the reference repositories' job, in
+    `map-journey`. What this needs is a tree where a *correct* map is
+    non-empty, so that an empty one is unambiguous evidence rather than a
+    plausible answer.
+    """
+    (work / "app").mkdir(parents=True, exist_ok=True)
+    (work / "app" / "api.py").write_text(
+        textwrap.dedent(
+            """\
+            from fastapi import APIRouter
+
+            router = APIRouter(prefix="/v1")
+
+
+            @router.get("/orders")
+            async def list_orders(limit: int = 10) -> list[str]:
+                return []
+            """
+        ),
+        encoding="utf-8",
+    )
+    (work / ".env.example").write_text("DATABASE_URL=postgresql://localhost/x\n", encoding="utf-8")
+    (work / "answers.json").write_text(
+        json.dumps({"artifact_access": True, "deploy_signal": True, "safe_interaction": True}),
+        encoding="utf-8",
+    )
+
+
 def probes(work: Path) -> tuple[Probe, ...]:
     store = work / "store.db"
+    mapped = work / "mapped.db"
     return (
         Probe("version", ("version", "--json"), '"schema_version": 3'),
         Probe("version reports a real version", ("version", "--json"), '"version": "0.'),
@@ -106,6 +149,40 @@ def probes(work: Path) -> tuple[Probe, ...]:
             "the store is real",
             ("store", "info", "--store", str(store), "--json"),
             '"schema_version": 3',
+        ),
+        Probe(
+            "init records a scope and an archetype",
+            (
+                "init",
+                str(work),
+                "--scope",
+                "acme/demo/orders-api/prod",
+                "--answers",
+                str(work / "answers.json"),
+                "--archetype",
+                "web",
+                "--store",
+                str(mapped),
+                "--json",
+            ),
+            '"archetype": "web"',
+        ),
+        # **The flagship verb, from the artefact.** Expecting a named extractor
+        # rather than a count: a `ModuleNotFoundError` on a pack and a genuinely
+        # empty repository both produce a small number, and only the extractor
+        # name says the web pack was imported, scheduled and run.
+        Probe(
+            "the packaged artefact can map a repository",
+            ("map", str(work), "--store", str(mapped), "--json"),
+            '"web.endpoints"',
+        ),
+        # And that it *found* something. `GET /v1/orders` also proves the router
+        # prefix survived packaging, which is the S1.1 defect that recorded an
+        # endpoint the application does not serve.
+        Probe(
+            "the map is not empty",
+            ("map", str(work), "--store", str(mapped), "--report", "--json"),
+            "GET%20%2Fv1%2Forders",
         ),
     )
 
@@ -202,6 +279,7 @@ def _self_test(scratch: Path) -> int:
     adopt = _build_and_install(scratch)
     work = scratch / "work"
     work.mkdir()
+    seed_tree(work)
 
     print("\nplanting: removing the bundled schema assets from the environment")
     assets = _bundled_assets(adopt)
@@ -247,6 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         adopt = _build_and_install(scratch)
         work = scratch / "work"
         work.mkdir()
+        seed_tree(work)
         print(f"\nusing the installed artefact from {work}\n")
         failures = run_probes(adopt, work)
 

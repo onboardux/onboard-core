@@ -24,7 +24,15 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from adopt_identity import build_uri
 from adopt_map.digest import attribute_digest
+from adopt_map.moves import (
+    MoveCandidate,
+    MoveOutcome,
+    ObservedIdentity,
+    StoredIdentity,
+    detect_moves,
+)
 from adopt_map.observation import Extractor, Observation
 from adopt_map.tree import SourceTree
 from adopt_model._enums import Archetype, IdentityKind
@@ -47,8 +55,10 @@ class IdentityWriter(Protocol):
     """The narrow slice of `IdentityFacade` this package needs.
 
     Declared here rather than imported so `adopt_map` never depends on
-    `adopt_store`. The runner cannot delete, cannot update and cannot retire
-    through this protocol -- Build 1 only ever observes.
+    `adopt_store`. The runner cannot delete, cannot update and **cannot retire**
+    through this protocol -- Build 1 observes and, on unambiguous evidence,
+    moves. Retirement is absent by design: absence is not death (plan decision
+    D6), and the build that owns what a disappearance *means* is Build 6.
     """
 
     def observe(
@@ -63,6 +73,17 @@ class IdentityWriter(Protocol):
         source_version: str | None = ...,
         source_ref: str | None = ...,
         confidence: float | None = ...,
+        actor_id: str | None = ...,
+    ) -> object: ...
+
+    def move(
+        self,
+        *,
+        identity_id: str,
+        scope: Scope,
+        kind: IdentityKind,
+        namespace: str | None,
+        key: str | tuple[str, ...],
         actor_id: str | None = ...,
     ) -> object: ...
 
@@ -115,6 +136,10 @@ class MapReport:
     outcomes: list[ExtractorOutcome] = field(default_factory=list)
     started_at: _dt.datetime | None = None
     finished_at: _dt.datetime | None = None
+    #: What move detection concluded. Two of its three fields are reports that
+    #: write nothing, and they are carried here so the report can say so out
+    #: loud rather than leaving the reader to infer silence.
+    moves: MoveOutcome = field(default_factory=MoveOutcome)
 
     @property
     def failed(self) -> list[ExtractorOutcome]:
@@ -212,6 +237,7 @@ def run_map(
     writer: IdentityWriter,
     records: Transactional,
     actor_id: str | None = None,
+    stored: Sequence[StoredIdentity] | None = None,
 ) -> MapReport:
     """Run every extractor in every pack and observe what they find.
 
@@ -219,11 +245,20 @@ def run_map(
     recorded as `failed` with its exception type, and the remaining extractors
     still run -- one broken extractor should cost its own observations, not the
     other twenty-eight's.
+
+    Args:
+        stored: The identities already in scope, **read before this run**. When
+            given, referents that disappeared are paired against ones that
+            appeared and unambiguous pairs are recorded as moves. `None` skips
+            detection entirely, which is what a caller with no prior state
+            wants: on a first run every identity has appeared and nothing has
+            gone, so there is nothing to pair.
     """
     pack_list = tuple(packs)
     report = MapReport(scope=scope.path(), packs=tuple(pack.name for pack in pack_list))
     report.files_walked = len(tree.files)
     report.files_oversized = tree.oversized
+    observed: list[ObservedIdentity] = []
 
     for pack in pack_list:
         with records.transaction():
@@ -260,16 +295,44 @@ def run_map(
 
                 outcome.observations = len(observations)
                 for observation in observations:
-                    _observe(
+                    digest = _observe(
                         observation,
                         extractor=extractor,
                         scope=scope,
                         writer=writer,
                         actor_id=actor_id,
                     )
+                    if stored is not None:
+                        # Addressed only when detection will use it. `build_uri`
+                        # repeats work the facade just did, and a run with no
+                        # prior state has nothing to pair -- on a first run every
+                        # identity has appeared and none has gone.
+                        observed.append(
+                            ObservedIdentity(
+                                uri=build_uri(
+                                    scope,
+                                    observation.kind,
+                                    observation.namespace,
+                                    tuple(observation.key),
+                                ),
+                                kind=observation.kind,
+                                namespace=observation.namespace,
+                                key=tuple(observation.key),
+                                digest=digest,
+                            )
+                        )
                     outcome.written += 1
                     report.identities_seen += 1
                     report.files_with_observations.add(observation.span.path)
+
+    if stored is not None:
+        report.moves = _record_moves(
+            outcome=detect_moves(observed=observed, stored=stored),
+            scope=scope,
+            writer=writer,
+            records=records,
+            actor_id=actor_id,
+        )
 
     if report.failed:
         _log.error(
@@ -287,7 +350,9 @@ def _observe(
     scope: Scope,
     writer: IdentityWriter,
     actor_id: str | None,
-) -> None:
+) -> str:
+    """Observe one referent, and return the digest that was recorded for it."""
+    digest = attribute_digest(observation.attributes, extractor_version=extractor.version)
     writer.observe(
         scope=scope,
         kind=observation.kind,
@@ -295,9 +360,47 @@ def _observe(
         key=tuple(observation.key),
         extractor=extractor.name,
         extractor_version=extractor.version,
-        source_version=attribute_digest(
-            observation.attributes, extractor_version=extractor.version
-        ),
+        source_version=digest,
         source_ref=observation.span.render(),
+        actor_id=actor_id,
+    )
+    return digest
+
+
+def _record_moves(
+    *,
+    outcome: MoveOutcome,
+    scope: Scope,
+    writer: IdentityWriter,
+    records: Transactional,
+    actor_id: str | None,
+) -> MoveOutcome:
+    """Write the unambiguous moves; report the rest without writing anything."""
+    if outcome.moves:
+        with records.transaction():
+            for move in outcome.moves:
+                _move(move, scope=scope, writer=writer, actor_id=actor_id)
+    for move in outcome.moves:
+        _log.info("map.identity_moved", from_uri=move.from_uri, to_uri=move.to.uri)
+    if outcome.absent:
+        # `info`, not `error`: an absent referent is a fact about the tree, and
+        # every plausible cause -- a new ignore rule, a narrowed root, an
+        # extractor that failed this run -- is something a reader has to judge.
+        # Logging it as a failure would train them to ignore it.
+        _log.info("map.identities_absent", count=len(outcome.absent))
+    if outcome.ambiguous:
+        _log.info("map.moves_ambiguous", count=len(outcome.ambiguous))
+    return outcome
+
+
+def _move(
+    move: MoveCandidate, *, scope: Scope, writer: IdentityWriter, actor_id: str | None
+) -> None:
+    writer.move(
+        identity_id=move.identity_id,
+        scope=scope,
+        kind=move.to.kind,
+        namespace=move.to.namespace,
+        key=move.to.key,
         actor_id=actor_id,
     )

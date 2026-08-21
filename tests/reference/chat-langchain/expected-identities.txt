@@ -1,0 +1,93 @@
+# Reference repository #2 -- the curated recall floor (v6.1 §6 H1, invariant #1)
+#
+# Repository : https://github.com/langchain-ai/chat-langchain
+# Pinned at  : 08cdeacec169b0bcef6413dbeed55bb1d933cafd
+# Archetype  : ai
+# Scope used : acme/support/docs-agent/prod
+# Licence    : MIT -- cloned in CI, never vendored into this repository
+#
+# WHY THIS REPOSITORY. v6.1 §6's Build 1 demo requires "one AI deployment --
+# real code, not fixtures". This is a *deployed* agent rather than a framework:
+# a support agent with system prompts held as module constants and as a
+# top-level `instructions.md`, four `@tool`-decorated functions, three pinned
+# vendor models with a declared fallback chain, an MCP server as its document
+# source, and one `define_deep_agent` root. Every referent the AI pack claims to
+# extract exists here in the shape a client would actually write it -- which a
+# framework repository, whose job is to *define* those shapes rather than use
+# them, would not have given us.
+#
+# WHAT THIS FILE IS. Identities an FDE would name from memory after ten minutes
+# in this repository. `adopt map --check-expected` asserts every one is present
+# and names each miss, exiting 4 on any.
+#
+# WHY IT IS CURATED RATHER THAN A COVERAGE RATIO. A recall percentage improves
+# when its denominator shrinks, and every incentive around one points that way.
+# A named list cannot be gamed like that: either `search_support_articles` is in
+# the map or it is not, and the failure names it. Removing an entry to make the
+# check pass is a visible edit to a reviewed file.
+#
+# WHAT IS DELIBERATELY ABSENT. Prompts assembled at runtime -- an f-string built
+# from fragments, a `ChatPromptTemplate` with variables, a prompt pulled from a
+# hub at import -- have no text `adopt map` can read without executing the
+# client's code, which it never does. This repository holds its prompts as
+# constants, so the boundary does not bite here; it is stated so that a future
+# repository where it does bite is a named miss rather than a silent thin map.
+
+# --- The prompts, which are where an agent's behaviour actually lives ---------
+# `instructions.md` is the deployed system prompt at the repository root, and a
+# conventional inventory would have called it documentation.
+onboard-v1://acme/support/docs-agent/prod/prompt/-/instructions.md
+onboard-v1://acme/support/docs-agent/prod/prompt/-/src/prompts/docs_agent_prompt/docs_agent_prompt
+onboard-v1://acme/support/docs-agent/prod/prompt/-/src/prompts/guardrails_prompts/guardrails_system_prompt
+onboard-v1://acme/support/docs-agent/prod/prompt/-/src/prompts/guardrails_prompts/rejection_system_prompt
+onboard-v1://acme/support/docs-agent/prod/prompt/-/src/prompts/context_summary_prompt/context_summary_prompt
+
+# --- The tools the model can call --------------------------------------------
+onboard-v1://acme/support/docs-agent/prod/tool_schema/-/search_support_articles
+onboard-v1://acme/support/docs-agent/prod/tool_schema/-/get_support_article_content
+onboard-v1://acme/support/docs-agent/prod/tool_schema/-/fetch_langchain_pricing
+onboard-v1://acme/support/docs-agent/prod/tool_schema/-/check_links
+
+# --- The models it runs on, including the fallback chain ---------------------
+# Three vendors in one deployment. The first is what `define_deep_agent` pins
+# literally; the other two are the declared fallbacks, which is exactly the fact
+# an FDE needs and the one nothing else in a handover records.
+onboard-v1://acme/support/docs-agent/prod/model_pin/google/gemini-3.5-flash-lite
+onboard-v1://acme/support/docs-agent/prod/model_pin/openai/gpt-5.4-nano
+onboard-v1://acme/support/docs-agent/prod/model_pin/anthropic/claude-haiku-4-5-20251001
+
+# --- Where its answers come from ---------------------------------------------
+# An MCP server, not a vector store. Recorded because a docs agent whose source
+# goes stale answers confidently and wrongly, and nothing in the code changes
+# when it happens.
+onboard-v1://acme/support/docs-agent/prod/retrieval_config/-/langchain-docs
+
+# --- The agent itself --------------------------------------------------------
+onboard-v1://acme/support/docs-agent/prod/symbol/agent_graph/agent/docs_agent
+
+# --- The credentials and switches it cannot start without --------------------
+onboard-v1://acme/support/docs-agent/prod/config_key/env/GOOGLE_API_KEY
+onboard-v1://acme/support/docs-agent/prod/config_key/env/OPENAI_API_KEY
+onboard-v1://acme/support/docs-agent/prod/config_key/env/ANTHROPIC_API_KEY
+onboard-v1://acme/support/docs-agent/prod/config_key/env/PYLON_API_KEY
+onboard-v1://acme/support/docs-agent/prod/config_key/env/PYLON_KB_ID
+onboard-v1://acme/support/docs-agent/prod/config_key/env/LANGSMITH_API_KEY
+onboard-v1://acme/support/docs-agent/prod/config_key/env/LANGSMITH_PROJECT
+onboard-v1://acme/support/docs-agent/prod/config_key/env/LANGGRAPH_AUTH_SECRET
+onboard-v1://acme/support/docs-agent/prod/config_key/env/MDA_GUEST_SIGNING_KEY
+onboard-v1://acme/support/docs-agent/prod/config_key/env/SUPABASE_URL
+onboard-v1://acme/support/docs-agent/prod/config_key/env/USE_LOCAL_PROMPTS
+
+# --- The libraries that decide what this system is ---------------------------
+onboard-v1://acme/support/docs-agent/prod/metadata_component/dependency%3Apypi/managed-deepagents
+onboard-v1://acme/support/docs-agent/prod/metadata_component/dependency%3Apypi/langchain
+onboard-v1://acme/support/docs-agent/prod/metadata_component/dependency%3Apypi/langgraph
+onboard-v1://acme/support/docs-agent/prod/metadata_component/dependency%3Apypi/langsmith
+onboard-v1://acme/support/docs-agent/prod/metadata_component/dependency%3Apypi/langchain-anthropic
+onboard-v1://acme/support/docs-agent/prod/metadata_component/dependency%3Apypi/langchain-openai
+onboard-v1://acme/support/docs-agent/prod/metadata_component/dependency%3Apypi/langchain-google-genai
+
+# --- How it ships ------------------------------------------------------------
+onboard-v1://acme/support/docs-agent/prod/job/ci/Deploy%20Production%20Agent
+onboard-v1://acme/support/docs-agent/prod/metadata_component/file/README.md
+onboard-v1://acme/support/docs-agent/prod/metadata_component/file/.env.example

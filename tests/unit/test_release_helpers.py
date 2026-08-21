@@ -64,6 +64,12 @@ def _write_payload_evidence(path: Path) -> None:
     path.with_name(f"{path.name}.pem").write_text("certificate", encoding="utf-8")
 
 
+#: Derived, never restated. Adding a distribution is a one-line change to
+#: `CANONICAL_DISTRIBUTIONS`; a literal here would make it a two-line change
+#: whose second line is found by a failing CI job rather than by the author.
+_CANONICAL_COUNT = len(release_context.CANONICAL_DISTRIBUTIONS)
+
+
 def _complete_release(tmp_path: Path, *, version: str = "0.3.0") -> Path:
     dist = tmp_path / "dist"
     dist.mkdir()
@@ -174,7 +180,7 @@ def test_release_context_requires_the_canonical_lockstep_workspace(tmp_path: Pat
         project.write_text(f'[project]\nname = "{name}"\nversion = "0.3.0"\n', encoding="utf-8")
 
     context = release_context.resolve_context(tmp_path)
-    assert context.distribution_count == 15
+    assert context.distribution_count == _CANONICAL_COUNT
     assert context.distributions == tuple(sorted(release_context.CANONICAL_DISTRIBUTIONS))
 
     github_output = tmp_path / "github-output.txt"
@@ -208,7 +214,9 @@ def test_release_context_requires_the_canonical_lockstep_workspace(tmp_path: Pat
 
 @pytest.mark.unit
 def test_exact_manual_tag_route_is_the_positive_publication_case() -> None:
-    context = release_context.Context(version="0.3.0", tag="v0.3.0", distribution_count=15)
+    context = release_context.Context(
+        version="0.3.0", tag="v0.3.0", distribution_count=_CANONICAL_COUNT
+    )
 
     assert not release_context.validate_route(
         context,
@@ -236,13 +244,15 @@ def test_build_info_hashes_exact_bytes_and_validates_github_identity(tmp_path: P
 def test_complete_release_requires_exact_names_and_versions(tmp_path: Path) -> None:
     dist = _complete_release(tmp_path)
     valid = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=15
+        dist, expected_version="0.3.0", expected_python_distributions=_CANONICAL_COUNT
     )
     assert valid.ok, valid.violations
     wrong_count = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=14
+        dist, expected_version="0.3.0", expected_python_distributions=_CANONICAL_COUNT - 1
     )
-    assert any("count must be 15" in violation for violation in wrong_count.violations)
+    assert any(
+        f"count must be {_CANONICAL_COUNT}" in violation for violation in wrong_count.violations
+    )
 
     wheel = dist / "adopt_cli-0.3.0-py3-none-any.whl"
     wheel.unlink()
@@ -252,7 +262,7 @@ def test_complete_release_requires_exact_names_and_versions(tmp_path: Path) -> N
     _write_payload_evidence(spoof)
 
     report = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=15
+        dist, expected_version="0.3.0", expected_python_distributions=_CANONICAL_COUNT
     )
     assert not report.ok
     assert any("carries version 9.9.9" in violation for violation in report.violations)
@@ -265,7 +275,7 @@ def test_malformed_sbom_and_provenance_are_reported_without_crashing(tmp_path: P
     (dist / "provenance.intoto.jsonl").write_text("{not-json}\n", encoding="utf-8")
 
     report = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=15
+        dist, expected_version="0.3.0", expected_python_distributions=_CANONICAL_COUNT
     )
 
     assert not report.ok
@@ -282,7 +292,7 @@ def test_binary_ceiling_does_not_apply_to_python_distributions(
     (dist / "adopt_cli-0.3.0-py3-none-any.whl").write_bytes(b"x" * (2 * 1024 * 1024))
 
     report = assert_release_complete.check(
-        dist, expected_version="0.3.0", expected_python_distributions=15
+        dist, expected_version="0.3.0", expected_python_distributions=_CANONICAL_COUNT
     )
 
     assert report.ok, report.violations

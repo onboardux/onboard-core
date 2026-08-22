@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "adopt-agent",
+    "adopt-ask",
     "adopt-cli",
     "adopt-const",
     "adopt-coverage",
@@ -59,11 +60,41 @@ requires-dist = [
 ]
 
 [[package]]
+name = "adopt-ask"
+version = "0.3.1"
+source = { editable = "packages/adopt-ask" }
+dependencies = [
+    { name = "adopt-const" },
+    { name = "adopt-detect" },
+    { name = "adopt-freshness" },
+    { name = "adopt-identity" },
+    { name = "adopt-model" },
+    { name = "adopt-obs" },
+    { name = "adopt-policy" },
+    { name = "adopt-schema" },
+    { name = "adopt-scope" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-detect", editable = "packages/adopt-detect" },
+    { name = "adopt-freshness", editable = "packages/adopt-freshness" },
+    { name = "adopt-identity", editable = "packages/adopt-identity" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "adopt-policy", editable = "packages/adopt-policy" },
+    { name = "adopt-schema", editable = "packages/adopt-schema" },
+    { name = "adopt-scope", editable = "packages/adopt-scope" },
+]
+
+[[package]]
 name = "adopt-cli"
 version = "0.3.1"
 source = { editable = "packages/adopt-cli" }
 dependencies = [
     { name = "adopt-agent" },
+    { name = "adopt-ask" },
     { name = "adopt-const" },
     { name = "adopt-coverage" },
     { name = "adopt-detect" },
@@ -86,6 +117,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "adopt-agent", editable = "packages/adopt-agent" },
+    { name = "adopt-ask", editable = "packages/adopt-ask" },
     { name = "adopt-const", editable = "packages/adopt-const" },
     { name = "adopt-coverage", editable = "packages/adopt-coverage" },
     { name = "adopt-detect", editable = "packages/adopt-detect" },
@@ -342,6 +374,7 @@ version = "0.3.1"
 source = { editable = "packages/adopt-store" }
 dependencies = [
     { name = "adopt-agent" },
+    { name = "adopt-ask" },
     { name = "adopt-const" },
     { name = "adopt-coverage" },
     { name = "adopt-identity" },
@@ -355,6 +388,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "adopt-agent", editable = "packages/adopt-agent" },
+    { name = "adopt-ask", editable = "packages/adopt-ask" },
     { name = "adopt-const", editable = "packages/adopt-const" },
     { name = "adopt-coverage", editable = "packages/adopt-coverage" },
     { name = "adopt-identity", editable = "packages/adopt-identity" },

@@ -18,9 +18,14 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 #: 1"*. Worth knowing that A2 undersells when it bites: `artifact-licence`
 #: asserts this count on **every pull request**, not only at release, so Build 1
 #: could not go green without it.
+#:
+#: **`adopt-ask` was added for Build 3** on exactly that precedent and under the
+#: same A2 ratification, carried by the owner's approval of the Build 3 sprint
+#: plan (decision D6). Eighteen distributions.
 CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
     {
         "adopt-agent",
+        "adopt-ask",
         "adopt-cli",
         "adopt-const",
         "adopt-coverage",

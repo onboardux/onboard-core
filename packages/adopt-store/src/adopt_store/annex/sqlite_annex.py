@@ -1,11 +1,19 @@
 """SQLite realization of the runtime annex. Contracts §12.
 
-The DDL is **read from `schema/annex/0001__agent_run.sql`**, not embedded as a
-string literal. Two reasons, and the second is the one that matters: a literal
-would put a `CREATE TABLE` inside `packages/`, which `no-foreign-tables` forbids
-and which CR-45 declined to route around; and a reader looking for "what is in
-the annex" should find one answer, in a file that says so, rather than a Python
-string that happens to be the truth today.
+The DDL is **read from `schema/annex/`**, not embedded as a string literal. Two
+reasons, and the second is the one that matters: a literal would put a
+`CREATE TABLE` inside `packages/`, which `no-foreign-tables` forbids and which
+CR-45 declined to route around; and a reader looking for "what is in the annex"
+should find one answer, in files that say so, rather than a Python string that
+happens to be the truth today.
+
+**That directory is the annex's schema, all of it.** Build 3 added a second file
+(the ask retrieval index, `0002__ask_index.sql`), and `annex_ddl` applies every
+file in name order rather than naming one. A loader that named its file would
+have meant a second loader for the second file, and then two answers to "what is
+in the annex" -- the thing the paragraph above exists to prevent. Every statement
+is `IF NOT EXISTS`, so applying all of them on every open is idempotent, and the
+annex still carries no `user_version` and is still outside `schema_version`.
 """
 
 import sqlite3
@@ -18,7 +26,7 @@ from adopt_agent.annex import AgentRunRecord
 from adopt_const import STORE_BUSY_TIMEOUT_MS
 from adopt_schema.assets import assets_root
 
-__all__ = ["SqliteAnnexRecords", "annex_path", "open_annex"]
+__all__ = ["SqliteAnnexRecords", "annex_ddl", "annex_path", "connect_annex", "open_annex"]
 
 #: Contracts §12: `.adopt/runtime.db` locally. Resolved beside the canonical
 #: store so the two travel together -- an annex beside a *different* store is an
@@ -59,6 +67,32 @@ def annex_path(store_path: Path) -> Path:
     return store_path.parent / _ANNEX_FILENAME
 
 
+def annex_ddl(repo_root: Path | None = None) -> str:
+    """Every `schema/annex/*.sql`, in name order, as one script.
+
+    Name order rather than discovery order so two machines apply the same
+    statements in the same sequence; the files are numbered for that reason.
+    """
+    root = repo_root if repo_root is not None else assets_root()
+    directory = root / "schema" / "annex"
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(directory.glob("*.sql")))
+
+
+def connect_annex(path: Path, *, repo_root: Path | None = None) -> sqlite3.Connection:
+    """Open (creating if absent) the annex database and apply its DDL.
+
+    Separate from `open_annex` because Build 3's retrieval index lives in the
+    same file behind a different port: one function that knows how to open the
+    annex, one context manager per port that uses it.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(path, isolation_level=None)
+    connection.row_factory = sqlite3.Row
+    connection.execute(f"PRAGMA busy_timeout = {int(STORE_BUSY_TIMEOUT_MS)};")
+    connection.executescript(annex_ddl(repo_root))
+    return connection
+
+
 @contextmanager
 def open_annex(path: Path, *, repo_root: Path | None = None) -> Iterator["SqliteAnnexRecords"]:
     """Open (creating if absent) the annex at `path` and yield its records.
@@ -74,14 +108,8 @@ def open_annex(path: Path, *, repo_root: Path | None = None) -> Iterator["Sqlite
     someone migrating the annex alongside the canonical store, which is the
     coupling the ratification exists to prevent.
     """
-    root = repo_root if repo_root is not None else assets_root()
-    ddl = (root / "schema" / "annex" / "0001__agent_run.sql").read_text(encoding="utf-8")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, isolation_level=None)
+    connection = connect_annex(path, repo_root=repo_root)
     try:
-        connection.row_factory = sqlite3.Row
-        connection.execute(f"PRAGMA busy_timeout = {int(STORE_BUSY_TIMEOUT_MS)};")
-        connection.executescript(ddl)
         yield SqliteAnnexRecords(connection)
     finally:
         connection.close()

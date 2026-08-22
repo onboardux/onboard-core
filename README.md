@@ -39,15 +39,16 @@ provenance reporting.
 
 ## Install
 
-One package pulls in the thirteen the CLI needs:
+One package pulls in the fifteen the CLI needs:
 
 ```sh
 pip install adopt-cli          # or: uv tool install adopt-cli
 adopt version --json
 ```
 
-That is fifteen of the sixteen distributions. `adopt-workflow` is a library the
-CLI does not depend on, so it is published but not installed by the line above.
+That is seventeen of the eighteen distributions. `adopt-workflow` is a library
+the CLI does not depend on, so it is published but not installed by the line
+above.
 
 Or download a single-file binary — `adopt-linux-x86_64`, `adopt-macos-arm64` or
 `adopt-windows-x86_64.exe` — from the GitHub Release. It needs no Python.
@@ -135,6 +136,38 @@ denominator shrinks, and a named list cannot be gamed that way. See
 [tests/reference/](tests/reference/) for the two real repositories this is
 proven against.
 
+### `adopt ask`
+
+`ask` answers from the store and tells you how much to trust the answer. Three
+outcomes, and never a fourth:
+
+```sh
+adopt ask "why does the approval step exist on refunds?"
+adopt ask "how do I rotate the API key?" --json
+adopt ask "..." --reindex          # rebuild the retrieval index first
+```
+
+- **KNOWN** — the passages verbatim, each citing its `knowledge_revision` id,
+  the identity URIs it is bound to, and the freshness rule that let it serve.
+- **STALE** — the same answer, served *with* the cause: `STALE because
+  load_bearing_identity_moved`. What was true before, and why it may not be now.
+- **UNKNOWN** — a refusal. If matching text existed but was unconfirmed, it says
+  so, because "nobody has written this" and "somebody wrote it and nobody
+  confirmed it" send you to different places.
+
+**All three exit `0`.** An honest refusal is a correct answer, not a failure;
+scripts branch on the `branch` field of the `--json` payload. A boundary
+refusal is different and exits `3` (`ASK_OUTSIDE_BOUNDARY`).
+
+**No model is called.** The answer is quotation with attribution — the store
+already holds prose a human wrote and confirmed. Retrieval is SQLite FTS5 in the
+runtime annex, a derived index rebuilt whenever it disagrees with the store,
+never exported and never canon.
+
+**Only confirmed knowledge is ever cited**, and every answer passes a freshness
+resolution before it is composed — that check is a type signature rather than a
+step, so there is no code path around it.
+
 Development checkouts intentionally report `null` for `sbom_sha256` and
 `build_id`. A signed release wheel or binary embeds those immutable build facts.
 
@@ -169,8 +202,11 @@ run on public contributions.
   fields are dropped at the sink.
 - Every distributed dependency is licence-verified. The in-binary policy is
   permissive-only.
-- A valid release includes 15 wheels, 15 source distributions, three onefile
+- A valid release includes 18 wheels, 18 source distributions, three onefile
   binaries, a CycloneDX SBOM, SLSA provenance, and keyless cosign evidence.
+  `scripts/release_context.py` holds the canonical set and the gate asserts it
+  on every pull request, so that module is the authority and this line is a
+  description of it.
 
 ## Repository boundary
 

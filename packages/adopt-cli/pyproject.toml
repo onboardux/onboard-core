@@ -12,6 +12,11 @@ authors = [{ name = "The Adopt Authors" }]
 # `adopt_cli` (CR-36) -- sees nothing new.
 dependencies = [
     "adopt-agent",
+    # Build 3. `commands/ask.py` imports it inside the command body, but the
+    # `first-party-deps` gate is about what the distribution needs installed, not
+    # about when the import runs: `pip install adopt-cli` must always yield a
+    # working `adopt ask`.
+    "adopt-ask",
     "adopt-const",
     "adopt-coverage",
     "adopt-detect",

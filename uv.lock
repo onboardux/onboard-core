@@ -64,10 +64,12 @@ name = "adopt-ask"
 version = "0.3.1"
 source = { editable = "packages/adopt-ask" }
 dependencies = [
+    { name = "adopt-agent" },
     { name = "adopt-const" },
     { name = "adopt-detect" },
     { name = "adopt-freshness" },
     { name = "adopt-identity" },
+    { name = "adopt-knowledge" },
     { name = "adopt-model" },
     { name = "adopt-obs" },
     { name = "adopt-policy" },
@@ -77,10 +79,12 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "adopt-agent", editable = "packages/adopt-agent" },
     { name = "adopt-const", editable = "packages/adopt-const" },
     { name = "adopt-detect", editable = "packages/adopt-detect" },
     { name = "adopt-freshness", editable = "packages/adopt-freshness" },
     { name = "adopt-identity", editable = "packages/adopt-identity" },
+    { name = "adopt-knowledge", editable = "packages/adopt-knowledge" },
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },
     { name = "adopt-policy", editable = "packages/adopt-policy" },

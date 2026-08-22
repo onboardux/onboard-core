@@ -19,6 +19,7 @@ import click
 import typer
 
 from adopt_cli.commands import agent as agent_commands
+from adopt_cli.commands import answer as answer_commands
 from adopt_cli.commands import ask as ask_commands
 from adopt_cli.commands import boundary as boundary_command
 from adopt_cli.commands import coverage as coverage_commands
@@ -31,6 +32,7 @@ from adopt_cli.commands import interchange as interchange_commands
 from adopt_cli.commands import knowledge as knowledge_commands
 from adopt_cli.commands import map_command as map_commands
 from adopt_cli.commands import policy as policy_commands
+from adopt_cli.commands import serve as serve_commands
 from adopt_cli.commands import store as store_commands
 from adopt_cli.commands import version as version_command
 from adopt_cli.json_out import emit, emit_error
@@ -78,6 +80,8 @@ app.command("review")(knowledge_commands.review)
 # `adopt_ask` and the FTS index opener inside the command body, so `adopt
 # version` pays for one typer signature and nothing else.
 app.command("ask")(ask_commands.ask)
+app.command("answer")(answer_commands.answer)
+app.command("serve")(serve_commands.serve)
 
 # Registered as bare commands rather than a group: contracts §14 names them
 # `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the

@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from adopt_model import (
     AudienceTag,
     Binding,
+    Escalation,
     KnowledgeItem,
     ProbeDefinition,
     Provenance,
@@ -27,6 +28,8 @@ from adopt_model import (
 )
 from adopt_model._enums import (
     AuthorityClass,
+    EscalationBranch,
+    EscalationStatus,
     ItemKind,
     ReviewResolution,
     SourceType,
@@ -36,6 +39,7 @@ from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, new_id, truncat
 from adopt_scope import Scope
 from adopt_store.facades.records import (
     BindingRecords,
+    EscalationRecords,
     KnowledgeRecords,
     ProbeRecords,
     ReviewRecords,
@@ -208,7 +212,7 @@ def _batch_resolution(outcomes: Sequence[ReviewResolution | None]) -> ReviewReso
 
 
 class GovernanceFacade:
-    """`review_batch` / `review_item` -- the one review queue (v6.1 §6 F5).
+    """`review_batch` / `review_item` / `escalation` -- the queue, and the questions.
 
     The queue holds **dispositions, never knowledge**. A batch names what a
     human was shown in one sitting; an item names one knowledge row inside it
@@ -216,15 +220,28 @@ class GovernanceFacade:
     binding or appends a verified revision, and that work belongs to the caller
     -- this facade records the decision and nothing else, so a reviewer's
     disposition can never be manufactured by the code that acts on it.
+
+    **Build 3 adds `escalation` here rather than in a facade of its own**, on the
+    store's own rule that an accessor's subjects gain methods in the build that
+    writes them. The two tables are not one queue and are deliberately not
+    merged: a review item is a disposition over knowledge that *exists*, and an
+    escalation is a question nobody has answered yet. What they share is the
+    posture this class holds -- it records what a human decided or asked, and
+    creating knowledge from either is the caller's work through
+    `KnowledgeFacade`. `answer_escalation` therefore takes a revision id it did
+    not mint, which is what keeps a capture auditable back to the write that
+    made it.
     """
 
     def __init__(
         self,
         records: ReviewRecords,
+        escalations: EscalationRecords,
         *,
         clock: Clock | None = None,
     ) -> None:
         self._records = records
+        self._escalations = escalations
         self._clock: Clock = clock if clock is not None else SystemClock()
 
     def _now(self) -> _dt.datetime:
@@ -338,6 +355,121 @@ class GovernanceFacade:
                 )
 
         return item
+
+    # -- escalation (v6.1 §6 Build 3, F2) ---------------------------------
+
+    def open_escalation(
+        self,
+        *,
+        system_id: str,
+        branch: EscalationBranch,
+        question: str | None = None,
+        prior_revision_id: str | None = None,
+        owner_actor_id: str | None = None,
+    ) -> str:
+        """Record a question the store could not answer. Returns the escalation id.
+
+        Args:
+            system_id: The system the question concerns.
+            branch: Why it is escalating. Plan decision D3: an UNKNOWN escalates
+                as `ungrounded`, a STALE one as `stale`; `bug_report` is B7's.
+            question: The text, **only when the asker consented** (F2). The
+                `None` default is the whole of the privacy posture: this facade
+                cannot tell consent from habit, so a caller has to pass the text
+                deliberately, and the default records that a question was asked
+                without recording what it was.
+            prior_revision_id: The revision that was served stale, when the
+                escalation came from a STALE answer. Absent for UNKNOWN --
+                there is nothing prior to point at.
+            owner_actor_id: Who to route it to, when known. B7 fills this from
+                ownership assignments; locally it is whoever asked.
+
+        Note:
+            `channel` is left NULL deliberately (plan D3). The
+            `escalation_channel` enum lists **outbound** channels -- Slack,
+            Teams, ServiceNow, JSM, portal, email -- and a local terminal is
+            none of them. Writing a nearest-fit value would make B7's first
+            channel report unable to tell a question that arrived through a
+            channel from one typed at a prompt.
+        """
+        opened = self._now()
+        escalation_id = new_id("esc")
+        with self._escalations.transaction():
+            self._escalations.insert_escalation(
+                Escalation(
+                    id=escalation_id,
+                    system_id=system_id,
+                    question=question,
+                    branch=branch,
+                    prior_revision_id=prior_revision_id,
+                    status="open",
+                    channel=None,
+                    owner_actor_id=owner_actor_id,
+                    opened_at=opened,
+                )
+            )
+        return escalation_id
+
+    def get_escalation(self, escalation_id: str) -> Escalation | None:
+        return self._escalations.get_escalation(escalation_id)
+
+    def escalations(
+        self, *, system_id: str, status: EscalationStatus | None = None
+    ) -> tuple[Escalation, ...]:
+        """Escalations for one system, newest first, optionally filtered by status."""
+        return tuple(self._escalations.list_escalations(system_id=system_id, status=status))
+
+    def answer_escalation(
+        self,
+        *,
+        escalation_id: str,
+        candidate_revision_id: str,
+        answered_by: str | None = None,
+    ) -> Escalation:
+        """Stamp an escalation answered, pointing at the knowledge that answers it.
+
+        Returns:
+            The escalation **as it was before the stamp**, which is what a
+            caller needs: the branch it opened on, and the question text if any.
+
+        Raises:
+            AdoptError: ``ESCALATION_NOT_FOUND`` when the id names nothing, and
+                ``ESCALATION_ALREADY_ANSWERED`` when it is already stamped. The
+                second refusal is `REVIEW_ITEM_RESOLVED`'s rule applied here:
+                answering twice would leave the row pointing at one of two
+                revisions with no record of which the asker was actually given.
+
+        Note:
+            The write joins the caller's transaction when there is one. That is
+            what makes `adopt answer` one unit of work -- the knowledge, its
+            bindings and this stamp commit together or not at all, so no store
+            can hold an answered escalation whose knowledge was never written.
+        """
+        existing = self._escalations.get_escalation(escalation_id)
+        if existing is None:
+            raise AdoptError(
+                ErrorCode.ESCALATION_NOT_FOUND,
+                message=f"no escalation {escalation_id!r}",
+                hint="`adopt ask --escalate` prints the id it created. Ids are per "
+                "question and per store.",
+            )
+        if existing.status != "open":
+            raise AdoptError(
+                ErrorCode.ESCALATION_ALREADY_ANSWERED,
+                message=f"escalation {escalation_id} is already {existing.status}",
+                hint="A question is answered once. A better answer is a new revision on "
+                "the item this escalation already points at, which keeps the chain "
+                "rather than forking the record of what the asker was told.",
+            )
+
+        with self._escalations.transaction():
+            self._escalations.set_escalation_answered(
+                escalation_id,
+                candidate_revision_id=candidate_revision_id,
+                answered_by=answered_by,
+                answered_at=self._now(),
+            )
+        return existing
 
 
 class BindingFacade:

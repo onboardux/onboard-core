@@ -81,6 +81,7 @@ PREFIX_REGISTRY: Final[dict[str, str]] = {
     "ve": "value_event",
     "act": "actor (external reference)",
     "ag": "agent_run (runtime annex)",
+    "qlog": "ask_question_log (runtime annex)",
     "run": "run (log and trace correlation)",
 }
 

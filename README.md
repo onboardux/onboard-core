@@ -145,6 +145,7 @@ outcomes, and never a fourth:
 adopt ask "why does the approval step exist on refunds?"
 adopt ask "how do I rotate the API key?" --json
 adopt ask "..." --reindex          # rebuild the retrieval index first
+adopt ask "..." --escalate         # record it as an open question, with its text
 ```
 
 - **KNOWN** — the passages verbatim, each citing its `knowledge_revision` id,
@@ -167,6 +168,64 @@ never exported and never canon.
 **Only confirmed knowledge is ever cited**, and every answer passes a freshness
 resolution before it is composed — that check is a type signature rather than a
 step, so there is no code path around it.
+
+**Questions are not recorded unless you say so.** Passive logging is off
+(`ADOPT_ASK_LOG_QUESTIONS`, see `adopt doctor`), and when you switch it on the
+rows land in the runtime annex — never in the store, never in an export.
+`--escalate` is the other half: it records *one* question with its text, because
+recording it is the point. On a terminal you are asked first, and the prompt
+defaults to no.
+
+**With an adapter configured**, one grounded synthesis pass may rewrite the
+passages into prose. It must cite the same revisions; a synthesis that cites
+nothing, or cites anything that was not retrieved, is discarded and the
+extractive answer serves instead. Nothing it produces is ever stored.
+
+### `adopt answer`
+
+The capture ratchet: a human's answer becomes confirmed, bound, cited knowledge
+in **one** command, so the next asker gets KNOWN.
+
+```sh
+adopt ask "how do I rotate the API key?" --escalate
+# -> UNKNOWN ... Recorded as open question esc_01J…
+
+adopt answer esc_01J… --text "Rotate it in the vault, then restart the service."
+# -> Captured krev_01J… as confirmed knowledge.
+
+adopt ask "how do I rotate the API key?"
+# -> KNOWN, citing krev_01J…
+```
+
+One transaction writes the item, its `verified` revision, its `human`
+provenance, its bindings and the escalation stamp — or none of them. The
+revision is always `human_confirmed`: nothing a person typed can ever claim to
+have been observed in an artifact.
+
+`--uri` binds the answer to an identity explicitly, and repeats. A canonical URI
+written into the answer text binds too. A *name* appearing in prose never binds
+— `config` and `user` are identity keys and ordinary English both. Zero bindings
+is fine; the answer still serves.
+
+### `adopt serve`
+
+The same answers over loopback HTTP, for editor plugins and local tooling.
+
+```sh
+adopt serve                        # 127.0.0.1:8787
+curl -s localhost:8787/healthz
+curl -s localhost:8787/ask -d '{"question": "why do refunds need approval?"}'
+```
+
+`POST /ask` returns the CLI's own `--json` payload plus `"contract":
+"unstable"` — the shape is a local convenience, not a wire contract, until the
+control plane's API lands.
+
+**There is no authentication, no TLS and no rate limit.** Loopback is the
+default for that reason, and any other `--host` prints a warning naming exactly
+what it exposes. Escalation over HTTP is the request body's `escalate` field and
+nothing else: there is no human on a socket to ask, so nobody is assumed to have
+agreed.
 
 Development checkouts intentionally report `null` for `sbom_sha256` and
 `build_id`. A signed release wheel or binary embeds those immutable build facts.

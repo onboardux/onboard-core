@@ -46,29 +46,69 @@ from adopt_ask.branch import (
     Resolved,
     compose,
 )
+from adopt_ask.capture import (
+    CaptureResult,
+    CaptureStore,
+    capture_answer,
+    identities_to_bind,
+)
+from adopt_ask.escalate import (
+    ESCALATABLE,
+    EscalationWriter,
+    consent_prompt,
+    consented,
+    escalate,
+    escalation_branch,
+    may_escalate,
+)
+from adopt_ask.questionlog import QuestionLog, QuestionRecord, log_question, should_log
 from adopt_ask.records import Passage, RefreshOutcome, SearchRecords
 from adopt_ask.retrieve import Candidate, CandidateOrigin, retrieve, uris_in
+from adopt_ask.serve import build_server, exposure_warning, is_loopback
+from adopt_ask.synthesis import SYNTHESIS_PROMPT_REF, Synthesis, ground, synthesize
 
 __all__ = [
     "ASK_EVENT_TYPE",
+    "ESCALATABLE",
     "KNOWN",
     "STALE",
+    "SYNTHESIS_PROMPT_REF",
     "UNKNOWN",
     "Answer",
     "Branch",
     "Candidate",
     "CandidateOrigin",
+    "CaptureResult",
+    "CaptureStore",
     "Citation",
+    "EscalationWriter",
     "Passage",
+    "QuestionLog",
+    "QuestionRecord",
     "RefreshOutcome",
     "Resolved",
     "SearchRecords",
+    "Synthesis",
+    "build_server",
+    "capture_answer",
     "compose",
+    "consent_prompt",
+    "consented",
     "envelope",
+    "escalate",
+    "escalation_branch",
+    "exposure_warning",
+    "ground",
     "guard",
+    "identities_to_bind",
+    "is_loopback",
     "json_payload",
+    "log_question",
+    "may_escalate",
     "render",
     "retrieve",
     "sendable_payload",
+    "should_log",
+    "synthesize",
     "uris_in",
 ]

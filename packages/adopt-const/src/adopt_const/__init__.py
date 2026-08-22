@@ -115,6 +115,31 @@ MAP_MAX_FILE_BYTES: Final[int] = 1_048_576
 #: (R8), and every candidate costs a `resolve_freshness` call.
 ASK_TOP_K: Final[int] = 8
 
+#: Whether `adopt ask` records the questions nobody escalated. **Off, and the
+#: default is the control** (v6.1 §6 Build 3, F2). Explicit escalation stores a
+#: question because storing it is the point; passive logging stores every
+#: question an FDE typed on a client engagement, which is a transcript nobody
+#: consented to. When it is turned on the rows land in the **runtime annex**
+#: (plan D5) -- never in canon, never exported -- because `adopt_obs`'s
+#: structured-log deny-list drops a `question` field by design, so there is no
+#: compliant way to write one to a log line and the annex is the only home left.
+ASK_LOG_QUESTIONS: Final[int] = 0
+
+#: The loopback port `adopt serve` binds by default. In the IANA dynamic range
+#: and not a number anything else claims, which matters because the failure mode
+#: of a popular default is an FDE's `adopt serve` quietly answering on a port
+#: some other local tool is also using.
+ASK_SERVE_PORT: Final[int] = 8787
+
+#: The largest `POST /ask` body `adopt serve` will read. A question is a
+#: sentence; a body at this size is a mistake or an attempt, and reading an
+#: unbounded `Content-Length` into memory is how a loopback convenience becomes
+#: a way to exhaust a developer's machine. Here rather than as a literal because
+#: `64 * 1024` collides with two existing tunables on both of its factors, and a
+#: waiver would leave the one number a future reader wants to change buried in a
+#: multiplication.
+ASK_SERVE_MAX_BODY_BYTES: Final[int] = 65536
+
 #: Missed heartbeats beyond this multiple of a sensor's expected cadence
 #: resolve STALE. Connector silence is never read as stability.
 SENSOR_MISSED_CADENCE_MULTIPLIER: Final[int] = 3
@@ -155,6 +180,16 @@ AGENT_ADAPTER_TIMEOUT_S: Final[int] = 60
 #: other how long exporting fifty thousand items may take.
 AGENT_DETECT_MAX_USD: Final[float] = 0.05
 AGENT_DETECT_MAX_WALL_SECONDS: Final[int] = 30
+
+#: The `ask-001` synthesis pass's budget. Synthesis is **optional and on the
+#: interactive path** (v6.1 §4 R8), which is what sets both numbers: an FDE
+#: waiting for an answer will not wait thirty seconds, and a pass that can be
+#: skipped entirely has no claim on a large spend. Separate constants from
+#: `AGENT_DETECT_*` rather than shared ones, because the two passes are bounded
+#: by different things -- disambiguation runs once per repository and may take
+#: its time; this one runs per question.
+AGENT_ASK_MAX_USD: Final[float] = 0.02
+AGENT_ASK_MAX_WALL_SECONDS: Final[int] = 15
 
 #: How many tree entries the `detect-001` prompt's bounded listing may carry --
 #: the `{listing_limit}` placeholder in AI spec §5.1's user template.

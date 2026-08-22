@@ -24,13 +24,15 @@ from pathlib import Path
 from adopt_cli.config import resolve_all
 from adopt_obs import AdoptError, Clock, ErrorCode
 from adopt_store import open_store
-from adopt_store.annex import SqliteAnnexRecords, open_annex
+from adopt_store.annex import SqliteAnnexRecords, annex_path, open_annex
+from adopt_store.annex.questions import SqliteQuestionLog, open_question_log
 from adopt_store.annex.search import SqliteSearchRecords, open_search
 from adopt_store.api import SqliteStoreHandle, writer_identity
 
 __all__ = [
     "SqliteStoreHandle",
     "configured_annex",
+    "configured_question_log",
     "configured_search",
     "configured_store_path",
     "open_configured_store",
@@ -145,6 +147,20 @@ def configured_search(
     """
     with open_search(handle.backend, clock=clock) as records:
         yield records
+
+
+@contextmanager
+def configured_question_log(handle: SqliteStoreHandle) -> Iterator[SqliteQuestionLog]:
+    """The passive question log in the annex beside `handle`'s store.
+
+    Resolved from the store's path rather than from `ADOPT_RUNTIME_PATH`, for
+    `configured_search`'s reason: the log records what was asked *of this
+    store*, and a log beside a different one answers for questions that store
+    never received. `configured_annex` keeps the path key because agent-run
+    idempotency is genuinely store-independent.
+    """
+    with open_question_log(annex_path(handle.backend.path)) as log:
+        yield log
 
 
 def open_named_store(path: Path, *, migrate: bool = False) -> SqliteStoreHandle:

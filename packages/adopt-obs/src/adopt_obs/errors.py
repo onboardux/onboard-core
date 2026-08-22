@@ -145,6 +145,8 @@ class ErrorCode(StrEnum):
     HARVEST_RANGE_UNKNOWN = "HARVEST_RANGE_UNKNOWN"
 
     ASK_OUTSIDE_BOUNDARY = "ASK_OUTSIDE_BOUNDARY"
+    ESCALATION_NOT_FOUND = "ESCALATION_NOT_FOUND"
+    ESCALATION_ALREADY_ANSWERED = "ESCALATION_ALREADY_ANSWERED"
 
 
 #: Code -> category, verbatim from the contracts §13 table.
@@ -246,6 +248,14 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # every other policy refusal, which is what lets a caller distinguish "the
     # boundary said no" from UNKNOWN, an ordinary answer that exits 0.
     ErrorCode.ASK_OUTSIDE_BOUNDARY: ErrorCategory.POLICY,
+    ErrorCode.ESCALATION_NOT_FOUND: ErrorCategory.USAGE,
+    # Policy rather than usage, on `REVIEW_ITEM_RESOLVED`'s precedent and for
+    # the same reason: the id was right and nothing is malformed -- the store
+    # is refusing to answer a question that already has an answer. Answering
+    # twice would leave the escalation pointing at one of two revisions with
+    # no record of which the asker was actually given, and the second capture
+    # would land as knowledge nothing links back to.
+    ErrorCode.ESCALATION_ALREADY_ANSWERED: ErrorCategory.POLICY,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

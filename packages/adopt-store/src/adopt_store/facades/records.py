@@ -26,6 +26,7 @@ from adopt_model import (
     AudienceTag,
     Binding,
     BindingRevision,
+    Escalation,
     Identity,
     IdentityRevision,
     KnowledgeItem,
@@ -39,10 +40,11 @@ from adopt_model import (
     Sensor,
     SensorHeartbeat,
 )
-from adopt_model._enums import FreshnessState, ReviewResolution, SensorHealth
+from adopt_model._enums import EscalationStatus, FreshnessState, ReviewResolution, SensorHealth
 
 __all__ = [
     "BindingRecords",
+    "EscalationRecords",
     "IdentityRecords",
     "KnowledgeRecords",
     "ObservabilityBoundaryRecords",
@@ -159,6 +161,59 @@ class ReviewRecords(Protocol):
         resolved_at: _dt.datetime,
     ) -> None:
         """Close a batch once every item in it is resolved."""
+        ...
+
+
+class EscalationRecords(Protocol):
+    """`escalation` -- a question the store could not answer, and what happened.
+
+    Introduced by Build 3, which is the first code that writes the table
+    (v6.1 §6 Build 3, F2). It is deliberately **not** a second review queue:
+    `ReviewRecords` holds dispositions over knowledge someone proposed, and this
+    holds questions nobody has answered yet. The two meet only when
+    `adopt answer` turns one of these into knowledge, and even then the write
+    goes through `KnowledgeFacade` -- nothing on this port creates a revision.
+
+    **`question` is nullable and that nullability is a privacy control, not a
+    convenience.** F2 splits passive logging from explicit escalation: an
+    escalation opened without consent records that a question was asked and
+    stores no text. A caller that always supplied the text would silently
+    convert every ask into a stored transcript, which is exactly the default
+    v6.1 refuses.
+
+    **Two mutable columns, both moving once**: `status` `open -> answered`, and
+    the `candidate_revision_id`/`answered_by`/`answered_at` triple stamped with
+    it. `escalation` is not a revision family, so `no-revision-update` does not
+    reach this `UPDATE` -- which is why the narrowness is written down here, the
+    way `ReviewRecords` writes its own down.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+    def insert_escalation(self, row: Escalation) -> None: ...
+    def get_escalation(self, escalation_id: str) -> Escalation | None: ...
+
+    def list_escalations(
+        self, *, system_id: str, status: EscalationStatus | None = None
+    ) -> Sequence[Escalation]:
+        """Escalations for one system, newest first, optionally by status."""
+        ...
+
+    def set_escalation_answered(
+        self,
+        escalation_id: str,
+        *,
+        candidate_revision_id: str,
+        answered_by: str | None,
+        answered_at: _dt.datetime,
+    ) -> None:
+        """Stamp one escalation as answered. Never un-stamps: the caller checks.
+
+        The revision id is required rather than optional because an escalation
+        that reported itself answered while pointing at no knowledge would be
+        indistinguishable from an open one to every reader except a human
+        reading the timestamp -- and the whole point of the capture ratchet is
+        that the next asker gets the answer, not that someone marked a row.
+        """
         ...
 
 

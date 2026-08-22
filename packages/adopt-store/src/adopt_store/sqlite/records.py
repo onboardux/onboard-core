@@ -27,6 +27,7 @@ from adopt_model import (
     BindingRevision,
     Engagement,
     Environment,
+    Escalation,
     Firm,
     Identity,
     IdentityRevision,
@@ -43,7 +44,13 @@ from adopt_model import (
     System,
     SystemLifecycleEvent,
 )
-from adopt_model._enums import FreshnessState, LifecycleState, ReviewResolution, SensorHealth
+from adopt_model._enums import (
+    EscalationStatus,
+    FreshnessState,
+    LifecycleState,
+    ReviewResolution,
+    SensorHealth,
+)
 from adopt_obs import format_timestamp
 from adopt_store.sqlite.store import SqliteStore
 
@@ -51,6 +58,7 @@ __all__ = [
     "SqliteBindingRecords",
     "SqliteBoundaryRecords",
     "SqliteCoverageRecords",
+    "SqliteEscalationRecords",
     "SqliteExportRecords",
     "SqliteFreshnessRecords",
     "SqliteIdentityRecords",
@@ -434,6 +442,65 @@ class SqliteReviewRecords:
         self._store.execute(
             "UPDATE review_batch SET resolution = ?, resolved_at = ? WHERE id = ?",
             (resolution, format_timestamp(resolved_at), review_batch_id),
+        )
+
+
+class SqliteEscalationRecords:
+    """The SQLite implementation of `EscalationRecords`.
+
+    One `UPDATE`, writing the four columns an answer stamps. `escalation` is not
+    a revision family, so `no-revision-update` does not reach it -- the same
+    situation `SqliteReviewRecords` documents, and stated here for the same
+    reason: a gate that does not cover a table is not a licence to widen what
+    the table permits.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_escalation(self, row: Escalation) -> None:
+        _insert(self._store, "escalation", row)
+
+    def get_escalation(self, escalation_id: str) -> Escalation | None:
+        return _one(
+            self._store, Escalation, "SELECT * FROM escalation WHERE id = ?", (escalation_id,)
+        )
+
+    def list_escalations(
+        self, *, system_id: str, status: EscalationStatus | None = None
+    ) -> Sequence[Escalation]:
+        """Newest first. Ids are ULID-prefixed, so `id DESC` is time order."""
+        if status is None:
+            rows = self._store.query(
+                "SELECT * FROM escalation WHERE system_id = ? ORDER BY id DESC", (system_id,)
+            )
+        else:
+            rows = self._store.query(
+                "SELECT * FROM escalation WHERE system_id = ? AND status = ? ORDER BY id DESC",
+                (system_id, status),
+            )
+        return [_from_row(Escalation, dict(row)) for row in rows]
+
+    def set_escalation_answered(
+        self,
+        escalation_id: str,
+        *,
+        candidate_revision_id: str,
+        answered_by: str | None,
+        answered_at: _dt.datetime,
+    ) -> None:
+        self._store.execute(
+            "UPDATE escalation SET status = 'answered', candidate_revision_id = ?, "
+            "answered_by = ?, answered_at = ? WHERE id = ?",
+            (
+                candidate_revision_id,
+                answered_by,
+                format_timestamp(answered_at),
+                escalation_id,
+            ),
         )
 
 

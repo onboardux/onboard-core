@@ -69,6 +69,7 @@ from adopt_store.sqlite.records import (
     SqliteBindingRecords,
     SqliteBoundaryRecords,
     SqliteCoverageRecords,
+    SqliteEscalationRecords,
     SqliteExportRecords,
     SqliteFreshnessRecords,
     SqliteIdentityRecords,
@@ -241,7 +242,11 @@ class SqliteStoreHandle:
     def governance(self) -> GovernanceFacade:
         return self._cached(
             "governance",
-            lambda: GovernanceFacade(SqliteReviewRecords(self.backend), clock=self.clock),
+            lambda: GovernanceFacade(
+                SqliteReviewRecords(self.backend),
+                SqliteEscalationRecords(self.backend),
+                clock=self.clock,
+            ),
         )
 
     def probes(self) -> ProbeFacade:

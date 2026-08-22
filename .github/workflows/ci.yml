@@ -568,6 +568,43 @@ jobs:
           ADOPT_REFERENCE_REPOS_REQUIRED: "1"
         run: uv run pytest tests/e2e/test_knowledge_journey.py -v
 
+  ask-journey:
+    name: ask-journey (the Build 3 demo, verbatim)
+    runs-on: ubuntu-24.04
+    # **Build 3's Definition of Done, executed.** v6.1 §6's Build 3 demo block,
+    # line for line: a KNOWN answer citing revisions and provenance, an honest
+    # UNKNOWN, escalate with consent, `adopt answer`, the re-ask that now serves
+    # KNOWN, and a STALE answer naming its cause after a real `git mv` plus a
+    # real `adopt map`.
+    #
+    # **A fixture repository rather than a pinned clone**, unlike the two jobs
+    # above, and the difference is deliberate. This is a test of the three-way
+    # *branch*, so it needs a corpus where the right answer is known: one
+    # document that answers the refund question and none that answers the
+    # key-rotation one. On somebody else's README, UNKNOWN would depend on what
+    # they happened not to write about. It therefore clones nothing and needs no
+    # network, which is also why it is fast enough to run on every PR.
+    #
+    # **A git identity is configured** because the journey runs `git init`,
+    # `git commit` and `git mv` inside a temporary checkout, and a runner with no
+    # global identity refuses the commit -- which would fail this job for a
+    # reason that is not a defect.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Give the runner a committer identity for the journey's own checkout
+        run: |
+          git config --global user.name "adopt ci"
+          git config --global user.email "ci@example.invalid"
+      # No adapter is configured anywhere in this job, and the journey asserts
+      # that: R3 makes the no-model mode the product rather than a fallback, so
+      # the demo has to pass with nothing to call.
+      - name: The v6.1 §6 Build 3 demo, run literally
+        run: uv run pytest tests/e2e/test_ask_journey.py -v
+
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
     runs-on: ubuntu-24.04

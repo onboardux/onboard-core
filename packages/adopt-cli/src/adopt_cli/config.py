@@ -18,6 +18,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
+from adopt_const import ASK_LOG_QUESTIONS
 from adopt_obs import AdoptError, ErrorCode
 
 __all__ = [
@@ -107,6 +108,15 @@ REGISTRY: Final[tuple[ConfigKey, ...]] = (
     ConfigKey("ADOPT_FEATURE_DBOS_BACKEND", "0", "DBOS workflow backend. Off."),
     ConfigKey("ADOPT_FEATURE_POSTGRES_STORE", "0", "Postgres store realization. Off."),
     ConfigKey("ADOPT_FEATURE_VECTOR_INDEX", "0", "Vector index behind the VectorIndex seam. Off."),
+    ConfigKey(
+        "ADOPT_ASK_LOG_QUESTIONS",
+        str(ASK_LOG_QUESTIONS),
+        "Record questions nobody escalated, in the runtime annex. Off (v6.1 F2): escalation "
+        "stores a question because a human asked for it to be, while this would store every "
+        "question typed on a client engagement. Prefixed `ADOPT_` per `03` §3, although "
+        "the tunable behind it is `ASK_LOG_QUESTIONS` -- a config key is an environment "
+        "variable and every one of them is namespaced.",
+    ),
     ConfigKey("ADOPT_API_KEY", None, "Provider credential, when an adapter is configured.", True),
 )
 

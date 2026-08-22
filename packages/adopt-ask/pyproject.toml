@@ -24,6 +24,20 @@ authors = [{ name = "The Adopt Authors" }]
 # type is part of this package's public signature rather than an implementation
 # detail it could reach for. That is invariant #5's structural half.
 #
+# `adopt-agent` arrives with S3.2's optional synthesis and is the **only** door to
+# a model this package has or may have: `no-provider-sdk` names `adopt_ask` a
+# source module, so a vendor SDK cannot be reached from here directly or
+# indirectly. The runner is injected rather than constructed, which is what keeps
+# the no-model mode structural -- with nothing passed there is nothing to call.
+# `first-party-deps` named this one too, on the same day and for the same reason
+# as the three below.
+#
+# `adopt-knowledge` arrives with S3.2's capture path, and only for
+# `structural_matches`: `adopt answer` binds on the same two-tier rule Build 2
+# established (plan D9), and reimplementing the URI matcher here would be a
+# second answer to "does this document refer to that identity" -- which is the
+# question H2 says must have exactly one. It carries no store dependency.
+#
 # `adopt-detect`, `adopt-schema` and `adopt-scope` arrive with the boundary
 # check in `answer.py`: `BoundaryView` is the authority `validate_envelope`
 # takes, `Manifest` is the injected deny-list source, and `Scope` supplies the
@@ -32,10 +46,12 @@ authors = [{ name = "The Adopt Authors" }]
 # working, not a near miss: they resolve in the workspace whatever this manifest
 # says, so nothing would have failed until someone ran `pip install adopt-ask`.
 dependencies = [
+    "adopt-agent",
     "adopt-const",
     "adopt-detect",
     "adopt-freshness",
     "adopt-identity",
+    "adopt-knowledge",
     "adopt-model",
     "adopt-obs",
     "adopt-policy",

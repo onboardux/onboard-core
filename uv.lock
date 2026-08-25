@@ -23,6 +23,7 @@ members = [
     "adopt-model",
     "adopt-obs",
     "adopt-policy",
+    "adopt-probe",
     "adopt-schema",
     "adopt-scope",
     "adopt-store",
@@ -112,6 +113,7 @@ dependencies = [
     { name = "adopt-model" },
     { name = "adopt-obs" },
     { name = "adopt-policy" },
+    { name = "adopt-probe" },
     { name = "adopt-scope" },
     { name = "adopt-store" },
     { name = "click" },
@@ -136,6 +138,7 @@ requires-dist = [
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },
     { name = "adopt-policy", editable = "packages/adopt-policy" },
+    { name = "adopt-probe", editable = "packages/adopt-probe" },
     { name = "adopt-scope", editable = "packages/adopt-scope" },
     { name = "adopt-store", editable = "packages/adopt-store" },
     { name = "click", specifier = ">=8,<9" },
@@ -358,6 +361,31 @@ requires-dist = [
     { name = "adopt-obs", editable = "packages/adopt-obs" },
     { name = "adopt-schema", editable = "packages/adopt-schema" },
     { name = "pyyaml", specifier = ">=6,<7" },
+]
+
+[[package]]
+name = "adopt-probe"
+version = "0.3.1"
+source = { editable = "packages/adopt-probe" }
+dependencies = [
+    { name = "adopt-agent" },
+    { name = "adopt-const" },
+    { name = "adopt-identity" },
+    { name = "adopt-model" },
+    { name = "adopt-obs" },
+    { name = "adopt-policy" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adopt-agent", editable = "packages/adopt-agent" },
+    { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-identity", editable = "packages/adopt-identity" },
+    { name = "adopt-model", editable = "packages/adopt-model" },
+    { name = "adopt-obs", editable = "packages/adopt-obs" },
+    { name = "adopt-policy", editable = "packages/adopt-policy" },
+    { name = "pyyaml", specifier = ">=6.0.1" },
 ]
 
 [[package]]

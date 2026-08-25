@@ -168,6 +168,16 @@ COVERAGE_ALARM_SAMPLE_MAX: Final[int] = 20
 #: that the value has one home from the day the first caller appears.
 PROBE_DIFF_SIM_THRESHOLD: Final[float] = 0.92
 
+#: The ceiling on any single probe's declared `runtime.max_seconds` *(Build 5,
+#: v6.1 §6 B5 and §8's complete tunable list)*. A probe declares its own wall
+#: clock in its capability manifest; this is the bound that declaration may not
+#: exceed, refused at `adopt probe add`. Two limits rather than one because they
+#: answer different questions: the manifest's is what a human approved for this
+#: probe, and this is what the programme permits any probe to ask for -- without
+#: it, a manifest could declare its way out of the wall clock entirely, which is
+#: the unbounded probe in a client environment the manifest exists to prevent.
+PROBE_TIMEOUT_SECONDS: Final[int] = 60
+
 #: `Budget` defaults for the agent seam.
 AGENT_DEFAULT_MAX_USD: Final[float] = 0.50
 AGENT_DEFAULT_MAX_WALL_SECONDS: Final[int] = 120

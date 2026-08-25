@@ -32,7 +32,7 @@ env:
 
 jobs:
   lint:
-    name: lint (ruff, mypy --strict, twelve import contracts)
+    name: lint (ruff, mypy --strict, thirteen import contracts)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -790,6 +790,25 @@ jobs:
           fi
           uv run python scripts/plant_violation.py --revert
           echo "planted provider-SDK import detected -- gate is live"
+      # Build 5's new irreversible risk class (v6.1 R6 permits a
+      # planted-violation-grade instrument for exactly this). `probe-io` is the
+      # whole safety argument for dropping v4's sandbox: probes are declarative
+      # data and only `adopt_probe.runner` can reach the network, so a probe
+      # cannot call a host its manifest never declared. The plant goes into a
+      # *submodule* rather than the package root, which is CR-67's lesson --
+      # a self-test that plants where discovery is easiest proves nothing about
+      # the discovery bug it is meant to catch.
+      - name: Prove the gate still rejects probe I/O outside the runner
+        run: |
+          set -euo pipefail
+          uv run python scripts/plant_violation.py --kind probe-io
+          if uv run lint-imports --config importlinter.ini; then
+            echo "::error::a planted probe socket outside adopt_probe.runner was NOT detected"
+            uv run python scripts/plant_violation.py --revert
+            exit 1
+          fi
+          uv run python scripts/plant_violation.py --revert
+          echo "planted probe I/O detected -- gate is live"
       - name: The tree is exactly as it was found
         run: git diff --exit-code
       # The sprint plan's Final Output Validation greps both repositories.

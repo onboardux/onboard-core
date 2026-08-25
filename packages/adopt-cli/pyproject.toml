@@ -36,6 +36,10 @@ dependencies = [
     "adopt-model",
     "adopt-obs",
     "adopt-policy",
+    # Build 5. `commands/probe.py` imports it inside the command body; the
+    # `first-party-deps` gate is about what the distribution needs installed,
+    # so `pip install adopt-cli` must always yield a working `adopt probe run`.
+    "adopt-probe",
     "adopt-scope",
     "adopt-store",
     "typer>=0.12,<1",

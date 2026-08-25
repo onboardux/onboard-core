@@ -29,11 +29,13 @@ from adopt_model import (
 )
 from adopt_model._enums import (
     AuthorityClass,
+    DiffMethod,
     EscalationBranch,
     EscalationStatus,
     GapStatus,
     ItemKind,
     ReviewResolution,
+    SafePath,
     SourceType,
     Verification,
 )
@@ -742,3 +744,72 @@ class ProbeFacade:
     def retire(self, *, probe_definition_id: str, reason: str, actor_id: str | None = None) -> str:
         """Append a `retired` revision (CR-33)."""
         return self._writer.retire(parent_id=probe_definition_id, reason=reason, actor_id=actor_id)
+
+    # -- field-taking doors (Build 5) --------------------------------------
+    #
+    # `create` above takes a `ProbeDefinitionRevisionDraft`, which is fine for a
+    # caller that already lives in this package. `adopt probe add` does not:
+    # CR-36 makes `adopt_cli.store_option` the only CLI module permitted to reach
+    # `adopt_store` at all, so a command constructing that dataclass would be
+    # reaching past the rule even where the import graph happens not to catch it.
+    #
+    # The remedy is the one `KnowledgeFacade` already uses -- `record` and
+    # `append` take **fields** and build the draft in here, so the draft type
+    # stays an implementation detail of this package and the consumer declares a
+    # narrow protocol over the field signature (`adopt_probe.ports.ProbeWriter`).
+    # Neither method adds capability: both delegate to the machinery above.
+
+    def record(
+        self,
+        *,
+        scope: Scope,
+        name: str,
+        interaction: str,
+        safe_path: SafePath,
+        diff_method: DiffMethod,
+        capability_manifest: str,
+        schedule_cron: str | None = None,
+        actor_id: str | None = None,
+    ) -> tuple[str, str]:
+        """`create`, over fields rather than a draft. Returns `(probe_id, revision_id)`."""
+        return self.create(
+            scope=scope,
+            name=name,
+            revision=ProbeDefinitionRevisionDraft(
+                interaction=interaction,
+                safe_path=safe_path,
+                diff_method=diff_method,
+                capability_manifest=capability_manifest,
+            ),
+            schedule_cron=schedule_cron,
+            actor_id=actor_id,
+        )
+
+    def append(
+        self,
+        *,
+        probe_definition_id: str,
+        expected_head_id: str | None,
+        interaction: str,
+        safe_path: SafePath,
+        diff_method: DiffMethod,
+        capability_manifest: str,
+        actor_id: str | None = None,
+    ) -> str:
+        """Append a revision to an existing probe. Returns the new revision id.
+
+        `expected_head_id` is passed through unchanged, so a concurrent edit
+        raises `REVISION_CHAIN_FORK` from the one mutation path rather than from
+        a check this method invented.
+        """
+        return self._writer.append_revision(
+            parent_id=probe_definition_id,
+            draft=ProbeDefinitionRevisionDraft(
+                interaction=interaction,
+                safe_path=safe_path,
+                diff_method=diff_method,
+                capability_manifest=capability_manifest,
+            ),
+            expected_head_id=expected_head_id,
+            actor_id=actor_id,
+        )

@@ -23,8 +23,10 @@ from pydantic import BaseModel
 from adopt_model import (
     MODEL_FOR_TABLE,
     AudienceTag,
+    BaselineVersion,
     Binding,
     BindingRevision,
+    Conflict,
     CoverageGap,
     Engagement,
     Environment,
@@ -37,6 +39,8 @@ from adopt_model import (
     ObservabilityBoundary,
     ProbeDefinition,
     ProbeDefinitionRevision,
+    ProbeObservation,
+    ProbeRun,
     Provenance,
     ReviewBatch,
     ReviewItem,
@@ -68,6 +72,7 @@ __all__ = [
     "SqliteKnowledgeRecords",
     "SqlitePackRecords",
     "SqliteProbeRecords",
+    "SqliteProbeRunRecords",
     "SqliteReviewRecords",
     "SqliteRevisionRecords",
     "SqliteScopeRecords",
@@ -715,6 +720,102 @@ class SqliteProbeRecords:
             "SELECT * FROM probe_definition WHERE id = ?",
             (probe_definition_id,),
         )
+
+
+class SqliteProbeRunRecords:
+    """The SQLite implementation of `adopt_probe.ProbeRunRecords`.
+
+    **A separate class from `SqliteProbeRecords`, mirroring a separate port**,
+    and the separation is a decision with a gate behind it: `adopt-plane`
+    realizes `ProbeRecords` as `PostgresProbeRecords`, and its `escape_coverage`
+    gate refuses to exclude any port a `Postgres*Records` class realizes even
+    partially. Adding execution methods to the port the plane already realizes
+    would have forced Build 8's Postgres work forward or turned that gate red.
+
+    **No update and no delete**, for `SqliteRevisionRecords`' reason: a run is a
+    record of what happened, and one that can be edited records nothing.
+    `probe_run.outcome` is decided once, when the run finishes.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    # -- inserts ----------------------------------------------------------
+
+    def insert_probe_run(self, row: ProbeRun) -> None:
+        _insert(self._store, "probe_run", row)
+
+    def insert_probe_observation(self, row: ProbeObservation) -> None:
+        _insert(self._store, "probe_observation", row)
+
+    def insert_baseline_version(self, row: BaselineVersion) -> None:
+        _insert(self._store, "baseline_version", row)
+
+    def insert_conflict(self, row: Conflict) -> None:
+        _insert(self._store, "conflict", row)
+
+    # -- reads ------------------------------------------------------------
+
+    def list_probe_definitions(
+        self, *, system_id: str, environment_id: str
+    ) -> Sequence[ProbeDefinition]:
+        rows = self._store.query(
+            "SELECT * FROM probe_definition WHERE system_id = ? AND environment_id = ? "
+            "ORDER BY created_at, id",
+            (system_id, environment_id),
+        )
+        return [_from_row(ProbeDefinition, dict(row)) for row in rows]
+
+    def latest_baseline(self, *, probe_definition_revision_id: str) -> BaselineVersion | None:
+        # `id` breaks the tie for `latest_boundary`'s reason: ULIDs are monotonic
+        # within a millisecond and `created_at` is millisecond-truncated, so two
+        # baselines written in one millisecond would otherwise order arbitrarily.
+        return _one(
+            self._store,
+            BaselineVersion,
+            "SELECT * FROM baseline_version WHERE probe_definition_revision_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (probe_definition_revision_id,),
+        )
+
+    def latest_run(
+        self, *, probe_definition_id: str
+    ) -> tuple[ProbeRun, Sequence[ProbeObservation]] | None:
+        """The newest run of **any** revision of one probe, with its observations.
+
+        Joined through `probe_definition_revision` rather than taking a revision
+        id, because "the latest run of this probe" has to span the revision
+        boundary: a probe that was edited and re-run must still be comparable to
+        the baseline recorded before the edit -- that comparison is precisely how
+        *the probe changed* is told apart from *the system changed*.
+        """
+        run = _one(
+            self._store,
+            ProbeRun,
+            "SELECT r.* FROM probe_run r "
+            "JOIN probe_definition_revision v ON v.id = r.probe_definition_revision_id "
+            "WHERE v.probe_definition_id = ? "
+            "ORDER BY r.started_at DESC, r.id DESC LIMIT 1",
+            (probe_definition_id,),
+        )
+        if run is None:
+            return None
+        rows = self._store.query(
+            "SELECT * FROM probe_observation WHERE probe_run_id = ? ORDER BY id",
+            (run.id,),
+        )
+        return run, [_from_row(ProbeObservation, dict(row)) for row in rows]
+
+    def open_conflicts(self, *, identity_id: str, intent_revision_id: str) -> Sequence[Conflict]:
+        rows = self._store.query(
+            "SELECT * FROM conflict WHERE identity_id = ? AND intent_revision_id = ? "
+            "AND disposition = 'open' ORDER BY detected_at, id",
+            (identity_id, intent_revision_id),
+        )
+        return [_from_row(Conflict, dict(row)) for row in rows]
 
 
 class SqliteRevisionRecords:

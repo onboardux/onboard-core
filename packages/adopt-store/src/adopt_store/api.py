@@ -78,6 +78,7 @@ from adopt_store.sqlite.records import (
     SqliteKnowledgeRecords,
     SqlitePackRecords,
     SqliteProbeRecords,
+    SqliteProbeRunRecords,
     SqliteReviewRecords,
     SqliteRevisionRecords,
     SqliteScopeRecords,
@@ -286,6 +287,16 @@ class SqliteStoreHandle:
     def pack_records(self) -> SqlitePackRecords:
         """The read port `adopt pack` assembles from (Build 4)."""
         return self._cached("pack_records", lambda: SqlitePackRecords(self.backend))
+
+    def probe_run_records(self) -> SqliteProbeRunRecords:
+        """The port `adopt probe run` records through (Build 5).
+
+        Separate from `probes()`, which is Build 0's thin definition facade: this
+        one carries execution data (`probe_run`, `probe_observation`,
+        `baseline_version`, `conflict`) and satisfies `adopt_probe.ProbeRunRecords`
+        structurally, never by import -- `adopt_probe` holds no dialect.
+        """
+        return self._cached("probe_run_records", lambda: SqliteProbeRunRecords(self.backend))
 
     def export_records(self) -> SqliteExportRecords:
         """The read port `adopt_export.write_bundle` runs on."""

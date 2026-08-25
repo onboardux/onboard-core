@@ -153,6 +153,9 @@ class ErrorCode(StrEnum):
     GAP_WAIVER_NEEDS_UNTIL = "GAP_WAIVER_NEEDS_UNTIL"
     PACK_RENDERER_MISSING = "PACK_RENDERER_MISSING"
 
+    PROBE_HOST_UNDECLARED = "PROBE_HOST_UNDECLARED"
+    PROBE_BUDGET_EXCEEDED = "PROBE_BUDGET_EXCEEDED"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -280,6 +283,16 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # either way, so a derived format that silently did not appear would leave
     # somebody looking for a file nobody said was missing.
     ErrorCode.PACK_RENDERER_MISSING: ErrorCategory.USAGE,
+    # Policy, both of them, and for the same reason `ENVELOPE_*` are: the request
+    # was well-formed and the store is intact -- a declaration the operator wrote
+    # is what refused it. `PROBE_HOST_UNDECLARED` is the allow-list saying a
+    # target was never declared; `PROBE_BUDGET_EXCEEDED` is the manifest's own
+    # runtime or cost limit being spent. Exiting `3` with the other policy
+    # refusals keeps "the probe was stopped by its own declaration"
+    # distinguishable from "the probe ran and the system disagreed", which is an
+    # ordinary outcome exiting `0`.
+    ErrorCode.PROBE_HOST_UNDECLARED: ErrorCategory.POLICY,
+    ErrorCode.PROBE_BUDGET_EXCEEDED: ErrorCategory.POLICY,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

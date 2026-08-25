@@ -129,6 +129,13 @@ DETECT_MODULE: Final[Path] = (
     REPO_ROOT / "packages" / "adopt-detect" / "src" / "adopt_detect" / "detect.py"
 )
 
+#: Where `--kind probe-io` plants. A **submodule**, never the package root: see
+#: `plant_probe_io` for why that distinction is the difference between a gate and
+#: the appearance of one.
+PROBE_MANIFEST: Final[Path] = (
+    REPO_ROOT / "packages" / "adopt-probe" / "src" / "adopt_probe" / "manifest.py"
+)
+
 #: The provider module named in the planted import. One of the six
 #: `no-provider-sdk` forbids, and deliberately the one PRD F13.2 names first --
 #: so the proof is against a module the pack actually expects someone to reach
@@ -189,9 +196,47 @@ def plant_covered_cache_write() -> str:
     return f"added a coverage-cache write to {IDENTITY_RECORDS.name}"
 
 
+def plant_probe_io() -> str:
+    """Open a probe socket outside `adopt_probe.runner` -- Build 5's gate.
+
+    **This is the instrument the whole no-sandbox decision rests on.** v6.1 D2
+    makes probes declarative data and the F8 audit upheld dropping v4's sandbox
+    apparatus *because* a probe carries no executable content and exactly one
+    module reaches the network -- the one that checks the allow-list immediately
+    before it connects. A probe socket opened anywhere else is a probe that can
+    reach a host nobody declared, and no other instrument in the tree would say
+    so.
+
+    The plant goes into **`manifest.py`, a submodule** rather than the package
+    root, for CR-67's reason: `escape_coverage`'s self-test planted at a package
+    root and would have passed against a discovery bug that could not see
+    submodules at all. A gate whose broken state is indistinguishable from its
+    passing state is not a gate. `manifest.py` is also the honest choice of
+    victim -- it is the module a contributor would actually reach from, since it
+    already holds the URL and the host.
+
+    Planted **inside a function** so grimp records a real import edge without
+    execution, exactly as `plant_provider_sdk` does.
+    """
+    if not PROBE_MANIFEST.exists():  # pragma: no cover -- layout change
+        raise SystemExit(
+            f"{PROBE_MANIFEST.relative_to(REPO_ROOT)} does not exist, so nothing was "
+            "planted. Update this script rather than leaving the gate unproven."
+        )
+    _backup(PROBE_MANIFEST)
+    with PROBE_MANIFEST.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            "\n\ndef _planted_violation() -> None:\n"
+            "    import urllib.request\n\n"
+            "    del urllib.request\n"
+        )
+    return f"added `import urllib.request` to {PROBE_MANIFEST.name}"
+
+
 KINDS: Final[dict[str, Callable[[], str]]] = {
     "covered-cache-write": plant_covered_cache_write,
     "drop-column": plant_drop_column,
+    "probe-io": plant_probe_io,
     "provider-sdk": plant_provider_sdk,
     "revision-update": plant_revision_update,
 }

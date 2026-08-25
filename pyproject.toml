@@ -27,6 +27,7 @@ adopt-knowledge = { workspace = true }
 adopt-map = { workspace = true }
 adopt-ask = { workspace = true }
 adopt-handover = { workspace = true }
+adopt-probe = { workspace = true }
 adopt-cli = { workspace = true }
 
 [dependency-groups]

@@ -25,7 +25,10 @@ REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 #:
 #: **`adopt-handover` was added for Build 4** on the same precedent and the same
 #: A2 ratification, carried by the owner's approval of the Build 4 sprint plan.
-#: Nineteen distributions.
+#:
+#: **`adopt-probe` was added for Build 5** on the same precedent and the same A2
+#: ratification, carried by the owner's approval of the Build 5 sprint plan.
+#: Twenty distributions.
 CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
     {
         "adopt-agent",
@@ -43,6 +46,7 @@ CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
         "adopt-model",
         "adopt-obs",
         "adopt-policy",
+        "adopt-probe",
         "adopt-schema",
         "adopt-scope",
         "adopt-store",

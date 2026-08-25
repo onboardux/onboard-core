@@ -3,10 +3,11 @@
 AI spec §5, placed here by `03` §1.2 (CR-44). **Build 0 contained exactly one
 production prompt**, `detect-001@1`, and that ratio was deliberate: expensive and
 non-deterministic work stays off the critical path, and the substrate is nothing
-but critical path. Build 3 added `ask-001/v1` and Build 4 adds `draft-001/v1`;
-both are optional passes over work the deterministic path has already completed,
-so the ratio still holds where it matters -- nothing here is required for a
-command to produce its output.
+but critical path. Build 3 added `ask-001/v1`, Build 4 added `draft-001/v1`, and
+Build 5 adds `probe-001/v1`; all three are optional passes over work the
+deterministic path has already completed, so the ratio still holds where it
+matters -- nothing here is required for a command to produce its output. A probe
+made only of `http` steps runs to completion with no adapter configured at all.
 
 ## The layout
 
@@ -88,3 +89,26 @@ fabricated citation and a client's handover pack. Every citation is checked
 against the exact fact set that was sent; one foreign key discards the whole
 draft. A landed draft renders with an UNVERIFIED banner and becomes confirmed
 only when a human confirms it in `adopt review`.
+
+## `probe-001/v1`
+
+| | |
+|---|---|
+| Caller | `adopt_probe.runner._run_prompt_step`, from `adopt probe run` |
+| Output schema | `{reply}` |
+| Budget | the **probe's own** `cost` block (`max_model_calls`, `max_tokens`), not a programme default |
+| Sends | one probe step's authored `input` text, verbatim |
+| Never sends | anything else. Not the store, not the repository, not the other steps' results |
+
+**The thinnest prompt here, and deliberately so.** A behavioural probe records
+what the client's model deployment *does*; instructions of ours added to the
+interaction would be recorded as part of that behaviour and compared against the
+baseline forever. So the skill text says only "answer the supplied text directly,
+add nothing, prefer the plain phrasing" — the rules exist to keep our own
+contribution constant, not to shape the answer.
+
+**Its output never becomes knowledge.** Unlike `draft-001`, nothing here lands as
+a knowledge revision: the reply is recorded as a `probe_observation`,
+fingerprinted, and read only as *what the system said when asked this*. The
+budget is the probe's because a probe is a document a human approved, and a
+programme-wide default would let one probe spend on the authority of nobody.

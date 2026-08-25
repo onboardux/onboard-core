@@ -670,6 +670,46 @@ jobs:
       - name: Invariant #7 for drafts -- ungrounded means nothing is written
         run: uv run pytest tests/unit/test_drafting.py tests/unit/test_pack_derived.py -v
 
+  probe-journey:
+    name: probe-journey (the v6.1 Build 5 demo, end to end)
+    runs-on: ubuntu-24.04
+    # **The proxy, never the gate.** v6.1 §10 makes G1 a safe repeatable probe
+    # against a *real client AI deployment*, which is a manual owner action no
+    # runner can perform. What this job proves is the machinery: a probe
+    # validated, executed against a loopback fixture under its declared
+    # allow-list and budgets, versioned as a baseline, re-run against a changed
+    # response, diffed with the change named, and the contradiction surfaced in
+    # `adopt gaps` and in the client's pack. The real-system run is recorded in
+    # the session log when it happens; this job cannot stand in for it.
+    #
+    # A job of its own for the reason the other four journeys have one: the
+    # `unit` job runs `-m unit` and nothing runs `-m e2e`, so a demo not named
+    # here is a demo nobody runs.
+    #
+    # The model step goes through the real `adopt_agent.Runner` against the
+    # `fake_recorded` adapter (kind `test`, permitted offline), so the seam, the
+    # skill and the budget are exercised with no network, no credential and no
+    # provider.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Give the runner a committer identity for the journey's own checkout
+        run: |
+          git config --global user.name "adopt ci"
+          git config --global user.email "ci@example.invalid"
+      - name: The v6.1 §6 Build 5 demo, run literally
+        run: uv run pytest tests/e2e/test_probe_journey.py -v
+      # The two invariants this build adds, named separately. They are in the
+      # unit suite the `unit` job already runs, and they are named again here
+      # because a job called "the Build 5 demo" that could go green while
+      # `probe_changed` was being reported as drift -- or while an unverified
+      # draft could raise a conflict -- would be a demo of the wrong thing.
+      - name: The revision guard and Bet 4's honesty rule, by name
+        run: uv run pytest tests/unit/test_probe_baseline_diff.py tests/unit/test_probe_conflict.py -v
+
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
     runs-on: ubuntu-24.04

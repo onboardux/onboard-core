@@ -75,9 +75,10 @@ def pack(
     """Assemble an audience-scoped handover pack from the store.
 
     Sections select **confirmed** knowledge by audience and kind; the map
-    contributes the inventory; the coverage join contributes the gap appendix;
-    Build 0's observability boundary is embedded so the pack states its own
-    limits. Every section carries its verification status and date.
+    contributes the inventory; the coverage join contributes the gap appendix,
+    and any open conflict a probe recorded is listed inside it; Build 0's
+    observability boundary is embedded so the pack states its own limits. Every
+    section carries its verification status and date.
 
     The Markdown is byte-stable given the same revisions -- no clock reaches it,
     so running this twice over an unchanged store produces identical files.
@@ -131,6 +132,10 @@ def pack(
         coverage = recompute_coverage(handle.coverage_records(), system_id, environment_id)
         covered = frozenset(row.identity_id for row in coverage.identities if row.covered)
         ranked = rank_gaps(coverage.identities)
+        # Every identity the recompute evaluated, by URI. The conflict join
+        # needs it, and it is the same population the inventory renders --
+        # so a conflict can never name an identity this pack does not list.
+        uris = {row.identity_id: row.uri for row in coverage.identities}
 
         assembled = assemble(
             audience=audience,
@@ -145,6 +150,7 @@ def pack(
                 handle, system_id=system_id, environment_id=environment_id
             ),
             gaps=support.build_gaps(ranked, handle.governance().gap_dispositions()),
+            conflicts=support.build_conflicts(handle, uris=uris),
             drafts=support.build_drafts(handle, system_id=system_id, environment_id=environment_id),
         )
         document = render(assembled)
@@ -180,6 +186,7 @@ def _payload(assembled: Any, markdown_path: Path, sidecar_path: Path) -> dict[st
         "sidecar": str(sidecar_path),
         "identities": len(assembled.identities),
         "gaps": len(assembled.gaps),
+        "conflicts": len(assembled.conflicts),
         "boundary": "declared" if assembled.boundary is not None else "none",
         "sections": [
             {

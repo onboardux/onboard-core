@@ -155,6 +155,7 @@ class ErrorCode(StrEnum):
 
     PROBE_HOST_UNDECLARED = "PROBE_HOST_UNDECLARED"
     PROBE_BUDGET_EXCEEDED = "PROBE_BUDGET_EXCEEDED"
+    PROBE_BASELINE_MISSING = "PROBE_BASELINE_MISSING"
 
 
 #: Code -> category, verbatim from the contracts §13 table.
@@ -293,6 +294,13 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # ordinary outcome exiting `0`.
     ErrorCode.PROBE_HOST_UNDECLARED: ErrorCategory.POLICY,
     ErrorCode.PROBE_BUDGET_EXCEEDED: ErrorCategory.POLICY,
+    # Usage, not policy and not integrity: nothing refused anything and
+    # nothing is broken -- the operator asked for a comparison before there
+    # was anything to compare against, and one command fixes it. Exiting `2`
+    # keeps it distinguishable from exit `4`, which is what `adopt probe diff`
+    # returns when it *did* compare and found drift: 'I could not answer' and
+    # 'the answer is that it changed' send a reader to different places.
+    ErrorCode.PROBE_BASELINE_MISSING: ErrorCategory.USAGE,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

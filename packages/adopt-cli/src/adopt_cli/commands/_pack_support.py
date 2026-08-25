@@ -14,11 +14,12 @@ the same item's freshness repeatedly, and `resolve_freshness` reads sensors.
 
 from typing import Any
 
-from adopt_handover import PackBoundary, PackGap, PackIdentity, PackKnowledge
+from adopt_handover import PackBoundary, PackConflict, PackGap, PackIdentity, PackKnowledge
 
 __all__ = [
     "FreshnessCache",
     "build_boundary",
+    "build_conflicts",
     "build_drafts",
     "build_gaps",
     "build_identities",
@@ -183,3 +184,30 @@ def build_gaps(ranked: tuple[Any, ...], dispositions: dict[str, Any]) -> tuple[P
             )
         )
     return tuple(joined)
+
+
+def build_conflicts(handle: Any, *, uris: dict[str, str]) -> tuple[PackConflict, ...]:
+    """Open conflicts for the identities in scope, joined to their URIs.
+
+    Read through `table_rows` (Build 4's pattern), so the gap appendix gaining
+    Bet 4's deliverable adds no query path to any realized port and leaves the
+    plane's escape-coverage denominator exactly where this build found it.
+
+    Scoped by the `uris` mapping rather than by a filter here: a conflict row
+    carries only an identity id, and which identities belong to this pack is a
+    question the composition root has already answered for the inventory.
+    """
+    from adopt_knowledge import rank_conflicts
+
+    from adopt_model import Conflict
+
+    rows = handle.export_records().table_rows("conflict", Conflict)
+    return tuple(
+        PackConflict(
+            uri=conflict.uri,
+            kind=conflict.kind,
+            intent_revision_id=conflict.intent_revision_id,
+            detected_at=conflict.detected_at,
+        )
+        for conflict in rank_conflicts(rows, uris)
+    )

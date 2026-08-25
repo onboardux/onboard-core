@@ -20,13 +20,25 @@ port is excluded in the plane rather than realized.
 """
 
 from collections.abc import Sequence
+from contextlib import ExitStack
 from typing import Any, Protocol
 
-from adopt_probe import ProbeSpec
+from adopt_probe import Baseline, ProbeSpec
 from adopt_probe.ports import ProbeWriter
 
-from adopt_model import ProbeDefinition, ProbeDefinitionRevision, Sensor
-from adopt_obs import AdoptError, ErrorCode
+from adopt_model import (
+    Binding,
+    BindingRevision,
+    Identity,
+    KnowledgeItem,
+    KnowledgeRevision,
+    ProbeDefinition,
+    ProbeDefinitionRevision,
+    ProbeObservation,
+    ProbeRun,
+    Sensor,
+)
+from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, truncate_to_millisecond
 from adopt_scope import Scope
 
 __all__ = [
@@ -34,9 +46,11 @@ __all__ = [
     "SensorAdapter",
     "active_revision",
     "add_probe",
+    "diff_probes",
     "probes_in_scope",
     "resolve_probe",
     "run_targets",
+    "set_baselines",
 ]
 
 #: The sensor kind a probe run reports under. Build 0's `sensor_kind` vocabulary
@@ -216,35 +230,111 @@ class SensorAdapter:
         self._facade.heartbeat(sensor_id=self._sensor_id, outcome=outcome, detail=detail)
 
 
-def _agent_for(specs: Sequence[ProbeSpec], *, allow_network: bool, audience: str) -> Any:
+def _clock(handle: Any) -> Clock:
+    clock: Clock = handle.clock if handle.clock is not None else SystemClock()
+    return clock
+
+
+def _adapter_id() -> str | None:
+    """The configured adapter, for a baseline's `model_provider_version`.
+
+    Read through the same resolver every other key goes through, so `adopt
+    doctor` can explain the value a baseline recorded.
+    """
+    from adopt_cli.commands.agent import adapter_settings
+
+    _, adapter_id, _, _ = adapter_settings()
+    return adapter_id
+
+
+def _baseline_for(handle: Any, revision_id: str) -> Baseline | None:
+    """The current baseline of **this** revision, or `None`.
+
+    Keyed on the revision deliberately: a baseline recorded against a different
+    revision is not something this run may be compared against, and returning it
+    would make the runner call an edit to our own probe file a change in the
+    client's system. `adopt probe diff` is where that case is reported, by name.
+    """
+    from adopt_probe import baseline_from_row
+
+    row = handle.probe_run_records().latest_baseline(probe_definition_revision_id=revision_id)
+    return None if row is None else baseline_from_row(row)
+
+
+def _probe_baselines(handle: Any, revision_ids: frozenset[str]) -> Any:
+    """The newest `baseline_version` across a probe's revisions, or `None`.
+
+    A report read (`table_rows`), not a port query: `diff` has to find a
+    baseline set against an **older** revision -- that is the entire
+    "probe changed" case -- and the port's `latest_baseline` takes one revision
+    id by design. Reading the table adds no query path to any realized port,
+    which is what keeps the plane's escape denominator untouched by this build.
+    """
+    from adopt_probe import baseline_from_row
+
+    from adopt_model import BaselineVersion
+
+    rows = [
+        row
+        for row in _rows(handle, "baseline_version", BaselineVersion)
+        if row.probe_definition_revision_id in revision_ids
+    ]
+    if not rows:
+        return None
+    newest = sorted(rows, key=lambda row: (row.created_at, row.id))[-1]
+    return baseline_from_row(newest)
+
+
+def _revision_ids(handle: Any, probe: ProbeDefinition) -> frozenset[str]:
+    return frozenset(
+        row.id
+        for row in _rows(handle, "probe_definition_revision", ProbeDefinitionRevision)
+        if row.probe_definition_id == probe.id
+    )
+
+
+def _agent_for(
+    specs: Sequence[ProbeSpec], stack: ExitStack, *, allow_network: bool, audience: str
+) -> Any:
     """A `Runner`, but only if some probe actually has a prompt step.
 
     Built once for the whole invocation rather than per probe, and **not at all**
     when every step is `http`: R3 makes the no-model mode complete, so a probe set
     that needs no adapter must not fail because none is configured -- nor open the
     runtime annex to find that out.
+
+    **The annex is entered on the caller's `ExitStack`, not on a `with` inside
+    this function, and that is a repaired defect rather than a style choice.**
+    S5.1 returned the `Runner` out of a `with configured_annex()` block, so the
+    annex database was closed before the first prompt step ever reached it and
+    every `prompt` step through the CLI died with `Cannot operate on a closed
+    database`. Nothing caught it: the runner's unit tests are handed an agent
+    directly, and S5.1's hand-run demo probe had only `http` steps -- the seam was
+    exercised everywhere except through the one path an operator uses. The
+    journey e2e is what found it, which is exactly the case v6.1 §4 R1 makes for
+    ending every build in a verb somebody runs.
     """
     if not any(step.kind == "prompt" for spec in specs for step in spec.steps):
         return None
 
     from adopt_agent import Runner
     from adopt_cli.commands.agent import adapter_settings, prompts_root
+    from adopt_cli.store_option import configured_annex
 
     offline, adapter_id, model, endpoint = adapter_settings(allow_network=allow_network)
     if not adapter_id:
         return None
-    from adopt_cli.store_option import configured_annex
 
-    with configured_annex() as annex:
-        return Runner(
-            annex=annex,
-            scope_ref=audience,
-            skills_root=prompts_root(),
-            offline=offline,
-            adapter_id=adapter_id,
-            model=model,
-            endpoint=endpoint,
-        )
+    annex = stack.enter_context(configured_annex())
+    return Runner(
+        annex=annex,
+        scope_ref=audience,
+        skills_root=prompts_root(),
+        offline=offline,
+        adapter_id=adapter_id,
+        model=model,
+        endpoint=endpoint,
+    )
 
 
 def run_targets(
@@ -284,15 +374,16 @@ def run_targets(
         # Parsed before anything is opened, so a rogue probe is refused without
         # a store, a socket or a row. `parse_probe` raises PROBE_HOST_UNDECLARED.
         spec = parse_probe(read_file(unstored_path))
-        report = execute_probe(
-            spec,
-            probe_definition_id="(unstored)",
-            probe_definition_revision_id="(unstored)",
-            records=None,
-            environ=os.environ,
-            agent=_agent_for([spec], allow_network=allow_network, audience="probe"),
-            sensor=None,
-        )
+        with ExitStack() as stack:
+            report = execute_probe(
+                spec,
+                probe_definition_id="(unstored)",
+                probe_definition_revision_id="(unstored)",
+                records=None,
+                environ=os.environ,
+                agent=_agent_for([spec], stack, allow_network=allow_network, audience="probe"),
+                sensor=None,
+            )
         payload = summarize([report])
         payload["stored"] = False
         return payload
@@ -316,29 +407,344 @@ def run_targets(
                 continue
             pairs.append((probe, revision, parse_probe(revision.capability_manifest)))
 
-        agent = _agent_for(
-            [spec for _, _, spec in pairs], allow_network=allow_network, audience="probe"
-        )
         sensor = SensorAdapter(handle, scope) if pairs else None
         records = handle.probe_run_records()
 
-        reports = [
-            execute_probe(
-                spec,
-                probe_definition_id=probe.id,
-                probe_definition_revision_id=revision.id,
-                records=records,
-                environ=os.environ,
-                agent=agent,
-                sensor=sensor,
+        # The annex stays open for the whole set of runs and closes with the
+        # stack -- see `_agent_for`.
+        with ExitStack() as stack:
+            agent = _agent_for(
+                [spec for _, _, spec in pairs],
+                stack,
+                allow_network=allow_network,
+                audience="probe",
             )
-            for probe, revision, spec in pairs
-        ]
+            reports = [
+                execute_probe(
+                    spec,
+                    probe_definition_id=probe.id,
+                    probe_definition_revision_id=revision.id,
+                    records=records,
+                    environ=os.environ,
+                    agent=agent,
+                    sensor=sensor,
+                    clock=handle.clock,
+                    baseline=_baseline_for(handle, revision.id),
+                )
+                for probe, revision, spec in pairs
+            ]
+        # The conflict pass runs **after** every probe, not inside the loop: a
+        # probe that drifted late must still be able to conflict, and a pass per
+        # probe would re-read the whole knowledge join once per probe to answer
+        # the same question.
+        conflicts = _record_conflicts(handle, records, pairs, reports)
     finally:
         handle.close()
 
     payload = summarize(reports)
     payload["stored"] = True
+    if conflicts:
+        payload["conflicts"] = conflicts
     if skipped:
         payload["skipped"] = skipped
     return payload
+
+
+def _record_conflicts(
+    handle: Any,
+    records: Any,
+    pairs: Sequence[tuple[ProbeDefinition, ProbeDefinitionRevision, ProbeSpec]],
+    reports: Sequence[Any],
+) -> list[dict[str, str]]:
+    """Bet 4's write: a drifted probe contradicting confirmed knowledge.
+
+    Deduplicated against what is already open, per `(identity, intent revision)`,
+    because a reviewer who sees the same disagreement on every run stops reading
+    the list -- which is the failure mode that makes a conflict queue worthless.
+    """
+    from adopt_probe import ProbeOutcome, conflicting_intents
+
+    from adopt_model import Conflict
+    from adopt_obs import new_id
+
+    drifted = [
+        (spec, report)
+        for (_, _, spec), report in zip(pairs, reports, strict=True)
+        if report.outcome == ProbeOutcome.DIFF and spec.exercises
+    ]
+    if not drifted:
+        return []
+
+    # Read once for the whole pass. Every one of these is `table_rows`, so the
+    # conflict join adds no query path to any realized port (Build 4's pattern).
+    identities = _rows(handle, "identity", Identity)
+    bindings = _rows(handle, "binding", Binding)
+    binding_revisions = _rows(handle, "binding_revision", BindingRevision)
+    items = _rows(handle, "knowledge_item", KnowledgeItem)
+    knowledge_revisions = _rows(handle, "knowledge_revision", KnowledgeRevision)
+
+    written: list[dict[str, str]] = []
+    for spec, report in drifted:
+        intents = conflicting_intents(
+            exercises=spec.exercises,
+            identities=identities,
+            bindings=bindings,
+            binding_revisions=binding_revisions,
+            items=items,
+            knowledge_revisions=knowledge_revisions,
+        )
+        detected_at = report.finished_at or _clock(handle).now()
+        for intent in intents:
+            if records.open_conflicts(
+                identity_id=intent.identity_id, intent_revision_id=intent.intent_revision_id
+            ):
+                continue
+            with records.transaction():
+                records.insert_conflict(
+                    Conflict(
+                        id=new_id("cf"),
+                        identity_id=intent.identity_id,
+                        intent_revision_id=intent.intent_revision_id,
+                        # v1 writes no knowledge from probe output (D-8). The
+                        # intent side cites the revision a human confirmed; what
+                        # the probe saw is in `probe_observation`, reachable from
+                        # the run, and fabricating a revision to point at here
+                        # would be inventing canon from an unreviewed measurement.
+                        actual_revision_id=None,
+                        detected_at=truncate_to_millisecond(detected_at),
+                        disposition="open",
+                    )
+                )
+            written.append(
+                {
+                    "probe": spec.name,
+                    "identity": intent.identity_uri,
+                    "intent_revision": intent.intent_revision_id,
+                }
+            )
+    return written
+
+
+def _runs_of(handle: Any, revision_id: str) -> list[ProbeRun]:
+    """Every recorded run of one revision, oldest first.
+
+    A report read rather than a port query, per Build 4's pattern: the port's
+    `latest_run` answers "the newest run of this probe" and this needs "the
+    newest *eligible* run of this revision", which is a filter over history.
+    """
+    return sorted(
+        (
+            row
+            for row in _rows(handle, "probe_run", ProbeRun)
+            if row.probe_definition_revision_id == revision_id
+        ),
+        key=lambda row: (row.started_at, row.id),
+    )
+
+
+def _observations_of(handle: Any, run_id: str) -> list[ProbeObservation]:
+    """One run's observations in step order.
+
+    Ordered by id, which **is** step order: ids are ULIDs minted in the loop
+    that executed the steps, so they are monotonic within the run. Ordering by
+    anything else would silently pair step 2 against step 0's baseline.
+    """
+    return sorted(
+        (
+            row
+            for row in _rows(handle, "probe_observation", ProbeObservation)
+            if row.probe_run_id == run_id
+        ),
+        key=lambda row: row.id,
+    )
+
+
+def set_baselines(handle: Any, scope: Scope) -> dict[str, Any]:
+    """`adopt probe baseline --set` -- version "this is how it behaves today".
+
+    One `baseline_version` row per active probe revision that has a run worth
+    versioning. **Which run it took is in the report**, and so is that run's
+    outcome: re-baselining after drift is a human accepting a change, and a verb
+    that printed "baseline set" for both cases would make accepting a regression
+    indistinguishable from confirming a steady state.
+
+    Raises:
+        AdoptError: ``PROBE_BASELINE_MISSING`` when nothing in scope has a run
+            that could become a baseline. Usage, exit 2 -- nothing is broken and
+            one command fixes it.
+    """
+    from adopt_probe import BASELINE_ELIGIBLE_OUTCOMES, build_baseline, parse_probe
+
+    if scope.environment is None:  # pragma: no cover -- `probes_in_scope` refuses first
+        raise AdoptError(
+            ErrorCode.SCOPE_VIOLATION,
+            message="a baseline is recorded against one environment",
+            hint="Resolve the scope to `firm/engagement/system/environment`.",
+        )
+
+    records = handle.probe_run_records()
+    now = truncate_to_millisecond(_clock(handle).now())
+    adapter_id = _adapter_id()
+
+    versioned: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
+    for probe in probes_in_scope(handle, scope):
+        revision = active_revision(handle, probe)
+        if revision is None:
+            skipped.append({"probe": probe.name, "reason": "no revision"})
+            continue
+        eligible = [
+            row
+            for row in _runs_of(handle, revision.id)
+            if str(row.outcome) in BASELINE_ELIGIBLE_OUTCOMES
+        ]
+        if not eligible:
+            # Reported, not raised: one probe with nothing to version must not
+            # stop the others being versioned.
+            skipped.append({"probe": probe.name, "reason": "no run to version"})
+            continue
+
+        run = eligible[-1]
+        observations = _observations_of(handle, run.id)
+        spec = parse_probe(revision.capability_manifest)
+        row = build_baseline(
+            run,
+            observations,
+            environment_id=str(scope.environment.id),
+            now=now,
+            redaction_policy=spec.redaction_policy,
+            # Only when a model actually answered. A probe of pure `http` steps
+            # ran against no model, and naming one would put an environment fact
+            # into an exportable row that was never true of this recording.
+            model_provider_version=(
+                adapter_id if any(step.kind == "prompt" for step in spec.steps) else None
+            ),
+        )
+        with records.transaction():
+            records.insert_baseline_version(row)
+        versioned.append(
+            {
+                "probe": probe.name,
+                "baseline": row.id,
+                "revision": revision.id,
+                "from_run": run.id,
+                # The honest half of `--set`: a baseline taken from a `diff` run
+                # is a human accepting drift, and the report says which it was.
+                "from_outcome": str(run.outcome),
+                "steps": len(observations),
+                "fingerprint": row.fingerprint,
+            }
+        )
+
+    if not versioned:
+        raise AdoptError(
+            ErrorCode.PROBE_BASELINE_MISSING,
+            message="no probe in this scope has a run that could become a baseline",
+            hint="Run `adopt probe run --all` first. A baseline is a recording of "
+            "observed behaviour, so there has to be an observation -- and a run "
+            "that failed or was refused is not one.",
+        )
+
+    payload: dict[str, Any] = {"baselines": len(versioned), "set": versioned}
+    if skipped:
+        payload["skipped"] = skipped
+    return payload
+
+
+def diff_probes(handle: Any, scope: Scope) -> dict[str, Any]:
+    """`adopt probe diff` -- the latest run against the named baseline.
+
+    Re-derives the comparison the run already recorded and **writes nothing**.
+    That is not a limitation: `probe_run.outcome` and
+    `probe_observation.similarity` were decided when the run finished, and a
+    command that could re-judge a recorded run would make the record a running
+    opinion rather than an account of what happened.
+
+    Raises:
+        AdoptError: ``PROBE_BASELINE_MISSING`` when **no** probe in scope has a
+            baseline. A single probe without one is listed and does not fail a
+            command whose other probes compared cleanly.
+    """
+    from adopt_probe import DRIFT, NO_BASELINE, compare_run, parse_probe
+
+    records = handle.probe_run_records()
+    comparisons: list[dict[str, Any]] = []
+    any_baseline = False
+
+    for probe in probes_in_scope(handle, scope):
+        revision = active_revision(handle, probe)
+        latest = records.latest_run(probe_definition_id=probe.id)
+        if revision is None or latest is None:
+            # No run means no baseline: a baseline is made *from* a run. Reported
+            # as the same "nothing to compare against yet" answer rather than as
+            # a third vocabulary item saying the same thing.
+            comparisons.append(
+                {
+                    "probe": probe.name,
+                    "verdict": NO_BASELINE,
+                    "baseline": None,
+                    "baseline_revision": None,
+                    "run_revision": None,
+                    "run": None,
+                    "steps": [],
+                }
+            )
+            continue
+
+        baseline = _probe_baselines(handle, _revision_ids(handle, probe))
+        any_baseline = any_baseline or baseline is not None
+        run, observations = latest
+        comparisons.append(
+            _comparison_payload(
+                compare_run(
+                    probe=probe.name,
+                    baseline=baseline,
+                    run_revision_id=run.probe_definition_revision_id,
+                    run_id=run.id,
+                    outputs=[row.output or "" for row in observations],
+                    steps=parse_probe(revision.capability_manifest).steps,
+                )
+            )
+        )
+
+    if not any_baseline:
+        raise AdoptError(
+            ErrorCode.PROBE_BASELINE_MISSING,
+            message="no probe in this scope has a baseline to compare against",
+            hint="Run `adopt probe run --all` and then `adopt probe baseline --set`. "
+            "A diff without a baseline is not a failure -- there is simply nothing "
+            "yet that says how the system behaved before.",
+        )
+
+    return {
+        "probes": len(comparisons),
+        "comparisons": comparisons,
+        "drifted": sum(1 for row in comparisons if row["verdict"] == DRIFT),
+    }
+
+
+def _comparison_payload(comparison: Any) -> dict[str, Any]:
+    """One `ProbeComparison` as `--json` carries it.
+
+    Both revision ids travel on a `probe_changed` verdict, because that verdict
+    is a claim about **our** file rather than about the client's system, and a
+    reader has to be able to check it.
+    """
+    return {
+        "probe": comparison.probe,
+        "verdict": comparison.verdict,
+        "baseline": comparison.baseline_id,
+        "baseline_revision": comparison.baseline_revision_id,
+        "run_revision": comparison.run_revision_id,
+        "run": comparison.run_id,
+        "steps": [
+            {
+                "step": step.index,
+                "kind": step.kind,
+                "verdict": step.verdict,
+                "similarity": step.similarity,
+                "detail": step.detail,
+            }
+            for step in comparison.steps
+        ],
+    }

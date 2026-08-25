@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from adopt_handover.ports import (
     BoundaryReader,
     BoundaryView,
+    ConflictView,
     FreshnessReader,
     GapView,
     IdentityReader,
@@ -83,6 +84,10 @@ class AssembledPack:
     sections: tuple[AssembledSection, ...]
     identities: tuple[IdentityView, ...] = ()
     gaps: tuple[GapView, ...] = ()
+    #: Open conflicts, rendered inside the gap appendix. Empty for every
+    #: store with no probe runs, which is every pack Builds 1-4 produced --
+    #: so the bytes of an existing pack are unchanged by this build.
+    conflicts: tuple[ConflictView, ...] = ()
     boundary: BoundaryView | None = None
     #: Kind -> count, for the overview. Derived here so the renderer counts
     #: nothing and two renderings of one pack cannot disagree.
@@ -98,6 +103,7 @@ def assemble(
     boundary: BoundaryReader,
     gaps: tuple[GapView, ...],
     drafts: tuple[KnowledgeView, ...] = (),
+    conflicts: tuple[ConflictView, ...] = (),
 ) -> AssembledPack:
     """Select, stamp and order everything the pack will contain.
 
@@ -117,6 +123,12 @@ def assemble(
             is a provenance question only the composition root can answer -- a
             harvest candidate is unverified too and does not belong in a client's
             document. Empty by default, so every no-model path is unchanged.
+        conflicts: Open `conflict` rows, already joined to their identity URIs.
+            Passed in for `gaps`' reason: the join is the composition root's,
+            and a module that could read conflicts could also decide which ones
+            count -- which is a judgement about a client's system that belongs
+            in neither an assembler nor a renderer. Empty by default, so a store
+            with no probe runs renders exactly the bytes it rendered before.
 
     Returns:
         An `AssembledPack` whose every ordering is deterministic, so `render`
@@ -157,6 +169,15 @@ def assemble(
         sections=tuple(assembled),
         identities=inventory,
         gaps=tuple(sorted(gaps, key=lambda gap: (gap.kind, gap.uri))),
+        # Oldest first: a contradiction that has been open longest has been
+        # quietly wrong longest. Ties break on the URI and the revision so
+        # two renders of one store cannot order them differently.
+        conflicts=tuple(
+            sorted(
+                conflicts,
+                key=lambda row: (row.detected_at, row.uri, row.intent_revision_id or ""),
+            )
+        ),
         boundary=boundary.boundary_for_pack(),
         kind_counts=tuple(sorted(counts.items())),
     )

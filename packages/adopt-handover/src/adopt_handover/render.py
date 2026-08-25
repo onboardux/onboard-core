@@ -24,7 +24,7 @@ without parsing Markdown.
 """
 
 from adopt_handover.assemble import AssembledPack, AssembledSection
-from adopt_handover.ports import BoundaryView, GapView
+from adopt_handover.ports import BoundaryView, ConflictView, GapView
 from adopt_obs import format_timestamp
 
 __all__ = ["render"]
@@ -104,6 +104,40 @@ def _gaps(gaps: tuple[GapView, ...]) -> list[str]:
         note = (gap.note or "—").replace("|", "\\|").replace("\n", " ")
         until = format_timestamp(gap.waived_until) if gap.waived_until is not None else "—"
         lines.append(f"| `{gap.uri}` | {gap.kind} | {status} | {owner} | {note} | {until} |")
+    return lines
+
+
+def _conflicts(conflicts: tuple[ConflictView, ...]) -> list[str]:
+    """Bet 4, inside the appendix: what this pack says that a probe disagrees with.
+
+    Rendered **only when there are some**. That is the opposite of the gap
+    table's rule, and the difference is what each says when empty: "no uncovered
+    identities" is a real fact about coverage, while "no conflicts" over a store
+    that has never run a probe would be a claim of agreement nobody measured.
+    Silence is the honest rendering of a question never asked.
+    """
+    if not conflicts:
+        return []
+
+    lines = [
+        "",
+        # const-sync: ok -- a Markdown heading level, not a schema version.
+        _heading(3, "Contradicted by observation"),
+        "",
+        f"**{len(conflicts)}** confirmed statement(s) in this pack are contradicted by "
+        "what a behavioural probe observed. Each was true when it was confirmed; a "
+        "probe has since seen the system do otherwise, and nobody has yet decided "
+        "which of the two is wrong.",
+        "",
+        "| Identity | Kind | Confirmed revision | Observed |",
+        "|---|---|---|---|",
+    ]
+    for conflict in conflicts:
+        revision = conflict.intent_revision_id or "—"
+        lines.append(
+            f"| `{conflict.uri}` | {conflict.kind} | `{revision}` | "
+            f"{format_timestamp(conflict.detected_at)} |"
+        )
     return lines
 
 
@@ -190,7 +224,7 @@ def render(pack: AssembledPack) -> str:
         if assembled.key == "overview":
             lines += _overview(pack)
         elif assembled.key == "gaps":
-            lines += _gaps(pack.gaps)
+            lines += _gaps(pack.gaps) + _conflicts(pack.conflicts)
         elif assembled.key == "boundary":
             lines += _boundary(pack.boundary)
         else:

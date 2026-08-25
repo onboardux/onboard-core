@@ -47,6 +47,8 @@ from typing import Any, Final
 from adopt_const import AGENT_ADAPTER_TIMEOUT_S
 from adopt_model import ProbeObservation, ProbeRun
 from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, get_logger, new_id
+from adopt_probe.baseline import Baseline
+from adopt_probe.diff import ProbeComparison, compare_run
 from adopt_probe.manifest import Expectation, HttpStep, ProbeSpec, PromptStep, Step
 from adopt_probe.ports import ProbeRunRecords, SensorSink
 
@@ -123,10 +125,23 @@ class RunReport:
     outcome: str
     steps: list[StepResult] = field(default_factory=list)
     refusal: str | None = None
+    #: The comparison against the baseline this run was stamped with, when one
+    #: existed for **this** revision. `None` means there was nothing to compare
+    #: against, or that the baseline belongs to another revision -- two facts
+    #: `adopt probe diff` reports separately and the runner does not conflate.
+    comparison: ProbeComparison | None = None
+    #: When the run finished, by the injected clock. Carried on the report so a
+    #: caller writing a row *about* the run -- a conflict's `detected_at` -- dates
+    #: it from the run rather than from a second clock reading taken later.
+    finished_at: _dt.datetime | None = None
 
     @property
     def failed(self) -> bool:
         return self.outcome in {"failure", "blocked_by_manifest"}
+
+    @property
+    def drifted(self) -> bool:
+        return self.outcome == ProbeOutcome.DIFF
 
 
 class ProbeOutcome:
@@ -475,7 +490,7 @@ def execute_probe(
     agent: Any = None,
     sensor: SensorSink | None = None,
     clock: Clock | None = None,
-    baseline_version_id: str | None = None,
+    baseline: Baseline | None = None,
 ) -> RunReport:
     """Run one probe, record what it observed, and report the outcome.
 
@@ -491,7 +506,13 @@ def execute_probe(
         agent: An `adopt_agent.Runner`, required only if a `prompt` step exists.
         sensor: Where the per-run health fact goes.
         clock: Injected clock; tests pass `ManualClock`.
-        baseline_version_id: Stamped on the run when a baseline already exists.
+        baseline: What this run is compared against, when one has been set.
+            Comparing **here** rather than only in `adopt probe diff` is what
+            lets `probe_run.outcome` be `diff` and `probe_observation.similarity`
+            be a number: both are insert-only columns decided once, when the run
+            finishes, because a run that could be re-judged later is a record of
+            an opinion rather than of an event. `diff` re-derives the same
+            comparison to report it and writes nothing.
 
     Returns:
         A `RunReport`. A refusal is reported, not raised: the caller needs the
@@ -500,6 +521,10 @@ def execute_probe(
     """
     the_clock: Clock = clock if clock is not None else SystemClock()
     started_at = the_clock.now()
+    # Minted **before** the steps run, not at record time, because it is what
+    # keys each prompt step's idempotency (see `_run_step`). A probe run is a
+    # measurement, and two measurements of the same system are two events.
+    run_id = new_id("prun")
     report = RunReport(
         probe_name=spec.name,
         probe_definition_id=probe_definition_id,
@@ -525,12 +550,21 @@ def execute_probe(
                     secrets=secrets,
                     budget=budget,
                     agent=agent,
-                    probe_revision_id=probe_definition_revision_id,
+                    execution_id=run_id,
                 )
             )
         if any(not step.ok for step in report.steps):
             report.outcome = ProbeOutcome.FAILURE
             report.refusal = next(s.violation for s in report.steps if s.violation)
+        else:
+            # Only a run that completed and held its declared invariants can be
+            # compared. A failed run's outputs are a fault's outputs, and calling
+            # the difference between a fault and the baseline "drift" would tell
+            # an FDE the system's behaviour changed when what happened is that
+            # the probe broke.
+            report.comparison = _compare(report, spec=spec, baseline=baseline)
+            if report.comparison is not None and report.comparison.drifted:
+                report.outcome = ProbeOutcome.DIFF
     except AdoptError as error:
         report.outcome = _outcome_for(error, ran_any=bool(report.steps))
         report.refusal = redact(str(error.message), secrets)
@@ -546,13 +580,15 @@ def execute_probe(
         _log.warn("probe_run_failed", probe=spec.name, outcome=report.outcome)
 
     finished_at = the_clock.now()
+    report.finished_at = finished_at
     if records is not None:
         report.run_id = _record(
             report,
+            run_id=run_id,
             records=records,
             started_at=started_at,
             finished_at=finished_at,
-            baseline_version_id=baseline_version_id,
+            baseline_version_id=None if baseline is None else baseline.id,
         )
     if sensor is not None:
         sensor.heartbeat(
@@ -570,8 +606,22 @@ def _run_step(
     secrets: Mapping[str, str],
     budget: _Budget,
     agent: Any,
-    probe_revision_id: str,
+    execution_id: str,
 ) -> StepResult:
+    """One step. The `execution_id` is this run's, and it keys the model call.
+
+    **A probe must re-ask the model on every run, and that is a repaired defect.**
+    S5.1 keyed a prompt step on `probe:{revision}:{index}`, which is constant
+    across runs -- so the seam's idempotency found the first run's record and
+    replayed it. `Runner._replayed` returns `output=None` by design (the annex
+    stores an `output_ref`, never the text -- contracts §12), so every rerun
+    recorded an **empty** observation and read as drift against its own baseline.
+    A probe against an AI deployment could therefore never observe anything after
+    its first run, which is the single system class this build exists for.
+
+    Idempotency is protection against paying twice for one request. Two runs of a
+    probe are not one request: asking the system again *is* the product.
+    """
     if isinstance(step, HttpStep):
         return _run_http_step(step, index, spec=spec, secrets=secrets, budget=budget)
     if agent is None:
@@ -587,7 +637,7 @@ def _run_step(
         secrets=secrets,
         budget=budget,
         agent=agent,
-        idempotency_key=f"probe:{probe_revision_id}:{index}",
+        idempotency_key=f"probe:{execution_id}:{index}",
     )
 
 
@@ -607,16 +657,41 @@ def _outcome_for(error: AdoptError, *, ran_any: bool) -> str:
     return ProbeOutcome.FAILURE
 
 
+def _compare(
+    report: RunReport, *, spec: ProbeSpec, baseline: Baseline | None
+) -> ProbeComparison | None:
+    """This run against its baseline, or `None` when there is nothing to compare.
+
+    A baseline belonging to a **different** revision returns `None` rather than a
+    `probe_changed` comparison, and the distinction is deliberate: this function
+    decides an *outcome*, and `probe_changed` is not one -- `probe_outcome` has
+    four values and none of them means "the question changed". The run is
+    `success`, its observations record what was seen, and `adopt probe diff` is
+    where a human is told the baseline no longer applies. Writing `diff` here
+    would claim the system changed on the evidence of an edit to our own file.
+    """
+    if baseline is None or baseline.revision_id != report.probe_definition_revision_id:
+        return None
+    return compare_run(
+        probe=spec.name,
+        baseline=baseline,
+        run_revision_id=report.probe_definition_revision_id,
+        run_id=None,
+        outputs=[step.output for step in report.steps],
+        steps=spec.steps,
+    )
+
+
 def _record(
     report: RunReport,
     *,
+    run_id: str,
     records: ProbeRunRecords,
     started_at: _dt.datetime,
     finished_at: _dt.datetime,
     baseline_version_id: str | None,
 ) -> str:
     """One transaction: the run and every observation it produced."""
-    run_id = new_id("prun")
     with records.transaction():
         records.insert_probe_run(
             ProbeRun(
@@ -632,6 +707,14 @@ def _record(
                 cleanup_verified=False,
             )
         )
+        # Similarity needs a baseline of **this** revision to compare against.
+        # Absent one it stays NULL rather than 1.0: a fabricated perfect score
+        # would be a claim that the run matched something, and nothing was there.
+        scores = (
+            {step.index: step.similarity for step in report.comparison.steps}
+            if report.comparison is not None
+            else {}
+        )
         for step in report.steps:
             records.insert_probe_observation(
                 ProbeObservation(
@@ -639,10 +722,7 @@ def _record(
                     probe_run_id=run_id,
                     output=step.output,
                     fingerprint=step.fingerprint,
-                    # Similarity needs a baseline to compare against; baselines
-                    # and diff are S5.2. Left NULL rather than 1.0, because a
-                    # fabricated perfect score is worse than an absent one.
-                    similarity=None,
+                    similarity=scores.get(step.index),
                     judge_verdict=None,
                 )
             )
@@ -650,7 +730,13 @@ def _record(
 
 
 def summarize(reports: Sequence[RunReport]) -> dict[str, Any]:
-    """The `--json` slice for a set of runs."""
+    """The `--json` slice for a set of runs.
+
+    `failed` and `drifted` are counted separately and neither is derived from
+    the other. A drifted run **worked** -- it reached the system, held its
+    invariants and observed a change -- so folding it into a failure count would
+    make `adopt probe run` exit non-zero for the product doing its job.
+    """
     return {
         "probes": len(reports),
         "runs": [
@@ -660,8 +746,14 @@ def summarize(reports: Sequence[RunReport]) -> dict[str, Any]:
                 "outcome": report.outcome,
                 "steps": len(report.steps),
                 "refusal": report.refusal,
+                "drifted_steps": (
+                    []
+                    if report.comparison is None
+                    else [step.index for step in report.comparison.steps if step.drifted]
+                ),
             }
             for report in reports
         ],
         "failed": sum(1 for report in reports if report.failed),
+        "drifted": sum(1 for report in reports if report.drifted),
     }

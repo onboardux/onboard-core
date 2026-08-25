@@ -31,7 +31,7 @@ from adopt_cli.commands.policy import probe_app
 from adopt_cli.json_out import emit
 from adopt_cli.store_option import open_configured_store, writer_identity
 
-__all__ = ["add", "run"]
+__all__ = ["add", "baseline", "diff", "run"]
 
 FileArgument = Annotated[Path, typer.Argument(help="The probe YAML file.")]
 TargetArgument = Annotated[
@@ -157,3 +157,87 @@ def run(
     emit(payload, as_json=json_output, title="adopt probe run")
     if payload["failed"]:
         sys.exit(1)
+
+
+SetOption = Annotated[
+    bool,
+    typer.Option(
+        "--set",
+        help="Version the latest recorded run of each probe as its baseline.",
+    ),
+]
+
+
+@probe_app.command("baseline")
+def baseline(
+    set_baseline: SetOption = False,
+    scope: ScopeOption = None,
+    store: StoreOption = None,
+    json_output: JsonOption = False,
+) -> None:
+    """Version how each probe's system behaves today.
+
+    `--set` takes each active probe's latest run that observed something and
+    writes it as a `baseline_version`. A run that failed or was refused by the
+    manifest is never eligible: versioning a fault as *how the system behaves*
+    would make the next clean run read as drift away from a bug.
+
+    A run whose outcome was `diff` **is** eligible, and the report says so. That
+    is what re-baselining after drift is -- a human accepting a change -- and it
+    is deliberately not silent.
+    """
+    from adopt_cli.commands._map_support import resolve_scope
+    from adopt_cli.commands._probe_support import set_baselines
+    from adopt_obs import AdoptError, ErrorCode
+
+    if not set_baseline:
+        raise AdoptError(
+            ErrorCode.MANIFEST_INVALID,
+            message="`adopt probe baseline` needs --set",
+            hint="v1 has one baseline operation: `adopt probe baseline --set` versions "
+            "the latest recorded runs. Listing and pruning baselines are not in this "
+            "build, so a bare `baseline` would do nothing and say it worked.",
+        )
+
+    handle = open_configured_store(store, read_only=False)
+    try:
+        payload = set_baselines(handle, resolve_scope(handle, scope))
+    finally:
+        handle.close()
+
+    emit(payload, as_json=json_output, title="adopt probe baseline")
+
+
+@probe_app.command("diff")
+def diff(
+    scope: ScopeOption = None,
+    store: StoreOption = None,
+    json_output: JsonOption = False,
+) -> None:
+    """Name what changed since the baseline -- and who changed it.
+
+    Exits `4` when any probe drifted: degraded-with-findings, the same contract
+    `adopt doctor` and `adopt map --check-expected` already use. The command
+    **worked**; it found something a human must see.
+
+    A probe whose latest run is of a different revision than its baseline
+    reports `probe_changed` and never drift. The probe file was edited, so the
+    question changed -- and calling that a change in the client's system is the
+    one mistake that would train an FDE to ignore this command.
+    """
+    import sys
+
+    from adopt_cli.commands._map_support import resolve_scope
+    from adopt_cli.commands._probe_support import diff_probes
+
+    handle = open_configured_store(store, read_only=True)
+    try:
+        payload = diff_probes(handle, resolve_scope(handle, scope))
+    finally:
+        handle.close()
+
+    emit(payload, as_json=json_output, title="adopt probe diff")
+    if payload["drifted"]:
+        from adopt_obs import ExitCode
+
+        sys.exit(ExitCode.DEGRADED_WITH_FINDINGS)

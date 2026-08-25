@@ -14,7 +14,7 @@ join would be a second answer to what the store already knows.
 import datetime as _dt
 from dataclasses import dataclass, field
 
-__all__ = ["PackBoundary", "PackGap", "PackIdentity", "PackKnowledge"]
+__all__ = ["PackBoundary", "PackConflict", "PackGap", "PackIdentity", "PackKnowledge"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +53,16 @@ class PackGap:
     owner_actor_id: str | None = None
     note: str | None = None
     waived_until: _dt.datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PackConflict:
+    """One open conflict, as the gap appendix lists it."""
+
+    uri: str
+    kind: str
+    intent_revision_id: str | None
+    detected_at: _dt.datetime
 
 
 @dataclass(frozen=True, slots=True)

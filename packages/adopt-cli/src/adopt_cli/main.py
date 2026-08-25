@@ -35,8 +35,9 @@ from adopt_cli.commands import map_command as map_commands
 from adopt_cli.commands import pack as pack_commands
 from adopt_cli.commands import policy as policy_commands
 
-# Build 5. Imported for its side effect: `commands/probe.py` registers `add` and
-# `run` onto `policy_commands.probe_app`, the group Build 0 already owns for
+# Build 5. Imported for its side effect: `commands/probe.py` registers `add`,
+# `run`, `baseline` and `diff` onto `policy_commands.probe_app`, the group
+# Build 0 already owns for
 # `adopt probe manifest validate`. It must be imported **before** that group is
 # attached below, or the verbs are declared on a typer nobody mounted. The module
 # itself imports `adopt_probe` only inside its command bodies, so this costs

@@ -37,6 +37,7 @@ from adopt_handover.derived import FORMATS, MARKDOWN, Converter, convert, conver
 from adopt_handover.ports import (
     BoundaryReader,
     BoundaryView,
+    ConflictView,
     FreshnessReader,
     GapView,
     IdentityReader,
@@ -59,7 +60,13 @@ from adopt_handover.sections import (
     stamp_for,
 )
 from adopt_handover.sidecar import render_sidecar
-from adopt_handover.views import PackBoundary, PackGap, PackIdentity, PackKnowledge
+from adopt_handover.views import (
+    PackBoundary,
+    PackConflict,
+    PackGap,
+    PackIdentity,
+    PackKnowledge,
+)
 
 __all__ = [
     "AUDIENCES",
@@ -74,6 +81,7 @@ __all__ = [
     "AssembledSection",
     "BoundaryReader",
     "BoundaryView",
+    "ConflictView",
     "Converter",
     "FreshnessReader",
     "GapView",
@@ -82,6 +90,7 @@ __all__ = [
     "KnowledgeReader",
     "KnowledgeView",
     "PackBoundary",
+    "PackConflict",
     "PackGap",
     "PackIdentity",
     "PackKnowledge",

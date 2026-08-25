@@ -132,7 +132,15 @@ def server() -> Iterator[str]:
     _Handler.seen_headers = []
     _Handler.echo_auth = False
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    # `poll_interval` is the granularity `shutdown()` waits on, and the default
+    # 0.5s is paid **per test** on teardown -- ~0.5s x every test in this file,
+    # which is a measurable slice of the unit suite's hard-fail budget spent
+    # waiting for a loop to notice it should stop. Shortening it is not a sleep
+    # (the ban is on tests that wait for wall time to make an assertion true);
+    # it is the teardown of a fixture nothing is asserting about.
+    thread = threading.Thread(
+        target=httpd.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
     thread.start()
     try:
         yield f"127.0.0.1:{httpd.server_port}"

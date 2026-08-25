@@ -33,6 +33,25 @@ this package's dependencies is that importing it would pull `sqlite3` into the
 graph and break `no-raw-sqlite`.
 """
 
+from adopt_probe.baseline import (
+    BASELINE_ELIGIBLE_OUTCOMES,
+    Baseline,
+    baseline_from_row,
+    build_baseline,
+    canonical_recorded_output,
+    split_recorded_output,
+)
+from adopt_probe.conflict import ConflictIntent, conflicting_intents
+from adopt_probe.diff import (
+    DRIFT,
+    NO_BASELINE,
+    PROBE_CHANGED,
+    UNCHANGED,
+    WITHIN_THRESHOLD,
+    ProbeComparison,
+    StepComparison,
+    compare_run,
+)
 from adopt_probe.manifest import (
     HttpStep,
     ProbeSpec,
@@ -46,7 +65,16 @@ from adopt_probe.ports import ProbeRunRecords, SensorSink
 from adopt_probe.runner import ProbeOutcome, RunReport, StepResult, execute_probe, summarize
 
 __all__ = [
+    "BASELINE_ELIGIBLE_OUTCOMES",
+    "DRIFT",
+    "NO_BASELINE",
+    "PROBE_CHANGED",
+    "UNCHANGED",
+    "WITHIN_THRESHOLD",
+    "Baseline",
+    "ConflictIntent",
     "HttpStep",
+    "ProbeComparison",
     "ProbeOutcome",
     "ProbeRunRecords",
     "ProbeSpec",
@@ -54,10 +82,17 @@ __all__ = [
     "RunReport",
     "SensorSink",
     "Step",
+    "StepComparison",
     "StepResult",
+    "baseline_from_row",
+    "build_baseline",
+    "canonical_recorded_output",
+    "compare_run",
+    "conflicting_intents",
     "execute_probe",
     "load_probe",
     "parse_probe",
     "render_interaction",
+    "split_recorded_output",
     "summarize",
 ]

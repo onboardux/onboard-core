@@ -15,18 +15,35 @@ order, which is what lets an FDE work down the list across a week without it
 reshuffling underneath them.
 """
 
-from collections.abc import Sequence
+import datetime as _dt
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Protocol
 
 from adopt_identity import parse_uri
 
-__all__ = ["GAP_KEY_SEPARATOR", "CoverageEntry", "Gap", "gap_key_for", "rank_gaps"]
+__all__ = [
+    "GAP_KEY_SEPARATOR",
+    "OPEN_DISPOSITION",
+    "ConflictRow",
+    "CoverageEntry",
+    "Gap",
+    "OpenConflict",
+    "gap_key_for",
+    "rank_conflicts",
+    "rank_gaps",
+]
 
 #: Separates the three parts of a `gap_key`. A pipe because it cannot occur in a
 #: canonical URI: every segment is percent-encoded by the builder, so a key can
 #: always be split back into its parts unambiguously.
 GAP_KEY_SEPARATOR: Final[str] = "|"
+
+#: The one `disposition` value that means nobody has decided anything yet.
+#: A conflict is **never resolved away** (v6.1 Bet 4) -- dispositioning
+#: records a human decision beside it and Build 5 writes none, so every row
+#: this build creates carries this value and stays visible until somebody acts.
+OPEN_DISPOSITION: Final[str] = "open"
 
 
 def gap_key_for(uri: str) -> str:
@@ -117,3 +134,86 @@ def rank_gaps(entries: Sequence[CoverageEntry]) -> tuple[Gap, ...]:
         if not entry.covered
     ]
     return tuple(sorted(gaps, key=lambda gap: (-gap.reason_count, gap.kind, gap.uri)))
+
+
+@dataclass(frozen=True, slots=True)
+class OpenConflict:
+    """One recorded disagreement between what the store says and what a probe saw.
+
+    Bet 4's deliverable, in the shape a report renders. The identity is named by
+    **URI** rather than by id because the reader is a human deciding whether the
+    runbook or the system is wrong, and an id tells them nothing.
+
+    `actual_revision_id` is deliberately absent from this view even though the
+    column exists: Build 5 writes no knowledge from probe output, so it is always
+    NULL, and rendering an always-empty column would suggest the tool failed to
+    fill it rather than that it refused to invent it.
+    """
+
+    identity_id: str
+    uri: str
+    kind: str
+    intent_revision_id: str | None
+    detected_at: _dt.datetime
+
+
+class ConflictRow(Protocol):
+    """One `conflict` row, structurally.
+
+    Declared rather than imported for `CoverageEntry`'s reason: the generated
+    model belongs to `adopt_model`, and this package renders reports rather than
+    depending on how a row is realized.
+    """
+
+    @property
+    def identity_id(self) -> str: ...
+    @property
+    def intent_revision_id(self) -> str | None: ...
+    @property
+    def detected_at(self) -> _dt.datetime: ...
+    @property
+    def disposition(self) -> str: ...
+
+
+def rank_conflicts(
+    rows: Sequence[ConflictRow], uris: Mapping[str, str]
+) -> tuple[OpenConflict, ...]:
+    """Open conflicts, oldest first, for the identities in `uris`.
+
+    Args:
+        rows: Every `conflict` row read from the store.
+        uris: identity id -> canonical URI, for the identities in scope. A
+            conflict whose identity is **not** in this mapping is dropped: it
+            belongs to another system or environment, and a report that listed
+            it would be reporting on a scope nobody asked about.
+
+    Returns:
+        Only `open` conflicts. A dispositioned one has been decided and is no
+        longer something the reader must act on -- and unlike a gap, a conflict
+        is never re-derived, so the row *is* the record.
+
+        Oldest first, which is the opposite of most listings and deliberate: a
+        disagreement between documentation and behaviour that has been open for
+        a month is the one that has been quietly wrong for a month.
+    """
+    open_rows = [
+        OpenConflict(
+            identity_id=row.identity_id,
+            uri=uris[row.identity_id],
+            kind=_kind_of(uris[row.identity_id]),
+            intent_revision_id=row.intent_revision_id,
+            detected_at=row.detected_at,
+        )
+        for row in rows
+        if str(row.disposition) == OPEN_DISPOSITION and row.identity_id in uris
+    ]
+    return tuple(
+        sorted(
+            open_rows,
+            key=lambda conflict: (
+                conflict.detected_at,
+                conflict.uri,
+                conflict.intent_revision_id or "",
+            ),
+        )
+    )

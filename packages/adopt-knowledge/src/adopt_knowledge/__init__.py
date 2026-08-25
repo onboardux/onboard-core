@@ -62,9 +62,13 @@ from adopt_knowledge.drafting import (
 )
 from adopt_knowledge.gaps import (
     GAP_KEY_SEPARATOR,
+    OPEN_DISPOSITION,
+    ConflictRow,
     CoverageEntry,
     Gap,
+    OpenConflict,
     gap_key_for,
+    rank_conflicts,
     rank_gaps,
 )
 from adopt_knowledge.gitlog import Commit, head_sha, read_commits
@@ -131,6 +135,7 @@ __all__ = [
     "HARVEST_EXTRACTOR_VERSION",
     "INGEST_EXTRACTOR_VERSION",
     "NAME_TIER",
+    "OPEN_DISPOSITION",
     "SOURCE_DRAFT",
     "SOURCE_HARVEST",
     "SOURCE_INGEST",
@@ -140,6 +145,7 @@ __all__ = [
     "BindingWriter",
     "Candidate",
     "Commit",
+    "ConflictRow",
     "CoverageEntry",
     "Document",
     "DocumentOutcome",
@@ -156,6 +162,7 @@ __all__ = [
     "KnowledgeWriter",
     "Match",
     "MatchOutcome",
+    "OpenConflict",
     "Outcome",
     "PendingItem",
     "ReviewWriter",
@@ -176,6 +183,7 @@ __all__ = [
     "mine",
     "name_matches",
     "path_matches",
+    "rank_conflicts",
     "rank_gaps",
     "read_commits",
     "read_document",

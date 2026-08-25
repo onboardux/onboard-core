@@ -22,6 +22,7 @@ from typing import Protocol
 __all__ = [
     "BoundaryReader",
     "BoundaryView",
+    "ConflictView",
     "FreshnessReader",
     "GapView",
     "IdentityReader",
@@ -114,6 +115,36 @@ class GapView(Protocol):
     def note(self) -> str | None: ...
     @property
     def waived_until(self) -> _dt.datetime | None: ...
+
+
+class ConflictView(Protocol):
+    """One open disagreement between confirmed knowledge and observed behaviour.
+
+    Bet 4's deliverable, rendered inside the gap appendix rather than in a
+    section of its own: a reader looking at what this pack does not know is the
+    same reader who must be told which part of what it *does* say is now
+    contradicted. Splitting them would let somebody read the knowledge, skip the
+    appendix, and never learn that a probe disagrees with what they just read.
+
+    Carries no `actual_revision_id`: Build 5 writes no knowledge from probe
+    output, so it is always NULL, and a column that is always empty reads as a
+    tool that failed rather than as one that refused to invent.
+    """
+
+    @property
+    def uri(self) -> str: ...
+    @property
+    def kind(self) -> str: ...
+    @property
+    def intent_revision_id(self) -> str | None: ...
+    @property
+    def detected_at(self) -> _dt.datetime:
+        """When the probe observed the disagreement.
+
+        A stored instant, never a render clock -- the pack must be byte-stable
+        given the same rows, and this is the only date a conflict has.
+        """
+        ...
 
 
 class BoundaryView(Protocol):

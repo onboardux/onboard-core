@@ -374,13 +374,19 @@ def gaps(
     With no flag it lists. With one disposition flag it records what a human
     decided about a single gap and lists the result.
 
+    **Open conflicts are listed alongside the gaps**, and they are a different
+    thing: a gap is knowledge nobody has written, a conflict is knowledge
+    somebody confirmed that a probe has since seen contradicted. Both belong in
+    the same queue because both are work, and separating them would let a
+    contradiction sit unread behind a heading nobody opened.
+
     **Existence stays derived, always.** `recompute_coverage` is the authority
     on whether an identity is uncovered, and nothing here writes its cache. A
     disposition row says only what someone decided to do; the report is the join
     of the two, so a gap that recompute no longer derives disappears from the
     listing whatever its disposition says (v6.1 §6 Build 4).
     """
-    from adopt_knowledge import rank_gaps
+    from adopt_knowledge import rank_conflicts, rank_gaps
 
     from adopt_cli.commands._map_support import resolve_scope
     from adopt_coverage import recompute_coverage
@@ -429,6 +435,7 @@ def gaps(
             )
 
         payload = _gaps_payload(result, ranked, handle.governance().gap_dispositions())
+        payload["conflicts"] = _conflicts_payload(handle, result, rank_conflicts)
         if disposed is not None:
             payload["disposed"] = disposed
     finally:
@@ -478,6 +485,35 @@ def _dispose(
         "note": row.note,
         "waived_until": format_timestamp(row.waived_until) if row.waived_until else None,
     }
+
+
+def _conflicts_payload(handle: Any, result: Any, ranker: Any) -> list[dict[str, Any]]:
+    """Open conflicts for the identities the recompute evaluated.
+
+    Read through `table_rows` -- Build 4's report pattern -- so surfacing Bet 4's
+    deliverable adds no query path to any realized port. Scoped by the identities
+    coverage just evaluated, so a conflict recorded against another system cannot
+    appear in this scope's queue.
+    """
+    from adopt_model import Conflict
+
+    if result is None:
+        return []
+    uris = {row.identity_id: row.uri for row in result.identities}
+    rows = handle.export_records().table_rows("conflict", Conflict)
+    return [
+        {
+            "uri": conflict.uri,
+            "kind": conflict.kind,
+            "intent_revision": conflict.intent_revision_id,
+            "detected_at": format_timestamp(conflict.detected_at),
+            # Always `open` -- the ranker returns nothing else. Carried anyway so
+            # the shape does not change on the day a disposition write path
+            # exists, and so a reader of the JSON never has to assume.
+            "disposition": "open",
+        }
+        for conflict in ranker(rows, uris)
+    ]
 
 
 def _parse_until(value: str | None) -> _dt.datetime | None:

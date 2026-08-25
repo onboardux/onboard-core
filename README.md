@@ -320,6 +320,77 @@ disappears from the listing whatever its disposition says.
 A waiver **must** carry `--until`. It is the one disposition that removes a gap
 from everyone's attention, and without an expiry nothing ever brings it back.
 
+### `adopt probe`
+
+Safe, repeatable, recorded interactions — the mystery shopper for systems whose
+behaviour changes without a commit. Builds 1–4 capture what the repository
+*says*; this is what the system *does*.
+
+```sh
+adopt probe add probes/checkout-happy-path.yaml   # validated: safe path, hosts, budgets
+adopt probe run --all                             # executes; records what it observed
+adopt probe baseline --set                        # "this is how it behaves today"
+# …the provider updates a model, a prompt lands, an index is rebuilt…
+adopt probe run --all && adopt probe diff         # names what changed, and exits 4
+```
+
+A probe is **data**, not code. One YAML file declares its safe path
+(`mock|sandbox|shadow`), the hosts it may reach, its wall-clock/request/cost
+budgets, its secrets *by environment-variable name*, the steps to run (`http`
+and `prompt`), and the invariants each response must hold:
+
+```yaml
+probe_id: checkout-happy-path
+safe_path: sandbox
+network: { deny_by_default: true, allow: ["api.sandbox.example:443"] }
+side_effect_policy: prohibited
+secret_refs: [env:PROBE_API_TOKEN]
+runtime: { max_seconds: 30, max_memory_mb: 256, max_requests: 10 }
+cost: { max_model_calls: 2, max_tokens: 8000 }
+output: { retain_raw: false, redaction_policy: pii-default }
+cleanup: { required: true }
+exercises: ["onboard-v1://acme/erp/orders-api/prod/endpoint/-/POST%20%2Fv1%2Fcheckout"]
+diff_method: exact
+steps:
+  - kind: http
+    method: POST
+    url: "https://api.sandbox.example/v1/checkout"
+    headers: { Authorization: "Bearer {{secret.PROBE_API_TOKEN}}" }
+    body: { sku: "demo-1", qty: 1 }
+    expect: { status: 200, json_fields: ["order_id", "total"], latency_under_ms: 2000 }
+  - kind: prompt
+    input: "Summarize the checkout policy for a customer."
+    expect: { min_similarity: 0.92 }
+```
+
+**Only the runner opens a socket, and only to a declared host.** That is a
+CI-enforced import contract proven by a planted violation, and it is the whole
+safety argument: a probe carries no executable content, so the allow-list *is*
+the boundary. A step aimed anywhere else is refused with
+`PROBE_HOST_UNDECLARED` and exit `3` — at connection time, not merely at `add`.
+
+**Secrets resolve at send and are redacted at record.** `{{secret.NAME}}` goes
+out in the request; `[redacted:NAME]` is what any observation, log line or error
+message carries. `probe_observation.output` is an exportable column, so a leaked
+token would travel in the client's bundle forever.
+
+**`diff` never confuses two different sentences.** If the latest run and the
+baseline are of different probe revisions it reports `probe_changed`, with both
+revision ids and no similarity score — *you* edited the question, and that is
+not the client's system changing. Only a same-revision comparison can drift, and
+only drift exits `4`.
+
+**A drifted probe that `exercises` an identity contradicts what the store says
+about it.** Where confirmed knowledge is bound to that identity, an open
+`conflict` row is written once — deduplicated, never resolved away by any code
+here — and it appears in `adopt gaps` and in the pack's gap appendix. The
+disagreement between intent and behaviour is a deliverable, not a shrug.
+
+Not in this version: generated-code probes, browser/UI probes, scheduled
+execution, cleanup verification (`probe_run.cleanup_verified` is recorded
+`false` and judged by nobody), and the `embedding_sim` / `llm_judge` /
+`contract_delta` diff methods, which are refused at `add` with a named message.
+
 ## Validate a checkout
 
 ```sh

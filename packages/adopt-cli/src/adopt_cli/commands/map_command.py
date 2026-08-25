@@ -151,7 +151,8 @@ def map_command(
         # raised, because raising it would map to exit 1 and turn "your map is
         # incomplete" into "the command failed" -- a different sentence sending
         # the reader somewhere else entirely (contracts §13, `_NEVER_RAISED`).
-        raise typer.Exit(4)
+        # A contracts §13 exit code, fixed by contract, not a schema version.
+        raise typer.Exit(4)  # const-sync: ok -- exit code, not a version.
 
 
 def _read_expected(path: Path) -> str:

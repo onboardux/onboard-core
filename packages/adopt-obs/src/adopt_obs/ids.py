@@ -74,6 +74,7 @@ PREFIX_REGISTRY: Final[dict[str, str]] = {
     "ri": "review_item",
     "apr": "approval",
     "esc": "escalation",
+    "gap": "coverage_gap",
     "own": "ownership_assignment",
     "aud": "audit_event",
     "ob": "observability_boundary",

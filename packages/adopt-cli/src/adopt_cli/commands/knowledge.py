@@ -14,6 +14,7 @@ narrowest useful set and let the `--json` envelope, which is the contract, carry
 everything.
 """
 
+import datetime as _dt
 from pathlib import Path
 from typing import Annotated, Any, Final
 
@@ -21,6 +22,7 @@ import typer
 
 from adopt_cli.json_out import emit
 from adopt_cli.store_option import open_configured_store
+from adopt_obs import AdoptError, ErrorCode, format_timestamp
 
 __all__ = ["bind", "gaps", "harvest", "ingest", "review"]
 
@@ -327,22 +329,77 @@ def bind(
     emit(payload, as_json=json_output, title="adopt bind")
 
 
+AckOption = Annotated[
+    str | None,
+    typer.Option("--ack", help="Acknowledge one gap by its gap-key: someone owns closing it."),
+]
+ResolveGapOption = Annotated[
+    str | None,
+    typer.Option("--resolve", help="Mark one gap resolved by its gap-key."),
+]
+WaiveOption = Annotated[
+    str | None,
+    typer.Option("--waive", help="Waive one gap by its gap-key. Requires --until."),
+]
+UntilOption = Annotated[
+    str | None,
+    typer.Option("--until", help="Expiry for --waive, as YYYY-MM-DD. Mandatory on a waiver."),
+]
+OwnerOption = Annotated[
+    str | None, typer.Option("--owner", help="Who owns closing the gap being dispositioned.")
+]
+NoteOption = Annotated[str | None, typer.Option("--note", help="Why, in the reviewer's words.")]
+
+#: `--ack` / `--resolve` / `--waive` -> the `gap_status` value each records.
+_DISPOSITIONS: Final[tuple[tuple[str, str], ...]] = (
+    ("ack", "acknowledged"),
+    ("resolve", "resolved"),
+    ("waive", "waived"),
+)
+
+
 def gaps(
     scope: ScopeOption = None,
+    ack: AckOption = None,
+    resolve_gap: ResolveGapOption = None,
+    waive: WaiveOption = None,
+    until: UntilOption = None,
+    owner: OwnerOption = None,
+    note: NoteOption = None,
     store: StoreOption = None,
     json_output: JsonOption = False,
 ) -> None:
     """Identities minus covered knowledge, ranked -- the elicitation queue.
 
-    Read-only. `recompute_coverage` is the authority on whether an identity is
-    covered and nothing here writes its cache; dispositions arrive in Build 4.
+    With no flag it lists. With one disposition flag it records what a human
+    decided about a single gap and lists the result.
+
+    **Existence stays derived, always.** `recompute_coverage` is the authority
+    on whether an identity is uncovered, and nothing here writes its cache. A
+    disposition row says only what someone decided to do; the report is the join
+    of the two, so a gap that recompute no longer derives disappears from the
+    listing whatever its disposition says (v6.1 §6 Build 4).
     """
     from adopt_knowledge import rank_gaps
 
     from adopt_cli.commands._map_support import resolve_scope
     from adopt_coverage import recompute_coverage
 
-    handle = open_configured_store(store)
+    requested = {"ack": ack, "resolve": resolve_gap, "waive": waive}
+    chosen = [(flag, status) for flag, status in _DISPOSITIONS if requested[flag] is not None]
+    if len(chosen) > 1:
+        raise AdoptError(
+            ErrorCode.GAP_NOT_FOUND,
+            message="pass one of --ack, --resolve or --waive, not several",
+            hint="A gap holds one disposition at a time. Recording two in one command "
+            "would leave which of them applied depending on argument order.",
+        )
+
+    # Read-only when listing, writable only when a disposition was asked for --
+    # `adopt review`'s pattern. Listing gaps must never need write access: an
+    # FDE reading the queue against a store they hold read-only is the normal
+    # case, not an error.
+    handle = open_configured_store(store, read_only=not chosen)
     try:
         resolved = resolve_scope(handle, scope)
         if resolved.system is None:
@@ -355,20 +412,119 @@ def gaps(
                 str(resolved.environment.id) if resolved.environment is not None else None,
             )
             ranked = rank_gaps(result.identities)
-        payload = _gaps_payload(result, ranked)
+
+        disposed: dict[str, Any] | None = None
+        if chosen:
+            _, status = chosen[0]
+            key = requested[chosen[0][0]]
+            assert key is not None  # noqa: S101 -- `chosen` is built from non-None values
+            disposed = _dispose(
+                handle,
+                ranked,
+                gap_key=key,
+                status=status,
+                owner=owner,
+                note=note,
+                until=until,
+            )
+
+        payload = _gaps_payload(result, ranked, handle.governance().gap_dispositions())
+        if disposed is not None:
+            payload["disposed"] = disposed
     finally:
         handle.close()
 
     emit(payload, as_json=json_output, title="adopt gaps")
 
 
-def _gaps_payload(result: Any, ranked: tuple[Any, ...]) -> dict[str, Any]:
+def _dispose(
+    handle: Any,
+    ranked: tuple[Any, ...],
+    *,
+    gap_key: str,
+    status: str,
+    owner: str | None,
+    note: str | None,
+    until: str | None,
+) -> dict[str, Any]:
+    """Record one disposition, refusing a key the current recompute did not derive.
+
+    The membership check is what keeps existence derived: a disposition accepted
+    for a `gap_key` nothing produces would sit in the table forever, invisible
+    to a report that joins onto derived gaps.
+    """
+    match = next((gap for gap in ranked if gap.gap_key == gap_key), None)
+    if match is None:
+        raise AdoptError(
+            ErrorCode.GAP_NOT_FOUND,
+            message=f"no open gap with key {gap_key!r} in this scope",
+            hint="Run `adopt gaps` and copy a key from the listing. A gap that has since "
+            "been covered is no longer a gap, and its key stops being dispositionable "
+            "the moment confirmed knowledge is bound to the identity.",
+        )
+
+    row = handle.governance().dispose_gap(
+        gap_key=gap_key,
+        identity_id=match.identity_id,
+        status=status,
+        owner_actor_id=owner,
+        note=note,
+        waived_until=_parse_until(until),
+    )
+    return {
+        "gap_key": row.gap_key,
+        "status": row.status,
+        "owner": row.owner_actor_id,
+        "note": row.note,
+        "waived_until": format_timestamp(row.waived_until) if row.waived_until else None,
+    }
+
+
+def _parse_until(value: str | None) -> _dt.datetime | None:
+    """`YYYY-MM-DD` as an instant, or `None`.
+
+    Midnight UTC rather than local: a waiver's expiry is compared against store
+    timestamps, which are UTC, and a date that meant something different
+    depending on who typed it would expire waivers early for half a team.
+    """
+    if value is None:
+        return None
+    try:
+        parsed = _dt.datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as error:
+        raise AdoptError(
+            ErrorCode.GAP_WAIVER_NEEDS_UNTIL,
+            message=f"--until {value!r} is not a date",
+            hint="Write it as YYYY-MM-DD, for example 2026-12-31.",
+        ) from error
+    return parsed.replace(tzinfo=_dt.UTC)
+
+
+def _gaps_payload(
+    result: Any, ranked: tuple[Any, ...], dispositions: dict[str, Any]
+) -> dict[str, Any]:
     return {
         "identities": 0 if result is None else len(result.identities),
         "covered": 0 if result is None else result.covered,
         "uncovered": 0 if result is None else result.uncovered,
         "gaps": [
-            {"kind": gap.kind, "uri": gap.uri, "reasons": ", ".join(gap.reasons)} for gap in ranked
+            {
+                "kind": gap.kind,
+                "uri": gap.uri,
+                "reasons": ", ".join(gap.reasons),
+                "gap_key": gap.gap_key,
+                # An undisposed gap is `open`: the recompute derived it and
+                # nobody has decided anything yet, which is what `open` means.
+                "status": (
+                    dispositions[gap.gap_key].status if gap.gap_key in dispositions else "open"
+                ),
+                "owner": (
+                    dispositions[gap.gap_key].owner_actor_id
+                    if gap.gap_key in dispositions
+                    else None
+                ),
+            }
+            for gap in ranked
         ],
     }
 

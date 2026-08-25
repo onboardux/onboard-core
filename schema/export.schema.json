@@ -3,8 +3,8 @@
   "$id": "https://onboardux.com/schema/export.schema.json",
   "title": "adopt export bundle rows",
   "description": "GENERATED FROM schema/canonical.yaml -- DO NOT EDIT.\nRegenerate with `adopt-schema generate`. A hand edit is SCHEMA_GENERATED_DRIFT\nand CI fails on it, because a hand-edited realization means the manifest has\nsilently stopped being the single source of truth.",
-  "x-schema-version": 3,
-  "x-export-version": 3,
+  "x-schema-version": 4,
+  "x-export-version": 4,
   "$defs": {
     "classifier_version": {
       "title": "classifier_version",
@@ -1716,6 +1716,66 @@
         "acted_silently",
         "sampled_for_audit",
         "created_at"
+      ]
+    },
+    "coverage_gap": {
+      "title": "coverage_gap",
+      "description": "The human disposition of one derived coverage gap; existence stays derived.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "identity_id": {
+          "type": "string"
+        },
+        "gap_key": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "acknowledged",
+            "resolved",
+            "waived"
+          ]
+        },
+        "owner_actor_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "waived_until": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "identity_id",
+        "gap_key",
+        "status",
+        "created_at",
+        "updated_at"
       ]
     },
     "provenance": {

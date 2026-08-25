@@ -29,6 +29,7 @@ from adopt_model._enums import (
     EscalationChannel,
     EscalationStatus,
     FreshnessState,
+    GapStatus,
     HeartbeatOutcome,
     IdentityKind,
     IdentityStatus,
@@ -62,6 +63,7 @@ __all__ = [
     "ClassifierVersion",
     "Conflict",
     "Connector",
+    "CoverageGap",
     "DeathCondition",
     "Engagement",
     "Environment",
@@ -562,6 +564,22 @@ class Classification(BaseModel):
     sampled_for_audit: bool = False
     audit_verdict: str | None = None
     created_at: AwareDatetime
+
+
+class CoverageGap(BaseModel):
+    """The human disposition of one derived coverage gap; existence stays derived."""
+
+    model_config = _CONFIG
+
+    id: str
+    identity_id: str
+    gap_key: str
+    status: GapStatus
+    owner_actor_id: str | None = None
+    note: str | None = None
+    waived_until: AwareDatetime | None = None
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
 
 
 class Provenance(BaseModel):

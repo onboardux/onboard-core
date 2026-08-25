@@ -136,19 +136,28 @@ def seed_tree(work: Path) -> None:
 def probes(work: Path) -> tuple[Probe, ...]:
     store = work / "store.db"
     mapped = work / "mapped.db"
+    # Derived, never written down. This was `"schema_version": 3` in three
+    # places and every one of them failed the first time a build added a table
+    # -- a gate reporting a defect that was not one, which is the fastest way to
+    # teach people to ignore it. `adopt_const` is importable here because the
+    # checkout's own environment runs this script; what the *artefact* reports
+    # is what the probes compare against.
+    from adopt_const import SCHEMA_VERSION
+
+    expected_schema = f'"schema_version": {SCHEMA_VERSION}'
     return (
-        Probe("version", ("version", "--json"), '"schema_version": 3'),
+        Probe("version", ("version", "--json"), expected_schema),
         Probe("version reports a real version", ("version", "--json"), '"version": "0.'),
         Probe("detect rules", ("detect", str(work), "--json"), '"scores"', allow_failure=True),
         Probe(
             "schema migrations",
             ("store", "migrate", "--store", str(store), "--json"),
-            '"schema_version": 3',
+            expected_schema,
         ),
         Probe(
             "the store is real",
             ("store", "info", "--store", str(store), "--json"),
-            '"schema_version": 3',
+            expected_schema,
         ),
         Probe(
             "init records a scope and an archetype",

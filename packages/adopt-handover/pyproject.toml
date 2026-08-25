@@ -1,0 +1,53 @@
+[project]
+name = "adopt-handover"
+version = "0.3.1"
+description = "adopt pack: audience-scoped handover packs assembled from confirmed knowledge, stamped and byte-stable. Build 4."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
+# Assembly and rendering only. This package **reads** and writes nothing to the
+# store: `adopt pack` composes it with realizations the CLI hands in, exactly as
+# `adopt-map`, `adopt-knowledge` and `adopt-ask` are composed.
+#
+# `adopt-store` is deliberately **absent** (CR-34, CR-37): declaring the narrow
+# read protocols here and being handed realizations keeps `sqlite3` out of the
+# import graph, which `no-raw-sqlite` requires of every source module.
+#
+# `adopt-agent` is deliberately absent too, and that absence is load-bearing
+# rather than incidental: assembly must run identically with no model
+# configured (v6.1 R3), so the package that renders a pack cannot reach a model
+# door at all. Build 4's drafting lives in `adopt-knowledge`, which is the
+# package that writes knowledge, and the CLI is what puts the two together.
+#
+# No template engine and no renderer library: the canonical output is Markdown
+# composed in Python, because byte-stability is a property this package must
+# prove and a template engine's whitespace rules are one more thing that has to
+# hold for it. Derived formats (DOCX, PDF) are S4.2's subprocess wrappers.
+dependencies = [
+    "adopt-const",
+    "adopt-identity",
+    "adopt-model",
+    "adopt-obs",
+    "adopt-scope",
+]
+
+[project.urls]
+Homepage = "https://github.com/onboardux/onboard-core"
+Source = "https://github.com/onboardux/onboard-core"
+Issues = "https://github.com/onboardux/onboard-core/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_handover"]
+
+# Apache-2.0 4(a) and 4(d): the licence and the NOTICE travel with every
+# redistribution. `uv build` builds the wheel from the sdist, so placing the
+# repository root's single authored copy here puts it in both artefacts and
+# leaves nothing to drift.
+[tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"

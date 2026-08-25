@@ -1,0 +1,133 @@
+"""Build 4's verb: `adopt pack` -- audience-scoped handover packs.
+
+**Every `adopt_handover` import happens inside the command body**, exactly as
+Builds 1-3 do it: v6.1 §2.1 requires new verbs to register lazily so
+`CLI_COLD_START_MS` holds, and `adopt version` must not pay for an assembler it
+never runs.
+
+The command writes two files and no store rows. Gap dispositions go through
+`adopt gaps`, and Build 4's drafting is S4.2's work -- so there is no path here
+that changes what the pack is assembled from, which is what lets the same store
+render the same bytes twice.
+"""
+
+from pathlib import Path
+from typing import Annotated, Any
+
+import typer
+
+from adopt_cli.json_out import emit
+from adopt_cli.store_option import open_configured_store
+
+__all__ = ["pack"]
+
+AudienceOption = Annotated[
+    str,
+    typer.Option(
+        "--audience",
+        help="Who the pack is for: technical, client_ops, end_user, admin, or a firm's own tag.",
+    ),
+]
+OutOption = Annotated[
+    Path,
+    typer.Option("--out", help="Directory to write the pack into. Created if absent."),
+]
+ScopeOption = Annotated[
+    str | None,
+    typer.Option("--scope", help="firm/engagement/system/environment. Defaults to the store's."),
+]
+StoreOption = Annotated[Path | None, typer.Option("--store", help="Path to the store.")]
+JsonOption = Annotated[bool, typer.Option("--json", help="Machine-readable output.")]
+
+
+def pack(
+    audience: AudienceOption = "technical",
+    out: OutOption = Path("./handover"),
+    scope: ScopeOption = None,
+    store: StoreOption = None,
+    json_output: JsonOption = False,
+) -> None:
+    """Assemble an audience-scoped handover pack from the store.
+
+    Sections select **confirmed** knowledge by audience and kind; the map
+    contributes the inventory; the coverage join contributes the gap appendix;
+    Build 0's observability boundary is embedded so the pack states its own
+    limits. Every section carries its verification status and date.
+
+    The Markdown is byte-stable given the same revisions -- no clock reaches it,
+    so running this twice over an unchanged store produces identical files.
+    """
+    from adopt_handover import assemble, render, render_sidecar
+    from adopt_knowledge import rank_gaps
+
+    from adopt_cli.commands import _pack_support as support
+    from adopt_cli.commands._map_support import resolve_scope
+    from adopt_coverage import recompute_coverage
+
+    handle = open_configured_store(store)
+    try:
+        resolved = resolve_scope(handle, scope)
+        if resolved.system is None:
+            raise typer.BadParameter(
+                "a pack is assembled for one system, and this store has no system in scope. "
+                "Pass --scope firm/engagement/system/environment, or run `adopt init` first."
+            )
+
+        system_id = str(resolved.system.id)
+        environment_id = str(resolved.environment.id) if resolved.environment is not None else None
+
+        coverage = recompute_coverage(handle.coverage_records(), system_id, environment_id)
+        covered = frozenset(row.identity_id for row in coverage.identities if row.covered)
+        ranked = rank_gaps(coverage.identities)
+
+        assembled = assemble(
+            audience=audience,
+            knowledge=support.build_knowledge(
+                handle, system_id=system_id, environment_id=environment_id
+            ),
+            identities=support.build_identities(
+                handle, system_id=system_id, environment_id=environment_id, covered=covered
+            ),
+            freshness=support.FreshnessCache(handle),
+            boundary=support.build_boundary(
+                handle, system_id=system_id, environment_id=environment_id
+            ),
+            gaps=support.build_gaps(ranked, handle.governance().gap_dispositions()),
+        )
+        document = render(assembled)
+        lineage = render_sidecar(assembled)
+    finally:
+        handle.close()
+
+    out.mkdir(parents=True, exist_ok=True)
+    markdown_path = out / f"{audience}.md"
+    sidecar_path = out / f"{audience}.lineage.json"
+    # `newline="\n"` on both: a pack diffed across a Windows checkout and a Linux
+    # runner must not differ in every line, and CRLF is a recorded failure class
+    # in this repository's own release pipeline.
+    markdown_path.write_text(document, encoding="utf-8", newline="\n")
+    sidecar_path.write_text(lineage, encoding="utf-8", newline="\n")
+
+    emit(_payload(assembled, markdown_path, sidecar_path), as_json=json_output, title="adopt pack")
+
+
+def _payload(assembled: Any, markdown_path: Path, sidecar_path: Path) -> dict[str, Any]:
+    return {
+        "audience": assembled.audience,
+        "markdown": str(markdown_path),
+        "sidecar": str(sidecar_path),
+        "identities": len(assembled.identities),
+        "gaps": len(assembled.gaps),
+        "boundary": "declared" if assembled.boundary is not None else "none",
+        "sections": [
+            {
+                "section": section.key,
+                "heading": section.section.heading,
+                "revisions": len(section.revisions),
+                # The stamps actually rendered, so `--json` shows an operator
+                # that a section went out unverified without reading the file.
+                "stamps": sorted({stamped.stamp for stamped in section.revisions}),
+            }
+            for section in assembled.sections
+        ],
+    }

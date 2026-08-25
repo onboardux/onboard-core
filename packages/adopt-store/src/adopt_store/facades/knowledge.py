@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from adopt_model import (
     AudienceTag,
     Binding,
+    CoverageGap,
     Escalation,
     KnowledgeItem,
     ProbeDefinition,
@@ -30,6 +31,7 @@ from adopt_model._enums import (
     AuthorityClass,
     EscalationBranch,
     EscalationStatus,
+    GapStatus,
     ItemKind,
     ReviewResolution,
     SourceType,
@@ -39,6 +41,7 @@ from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, new_id, truncat
 from adopt_scope import Scope
 from adopt_store.facades.records import (
     BindingRecords,
+    CoverageGapRecords,
     EscalationRecords,
     KnowledgeRecords,
     ProbeRecords,
@@ -237,11 +240,13 @@ class GovernanceFacade:
         self,
         records: ReviewRecords,
         escalations: EscalationRecords,
+        gaps: CoverageGapRecords,
         *,
         clock: Clock | None = None,
     ) -> None:
         self._records = records
         self._escalations = escalations
+        self._gaps = gaps
         self._clock: Clock = clock if clock is not None else SystemClock()
 
     def _now(self) -> _dt.datetime:
@@ -470,6 +475,71 @@ class GovernanceFacade:
                 answered_at=self._now(),
             )
         return existing
+
+    # -- coverage-gap dispositions (v6.1 §6 Build 4) ----------------------
+
+    def dispose_gap(
+        self,
+        *,
+        gap_key: str,
+        identity_id: str,
+        status: GapStatus,
+        owner_actor_id: str | None = None,
+        note: str | None = None,
+        waived_until: _dt.datetime | None = None,
+    ) -> CoverageGap:
+        """Record what a human decided about one derived gap. Returns the row.
+
+        **This never decides whether the gap exists.** `recompute_coverage()` is
+        the only authority on that, and the caller has already consulted it --
+        which is why a `gap_key` naming nothing is refused by the caller with
+        `GAP_NOT_FOUND` rather than here. A facade that could invent a gap would
+        be a second answer to "what is uncovered", and the first thing that
+        happens to a second answer is that it disagrees with the first.
+
+        Re-disposing a gap keeps the row's `id` and `created_at` and advances
+        `updated_at`: the disposition is the same decision revisited, not a new
+        one, and a changing id would break any reference taken to it.
+
+        Raises:
+            AdoptError: ``GAP_WAIVER_NEEDS_UNTIL`` when a waiver carries no
+                expiry. A waiver is the one disposition that silently outlives
+                the reasoning behind it, so v6.1 §6 Build 4 makes the date
+                mandatory. The rule is about one status value rather than a
+                column, which is why neither dialect's DDL expresses it.
+        """
+        if status == "waived" and waived_until is None:
+            raise AdoptError(
+                ErrorCode.GAP_WAIVER_NEEDS_UNTIL,
+                message=f"waiving {gap_key!r} needs an expiry date",
+                hint="Pass `--until <YYYY-MM-DD>`. A waiver without one is a decision "
+                "nobody revisits: the gap stops being reported and no date ever brings "
+                "it back.",
+            )
+
+        now = self._now()
+        with self._gaps.transaction():
+            existing = self._gaps.get_coverage_gap(gap_key)
+            row = CoverageGap(
+                id=existing.id if existing is not None else new_id("gap"),
+                identity_id=identity_id,
+                gap_key=gap_key,
+                status=status,
+                owner_actor_id=owner_actor_id,
+                note=note,
+                waived_until=waived_until,
+                created_at=existing.created_at if existing is not None else now,
+                updated_at=now,
+            )
+            self._gaps.upsert_coverage_gap(row)
+        return row
+
+    def gap_disposition(self, gap_key: str) -> CoverageGap | None:
+        return self._gaps.get_coverage_gap(gap_key)
+
+    def gap_dispositions(self) -> dict[str, CoverageGap]:
+        """Every disposition, keyed by `gap_key`, for joining onto derived gaps."""
+        return {row.gap_key: row for row in self._gaps.list_coverage_gaps()}
 
 
 class BindingFacade:

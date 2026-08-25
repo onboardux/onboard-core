@@ -31,6 +31,7 @@ from adopt_cli.commands import init as init_command
 from adopt_cli.commands import interchange as interchange_commands
 from adopt_cli.commands import knowledge as knowledge_commands
 from adopt_cli.commands import map_command as map_commands
+from adopt_cli.commands import pack as pack_commands
 from adopt_cli.commands import policy as policy_commands
 from adopt_cli.commands import serve as serve_commands
 from adopt_cli.commands import store as store_commands
@@ -82,6 +83,10 @@ app.command("review")(knowledge_commands.review)
 app.command("ask")(ask_commands.ask)
 app.command("answer")(answer_commands.answer)
 app.command("serve")(serve_commands.serve)
+
+# Build 4. `pack` imports `adopt_handover` and the coverage recompute inside the
+# command body, so `adopt version` still pays for neither.
+app.command("pack")(pack_commands.pack)
 
 # Registered as bare commands rather than a group: contracts §14 names them
 # `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the

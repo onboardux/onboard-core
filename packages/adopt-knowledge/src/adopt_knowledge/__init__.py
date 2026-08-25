@@ -41,7 +41,13 @@ from adopt_knowledge.documents import (
     read_document,
     split_frontmatter,
 )
-from adopt_knowledge.gaps import CoverageEntry, Gap, rank_gaps
+from adopt_knowledge.gaps import (
+    GAP_KEY_SEPARATOR,
+    CoverageEntry,
+    Gap,
+    gap_key_for,
+    rank_gaps,
+)
 from adopt_knowledge.gitlog import Commit, head_sha, read_commits
 from adopt_knowledge.harvest import (
     HARVEST_EXTRACTOR,
@@ -93,6 +99,7 @@ __all__ = [
     "CREATED",
     "DEFAULT_AUDIENCE",
     "DEFAULT_KIND",
+    "GAP_KEY_SEPARATOR",
     "HARVEST_EXTRACTOR",
     "HARVEST_EXTRACTOR_VERSION",
     "INGEST_EXTRACTOR_VERSION",
@@ -127,6 +134,7 @@ __all__ = [
     "derive_suggestions",
     "discover",
     "edit",
+    "gap_key_for",
     "head_sha",
     "match_document",
     "mine",

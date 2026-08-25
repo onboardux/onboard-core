@@ -120,18 +120,33 @@ def _verify_digests(source: Path, bundle: BundleManifest, manifest: Manifest) ->
     something else, which is precisely the substitution the digest exists to
     prevent.
     """
-    expected = {name for name, _ in manifest.exportable_tables()}
+    # **The bundle's own schema version decides the expected set, not ours.**
+    # A bundle exported at version 3 legitimately carries no table introduced at
+    # 4, and judging it against the running binary's manifest would refuse it as
+    # truncated -- ending the standing-export portability claim (v6.1 §7) the
+    # first time a table was ever added. `read_bundle` has already checked the
+    # declared pair against `export_compat.json`, so this version is negotiated
+    # rather than taken on trust.
+    #
+    # A table the bundle declares that this schema does not know is still
+    # refused: that is a bundle from a *newer* line, which the version window
+    # exists to catch, and applying it would write rows into a table we cannot
+    # validate.
+    expected = {
+        name for name, table in manifest.exportable_tables() if table.since <= bundle.schema_version
+    }
     declared = {entry.name for entry in bundle.tables}
 
     if declared != expected:
         missing = sorted(expected - declared)
         unexpected = sorted(declared - expected)
         raise _malformed(
-            "the manifest's table set does not match schema version "
-            f"{manifest.schema_version}: missing {missing}, unexpected {unexpected}",
-            "Every exportable table produces a file, even when empty (§11), so a missing "
-            "entry is a truncated bundle rather than an empty table. An unexpected entry "
-            "is a table this schema version does not declare.",
+            "the bundle's table set does not match the schema version it declares "
+            f"({bundle.schema_version}): missing {missing}, unexpected {unexpected}",
+            "Every exportable table that existed at the bundle's schema version produces "
+            "a file, even when empty (§11), so a missing entry is a truncated bundle "
+            "rather than an empty table. An unexpected entry is a table that version does "
+            "not declare.",
         )
 
     verified: dict[str, bytes] = {}
@@ -224,9 +239,13 @@ def apply_bundle(
 
     with records.transaction():
         # Foreign-key topological order: `exportable_tables()` is already sorted
-        # by it, so a child never lands before its parent.
+        # by it, so a child never lands before its parent. Restricted to what the
+        # bundle actually carries, for `_verify_digests`' reason: a table
+        # introduced after the bundle's schema version has no file in it, and
+        # the target's own (empty) table is the correct end state.
         for table_name, _ in loaded.exportable_tables():
-            records.insert_rows(table_name, parsed[table_name])
+            if table_name in parsed:
+                records.insert_rows(table_name, parsed[table_name])
 
     _LOGGER.info(
         "export.bundle_applied",

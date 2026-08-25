@@ -28,24 +28,35 @@ from typing import Final
 # §2.1 -- schema, format, identity
 # ---------------------------------------------------------------------------
 
-#: Canonical schema version. Starts at 3; there is no version 1 or 2 in this
+#: Canonical schema version. Started at 3; there is no version 1 or 2 in this
 #: line. Consumed by the schema emitters, store open, and `schema_meta`.
-SCHEMA_VERSION: Final[int] = 3
+#: Version 4 adds `coverage_gap` (Build 4).
+SCHEMA_VERSION: Final[int] = 4
+
+#: The version the **initial** migration produces, and the boundary that decides
+#: which file creates a table: everything at or below this is created by
+#: `0001__init_v3.sql`, and every version above it gets its own migration
+#: carrying exactly the tables introduced at that version. Frozen forever --
+#: raising it would rewrite a file that has already run on real stores.
+INITIAL_SCHEMA_VERSION: Final[int] = 3
 
 #: Export bundle format version. Equal to `SCHEMA_VERSION` at launch by
 #: coincidence only, and versioned independently thereafter. Values 1 and 2 are
 #: deliberately burned so no bundle from the withdrawn 0.1.x line can be
 #: mistaken for this format.
-EXPORT_VERSION: Final[int] = 3
+EXPORT_VERSION: Final[int] = 4
 
 #: Store-open version window. A store above the max opens read-only with
-#: `SCHEMA_VERSION_TOO_NEW` and is never upgraded, downgraded or repaired.
+#: `SCHEMA_VERSION_TOO_NEW` and is never upgraded, downgraded or repaired. The
+#: min stays 3: a v3 store is migrated forward, not refused.
 MIN_SUPPORTED_SCHEMA_VERSION: Final[int] = 3
-MAX_SUPPORTED_SCHEMA_VERSION: Final[int] = 3
+MAX_SUPPORTED_SCHEMA_VERSION: Final[int] = 4
 
-#: Import version window. Outside it, import refuses and names the range.
+#: Import version window. Outside it, import refuses and names the range. The
+#: min stays 3 because a v3 bundle -- including the published v3 reference
+#: bundle -- must keep importing forever; additive-only is what makes that safe.
 MIN_SUPPORTED_EXPORT_VERSION: Final[int] = 3
-MAX_SUPPORTED_EXPORT_VERSION: Final[int] = 3
+MAX_SUPPORTED_EXPORT_VERSION: Final[int] = 4
 
 #: Identity URI ceiling. An over-length URI is rejected, never truncated --
 #: truncation would silently merge two distinct referents.

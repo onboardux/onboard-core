@@ -263,7 +263,11 @@ def _parse_one(chunk: str) -> Commit | None:
     fields = chunk.split(_UNIT)
     if len(fields) < 6:
         return None
+    # The four leading fields of the git log format, and the offset past them:
+    # this parser's own shape, not a schema version that happens to share the value.
+    # const-sync: ok -- field count in the log format.
     sha, parents, authored_at, subject = (field.strip() for field in fields[:4])
+    # const-sync: ok -- offset past those same four fields.
     body = _UNIT.join(fields[4:-1])
     files = tuple(sorted({line.strip() for line in fields[-1].splitlines() if line.strip()}))
     return Commit(

@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
+from adopt_const import INITIAL_SCHEMA_VERSION
 from adopt_obs import AdoptError, ErrorCode
 from adopt_schema.assets import checkout_root
 from adopt_schema.emitters import jsonschema, postgres, pymodel, sqlite
@@ -32,6 +33,22 @@ _REPO_ROOT: Final[Path | None] = checkout_root(Path(__file__))
 
 MODEL_PACKAGE: Final[str] = "packages/adopt-model/src/adopt_model"
 INITIAL_MIGRATION: Final[str] = "0001__init_v3.sql"
+
+#: `schema version -> migration filename`, in application order. **A row here is
+#: append-only once it has shipped**: the filename is what `migrate.pending`
+#: orders by and what has already run against real stores, so renaming one is
+#: indistinguishable from reordering history. A build that adds a table adds one
+#: row and nothing else -- the tranche itself is derived from the manifest's
+#: `since` values, not listed here.
+MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
+    (INITIAL_SCHEMA_VERSION, INITIAL_MIGRATION),
+    # The version THIS FILE produces, frozen forever. It equals today's
+    # `SCHEMA_VERSION` only by coincidence: when a later build ships version 5,
+    # this row must still say 4, so importing the constant here would silently
+    # re-label a migration that has already run on real stores.
+    # const-sync: ok -- a frozen historical version, not the current one.
+    (4, "0002__coverage_gap.sql"),
+)
 
 TARGETS: Final[tuple[str, ...]] = ("sqlite", "postgres", "jsonschema", "pymodel")
 
@@ -60,12 +77,41 @@ def repo_root() -> Path:
     return _REPO_ROOT
 
 
+def _migrations_for(manifest: Manifest) -> tuple[tuple[int, str], ...]:
+    """`MIGRATIONS`, checked against what the manifest actually needs.
+
+    The two can only disagree by someone adding a table at a new version and not
+    giving it a file, or naming a file for a version nothing was introduced at.
+    Both produce a schema that exists in the models and in no database, so this
+    fails rather than emitting a partial set.
+    """
+    declared = {version for version, _ in MIGRATIONS}
+    needed = set(manifest.migration_versions())
+    if declared != needed:
+        raise AdoptError(
+            ErrorCode.MANIFEST_INVALID,
+            message="the migration list and the manifest disagree about which schema "
+            f"versions exist: files declare {sorted(declared)}, the manifest needs "
+            f"{sorted(needed)}",
+            hint="Every version that introduces a table needs exactly one migration "
+            "filename in `adopt_schema.generate.MIGRATIONS`. Add the missing row; never "
+            "rename a row that has already shipped.",
+        )
+    return MIGRATIONS
+
+
 def _render_sqlite(manifest: Manifest) -> dict[str, str]:
-    return {f"schema/migrations/sqlite/{INITIAL_MIGRATION}": sqlite.emit(manifest)}
+    return {
+        f"schema/migrations/sqlite/{name}": sqlite.emit(manifest, version=version)
+        for version, name in _migrations_for(manifest)
+    }
 
 
 def _render_postgres(manifest: Manifest) -> dict[str, str]:
-    return {f"schema/migrations/postgres/{INITIAL_MIGRATION}": postgres.emit(manifest)}
+    return {
+        f"schema/migrations/postgres/{name}": postgres.emit(manifest, version=version)
+        for version, name in _migrations_for(manifest)
+    }
 
 
 def _render_jsonschema(manifest: Manifest) -> dict[str, str]:

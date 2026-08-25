@@ -155,10 +155,12 @@ def _ensure_scope(scopes: ScopeFacade, wanted: _FullScope, archetype: Archetype 
     system_scope = scopes.resolve(wanted.prefix(3))
     assert system_scope.system is not None  # noqa: S101 -- just resolved at depth 3
 
+    # const-sync: ok -- scope depth 4 (environment), not a schema version.
     if _resolves(scopes, wanted.prefix(4)) is None:
         scopes.create_environment(
             system_id=system_scope.system.id, slug=wanted.environment, name=wanted.environment
         )
+    # const-sync: ok -- scope depth 4 (environment), not a schema version.
     return scopes.resolve(wanted.prefix(4))
 
 

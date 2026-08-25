@@ -26,6 +26,7 @@ from adopt_model import (
     AudienceTag,
     Binding,
     BindingRevision,
+    CoverageGap,
     Escalation,
     Identity,
     IdentityRevision,
@@ -44,6 +45,7 @@ from adopt_model._enums import EscalationStatus, FreshnessState, ReviewResolutio
 
 __all__ = [
     "BindingRecords",
+    "CoverageGapRecords",
     "EscalationRecords",
     "IdentityRecords",
     "KnowledgeRecords",
@@ -213,6 +215,52 @@ class EscalationRecords(Protocol):
         indistinguishable from an open one to every reader except a human
         reading the timestamp -- and the whole point of the capture ratchet is
         that the next asker gets the answer, not that someone marked a row.
+        """
+        ...
+
+
+class CoverageGapRecords(Protocol):
+    """`coverage_gap` -- the human disposition of a derived gap, and nothing else.
+
+    Introduced by Build 4, the first code that writes the table (v6.1 §6 Build 4).
+
+    **This port cannot answer whether a gap exists, and that is the design.**
+    `recompute_coverage()` is the sole authority on that, and a row here is only
+    what a human decided to do about a gap the recompute already derived. There
+    is deliberately no `list_open_gaps`-shaped method: a caller that could ask
+    this table what is uncovered would be asking the wrong oracle, and the two
+    answers would disagree the first time knowledge landed without a
+    disposition being updated. The report is a join, always.
+
+    **One row per `gap_key`, updated in place.** `coverage_gap` is not a
+    revision family -- `no-revision-update` guards `*_revision` tables because
+    those hold content whose history is the product, while a disposition is
+    current intent and its history is not something anybody has asked to keep.
+    Stated here rather than assumed, on `ReviewRecords`' and `EscalationRecords`'
+    precedent: a gate that does not cover a table is not a licence to widen what
+    the table permits.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+
+    def upsert_coverage_gap(self, row: CoverageGap) -> None:
+        """Insert the disposition, or replace the one this `gap_key` already has.
+
+        Keyed on `gap_key` rather than on `id`, because the caller disposing a
+        gap has the key the report showed them and never an id -- and two rows
+        for one gap would make "what did we decide about this" a question with
+        two answers.
+        """
+        ...
+
+    def get_coverage_gap(self, gap_key: str) -> CoverageGap | None: ...
+
+    def list_coverage_gaps(self) -> Sequence[CoverageGap]:
+        """Every disposition in the store, for joining onto a derived gap list.
+
+        Unfiltered because the caller's derived list is already scope-filtered
+        and `gap_key` carries the full identity URI: joining a scoped list onto
+        every disposition can only match dispositions in that scope.
         """
         ...
 

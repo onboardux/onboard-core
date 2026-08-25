@@ -31,6 +31,22 @@ def manifest() -> Manifest:
     return load_manifest()
 
 
+def _all_sqlite(manifest: Manifest) -> str:
+    """Every migration's SQLite DDL, concatenated -- the schema as a store holds it.
+
+    Each emitter call renders one version's tranche, so the whole schema is the
+    set of them. Joining here rather than asserting on the initial file is what
+    keeps these contracts binding on tables added by later builds: a v4 table
+    with no model, no policy or a mismatched column set fails exactly the same
+    assertions the v3 tables do.
+    """
+    return "\n".join(sqlite.emit(manifest, version=v) for v in manifest.migration_versions())
+
+
+def _all_postgres(manifest: Manifest) -> str:
+    return "\n".join(postgres.emit(manifest, version=v) for v in manifest.migration_versions())
+
+
 def _ddl_columns(ddl: str) -> dict[str, list[str]]:
     tables: dict[str, list[str]] = {}
     for name, body in _CREATE_TABLE_RE.findall(ddl):
@@ -45,7 +61,7 @@ def _ddl_columns(ddl: str) -> dict[str, list[str]]:
 
 @pytest.mark.unit
 def test_every_table_has_a_model_whose_fields_match_the_ddl(manifest: Manifest) -> None:
-    ddl_tables = _ddl_columns(sqlite.emit(manifest))
+    ddl_tables = _ddl_columns(_all_sqlite(manifest))
 
     for name, table in manifest.tables.items():
         model = class_name(name)
@@ -84,14 +100,14 @@ def test_emitted_order_is_a_valid_topological_order(manifest: Manifest) -> None:
 @pytest.mark.unit
 def test_both_dialects_declare_the_same_tables_and_columns(manifest: Manifest) -> None:
     """The realizations differ only by the mechanical delta in contracts §3.1."""
-    assert _ddl_columns(sqlite.emit(manifest)) == _ddl_columns(postgres.emit(manifest))
+    assert _ddl_columns(_all_sqlite(manifest)) == _ddl_columns(_all_postgres(manifest))
 
 
 @pytest.mark.unit
 def test_every_scoped_table_gets_a_forced_policy(manifest: Manifest) -> None:
     """PRD F4.2: RLS is expressed from row scope, and `FORCE`d so application
     code cannot read across scope even when it forgets to filter."""
-    ddl = postgres.emit(manifest)
+    ddl = _all_postgres(manifest)
 
     for name, table in manifest.tables.items():
         if table.scope_level in {"global", "unscoped"}:

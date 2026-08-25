@@ -230,6 +230,54 @@ agreed.
 Development checkouts intentionally report `null` for `sbom_sha256` and
 `build_id`. A signed release wheel or binary embeds those immutable build facts.
 
+### `adopt pack`
+
+Audience-scoped handover materials, assembled from the store.
+
+```sh
+adopt pack --audience client_ops --out ./handover
+# -> handover/client_ops.md           the pack
+#    handover/client_ops.lineage.json section -> the revisions it came from
+```
+
+Sections select **confirmed** knowledge by audience tag and kind; the map
+contributes the inventory; the coverage join contributes the gap appendix; the
+observability boundary is embedded so the pack states its own limits.
+
+Every section carries a stamp and a date. `fresh` means a human confirmed it and
+nothing has changed under it; `stale` means something has; `unverified` means
+nothing has confirmed it — either no human approved it, or nothing has checked
+it against the running system. Unverified and stale sections carry a banner above
+the body, not a footnote after it.
+
+**The Markdown is byte-stable given the same revisions.** No clock reaches it:
+every date comes from a revision's own timestamp, so regenerating a pack over an
+unchanged store produces identical bytes and a diff shows only what actually
+changed. Write it outside the repository, or gitignore it — `adopt map` walks
+the tree, and a pack left inside becomes source on the next run.
+
+Assembly needs no model. Sections with no confirmed knowledge say so rather than
+disappearing; drafting them is a later build's work.
+
+### `adopt gaps`
+
+Identities minus covered knowledge, ranked — and what a human decided about each.
+
+```sh
+adopt gaps                                   # the elicitation queue
+adopt gaps --ack   <gap-key> --owner alice --note "SME session booked"
+adopt gaps --resolve <gap-key>
+adopt gaps --waive <gap-key> --until 2026-12-31 --note "accepted risk"
+```
+
+**Existence stays derived.** `recompute_coverage()` alone decides whether an
+identity is uncovered; a disposition records only what someone decided to do
+about it, and the report is the join. A gap that later gets confirmed knowledge
+disappears from the listing whatever its disposition says.
+
+A waiver **must** carry `--until`. It is the one disposition that removes a gap
+from everyone's attention, and without an expiry nothing ever brings it back.
+
 ## Validate a checkout
 
 ```sh

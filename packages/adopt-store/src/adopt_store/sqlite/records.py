@@ -25,6 +25,7 @@ from adopt_model import (
     AudienceTag,
     Binding,
     BindingRevision,
+    CoverageGap,
     Engagement,
     Environment,
     Escalation,
@@ -57,6 +58,7 @@ from adopt_store.sqlite.store import SqliteStore
 __all__ = [
     "SqliteBindingRecords",
     "SqliteBoundaryRecords",
+    "SqliteCoverageGapRecords",
     "SqliteCoverageRecords",
     "SqliteEscalationRecords",
     "SqliteExportRecords",
@@ -64,6 +66,7 @@ __all__ = [
     "SqliteIdentityRecords",
     "SqliteImportRecords",
     "SqliteKnowledgeRecords",
+    "SqlitePackRecords",
     "SqliteProbeRecords",
     "SqliteReviewRecords",
     "SqliteRevisionRecords",
@@ -502,6 +505,165 @@ class SqliteEscalationRecords:
                 escalation_id,
             ),
         )
+
+
+class SqlitePackRecords:
+    """The reads `adopt pack` assembles from (Build 4).
+
+    Here rather than in the CLI because it is SQL, and CR-36's argument for
+    exempting one wiring module rests on the CLI holding **no** dialect
+    knowledge. `adopt_handover` cannot hold it either -- `no-raw-sqlite` names
+    that package as a source module -- so the join lives with the other
+    realizations and the CLI maps the rows into `adopt_handover`'s views.
+
+    Every method is a read. There is no write path on this class and none is
+    coming: a pack is a rendering of what the store already holds.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def knowledge_heads(
+        self, *, system_id: str, environment_id: str | None
+    ) -> Sequence[tuple[KnowledgeItem, KnowledgeRevision]]:
+        """Every item in scope paired with its **current** revision.
+
+        Unverified heads are returned too, deliberately. Filtering to `verified`
+        here would put the honesty rule in two places -- `sections.select`
+        already enforces it, and Build 4's drafting needs the same query to see
+        the drafts it just wrote. One filter, in the module whose job it is.
+
+        An item whose `current_revision_id` is NULL or dangling is skipped by
+        the join rather than reported: `store doctor` is what surfaces a broken
+        head pointer, and a pack is not the place to learn about one.
+        """
+        sql = (
+            "SELECT ki.id AS item_id, kr.id AS revision_id "
+            "FROM knowledge_item ki "
+            "JOIN knowledge_revision kr ON kr.id = ki.current_revision_id "
+            "WHERE ki.system_id = ?"
+        )
+        parameters: tuple[object, ...] = (system_id,)
+        if environment_id is not None:
+            # An item may span environments (`environment_id` is nullable), and
+            # one that does belongs in every environment's pack.
+            sql += " AND (ki.environment_id = ? OR ki.environment_id IS NULL)"
+            parameters += (environment_id,)
+        sql += " ORDER BY ki.id"
+
+        pairs: list[tuple[KnowledgeItem, KnowledgeRevision]] = []
+        for row in self._store.query(sql, parameters):
+            item = _one(
+                self._store,
+                KnowledgeItem,
+                "SELECT * FROM knowledge_item WHERE id = ?",
+                (row["item_id"],),
+            )
+            revision = _one(
+                self._store,
+                KnowledgeRevision,
+                "SELECT * FROM knowledge_revision WHERE id = ?",
+                (row["revision_id"],),
+            )
+            if item is not None and revision is not None:
+                pairs.append((item, revision))
+        return pairs
+
+    def uris_by_item(self) -> dict[str, tuple[str, ...]]:
+        """Bound identity URIs per item, for the section's "applies to" line."""
+        rows = self._store.query(
+            "SELECT b.item_id AS item_id, i.uri AS uri "
+            "FROM binding b JOIN identity i ON i.id = b.identity_id "
+            "ORDER BY b.item_id, i.uri"
+        )
+        grouped: dict[str, tuple[str, ...]] = {}
+        for row in rows:
+            item_id = str(row["item_id"])
+            grouped[item_id] = (*grouped.get(item_id, ()), str(row["uri"]))
+        return grouped
+
+    def audiences_by_item(self) -> dict[str, tuple[str, ...]]:
+        rows = self._store.query(
+            "SELECT item_id, audience FROM audience_tag ORDER BY item_id, audience"
+        )
+        grouped: dict[str, tuple[str, ...]] = {}
+        for row in rows:
+            item_id = str(row["item_id"])
+            grouped[item_id] = (*grouped.get(item_id, ()), str(row["audience"]))
+        return grouped
+
+    def identities_in_scope(
+        self, *, system_id: str, environment_id: str | None
+    ) -> Sequence[Identity]:
+        sql = "SELECT * FROM identity WHERE system_id = ?"
+        parameters: tuple[object, ...] = (system_id,)
+        if environment_id is not None:
+            sql += " AND environment_id = ?"
+            parameters += (environment_id,)
+        sql += " ORDER BY uri"
+        return [_from_row(Identity, dict(row)) for row in self._store.query(sql, parameters)]
+
+    def boundary_for(
+        self, *, system_id: str, environment_id: str | None
+    ) -> ObservabilityBoundary | None:
+        """The system's boundary, most recently declared first.
+
+        Environment-scoped rows win over system-wide ones when an environment is
+        named, because the narrower declaration is the one that was negotiated
+        for the thing being handed over.
+        """
+        rows = self._store.query(
+            "SELECT * FROM observability_boundary WHERE system_id = ? "
+            "ORDER BY declared_at DESC, id DESC",
+            (system_id,),
+        )
+        candidates = [_from_row(ObservabilityBoundary, dict(row)) for row in rows]
+        if environment_id is not None:
+            scoped = [row for row in candidates if row.environment_id == environment_id]
+            if scoped:
+                return scoped[0]
+        return candidates[0] if candidates else None
+
+
+class SqliteCoverageGapRecords:
+    """The SQLite implementation of `CoverageGapRecords`.
+
+    The upsert is a `DELETE` + `INSERT` inside the caller's transaction rather
+    than SQLite's `ON CONFLICT DO UPDATE`, for one reason: the generated model
+    stays the sole authority on what a row contains. An `ON CONFLICT` clause
+    lists the columns to overwrite, so adding a column to the manifest would
+    leave a stale value behind in exactly the rows that were disposed twice --
+    silent, and only in re-disposed rows. `_insert` derives its column list from
+    the model, so this cannot drift.
+
+    Deleting the superseded row is not a history loss: `coverage_gap` holds
+    current intent (contracts §5 -- it is not a revision family), and the row it
+    replaces described the same `gap_key`.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def upsert_coverage_gap(self, row: CoverageGap) -> None:
+        with self._store.transaction():
+            self._store.execute("DELETE FROM coverage_gap WHERE gap_key = ?", (row.gap_key,))
+            _insert(self._store, "coverage_gap", row)
+
+    def get_coverage_gap(self, gap_key: str) -> CoverageGap | None:
+        return _one(
+            self._store,
+            CoverageGap,
+            "SELECT * FROM coverage_gap WHERE gap_key = ?",
+            (gap_key,),
+        )
+
+    def list_coverage_gaps(self) -> Sequence[CoverageGap]:
+        """Every disposition, ordered by key so a report is stable across runs."""
+        rows = self._store.query("SELECT * FROM coverage_gap ORDER BY gap_key")
+        return [_from_row(CoverageGap, dict(row)) for row in rows]
 
 
 class SqliteBindingRecords:

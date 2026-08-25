@@ -26,6 +26,7 @@ adopt-workflow = { workspace = true }
 adopt-knowledge = { workspace = true }
 adopt-map = { workspace = true }
 adopt-ask = { workspace = true }
+adopt-handover = { workspace = true }
 adopt-cli = { workspace = true }
 
 [dependency-groups]

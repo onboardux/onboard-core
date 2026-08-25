@@ -21,6 +21,7 @@ import pytest
 from adopt_cli.commands import doctor as doctor_command
 from adopt_cli.commands import version as version_command
 from adopt_cli.config import REGISTRY, Source, load_config_file, resolve_all
+from adopt_const import EXPORT_VERSION, SCHEMA_VERSION
 from adopt_obs import AdoptError, ErrorCode
 
 KEY = "ADOPT_LOG_LEVEL"
@@ -212,8 +213,8 @@ def test_version_build_facts_are_immutable_artifact_data(
 
     assert payload["sbom_sha256"] is None
     assert payload["build_id"] is None
-    assert payload["schema_version"] == 3
-    assert payload["export_version"] == 3
+    assert payload["schema_version"] == SCHEMA_VERSION
+    assert payload["export_version"] == EXPORT_VERSION
 
     monkeypatch.setattr(version_command, "SBOM_SHA256", "a" * 64)
     build_id = f"github:owner/repo:1:1:{'b' * 40}"

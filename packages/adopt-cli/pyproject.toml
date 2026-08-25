@@ -22,6 +22,10 @@ dependencies = [
     "adopt-detect",
     "adopt-export",
     "adopt-freshness",
+    # Build 4. `commands/pack.py` imports it inside the command body; the
+    # `first-party-deps` gate is about what the distribution needs installed,
+    # so `pip install adopt-cli` must always yield a working `adopt pack`.
+    "adopt-handover",
     "adopt-identity",
     "adopt-knowledge",
     "adopt-map",

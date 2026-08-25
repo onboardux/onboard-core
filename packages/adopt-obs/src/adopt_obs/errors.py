@@ -54,6 +54,7 @@ class ExitCode:
     USAGE_ERROR: Final[int] = 2
     # const-sync: ok -- a contracts §13 exit code, fixed by contract, not a tunable.
     POLICY_REFUSAL: Final[int] = 3
+    # const-sync: ok -- a contracts §13 exit code, fixed by contract, not a tunable.
     DEGRADED_WITH_FINDINGS: Final[int] = 4
 
 
@@ -147,6 +148,9 @@ class ErrorCode(StrEnum):
     ASK_OUTSIDE_BOUNDARY = "ASK_OUTSIDE_BOUNDARY"
     ESCALATION_NOT_FOUND = "ESCALATION_NOT_FOUND"
     ESCALATION_ALREADY_ANSWERED = "ESCALATION_ALREADY_ANSWERED"
+
+    GAP_NOT_FOUND = "GAP_NOT_FOUND"
+    GAP_WAIVER_NEEDS_UNTIL = "GAP_WAIVER_NEEDS_UNTIL"
 
 
 #: Code -> category, verbatim from the contracts §13 table.
@@ -256,6 +260,18 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # no record of which the asker was actually given, and the second capture
     # would land as knowledge nothing links back to.
     ErrorCode.ESCALATION_ALREADY_ANSWERED: ErrorCategory.POLICY,
+    # Usage: the caller named a gap the current recompute does not derive. A
+    # disposition is only meaningful against a gap that exists, and accepting
+    # one for a `gap_key` nothing produces would let the table accumulate rows
+    # about identities that were never uncovered -- invisible, because the
+    # report joins onto derived existence and would simply never show them.
+    ErrorCode.GAP_NOT_FOUND: ErrorCategory.USAGE,
+    # Usage: a waiver without an expiry is the one disposition that would
+    # silently outlive the decision behind it. v6.1 §6 Build 4 makes
+    # `waived_until` mandatory on a waiver for exactly that reason, and the
+    # rule is a statement about one status value rather than a column
+    # constraint either dialect can express -- so it is refused here.
+    ErrorCode.GAP_WAIVER_NEEDS_UNTIL: ErrorCategory.USAGE,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

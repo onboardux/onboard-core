@@ -201,8 +201,21 @@ def apply(target: MigrationTarget, root: Path, dialect: str, written_by: str) ->
                 "The note is mandatory because the moment it is needed is the moment "
                 "nobody has time to work it out.",
             )
+        # The version this **file** produces, not the binary's `SCHEMA_VERSION`.
+        # Once more than one migration exists they differ: running the initial
+        # file on a fresh store leaves it at 3 even when the binary is at 4, and
+        # a `schema_meta` row claiming 4 at that moment would describe a store
+        # that did not exist. `pending` has already refused any file without the
+        # marker, so this cannot be `None` in practice.
+        produces = declared_version(sql)
+        if produces is None:  # pragma: no cover -- `pending` refuses these first
+            raise AdoptError(
+                ErrorCode.SCHEMA_MIGRATION_FAILED,
+                message=f"{path.name} carries no `{SCHEMA_VERSION_MARKER}` line",
+                hint="State the schema version this migration produces.",
+            )
         try:
-            target.apply_migration(sql, SCHEMA_VERSION, EXPORT_VERSION, written_by)
+            target.apply_migration(sql, produces, EXPORT_VERSION, written_by)
         except Exception as error:
             raise AdoptError(
                 ErrorCode.SCHEMA_MIGRATION_FAILED,

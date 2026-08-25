@@ -27,6 +27,7 @@ __all__ = [
     "EscalationChannel",
     "EscalationStatus",
     "FreshnessState",
+    "GapStatus",
     "HeartbeatOutcome",
     "IdentityKind",
     "IdentityStatus",
@@ -154,6 +155,12 @@ FreshnessState = Literal[
     "unverified",
     "retired",
     "observation_stale",
+]
+GapStatus = Literal[
+    "open",
+    "acknowledged",
+    "resolved",
+    "waived",
 ]
 HeartbeatOutcome = Literal[
     "success",

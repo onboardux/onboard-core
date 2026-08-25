@@ -68,6 +68,7 @@ from adopt_store.revisions import RevisionWriter
 from adopt_store.sqlite.records import (
     SqliteBindingRecords,
     SqliteBoundaryRecords,
+    SqliteCoverageGapRecords,
     SqliteCoverageRecords,
     SqliteEscalationRecords,
     SqliteExportRecords,
@@ -75,6 +76,7 @@ from adopt_store.sqlite.records import (
     SqliteIdentityRecords,
     SqliteImportRecords,
     SqliteKnowledgeRecords,
+    SqlitePackRecords,
     SqliteProbeRecords,
     SqliteReviewRecords,
     SqliteRevisionRecords,
@@ -245,6 +247,7 @@ class SqliteStoreHandle:
             lambda: GovernanceFacade(
                 SqliteReviewRecords(self.backend),
                 SqliteEscalationRecords(self.backend),
+                SqliteCoverageGapRecords(self.backend),
                 clock=self.clock,
             ),
         )
@@ -279,6 +282,10 @@ class SqliteStoreHandle:
     def sensor_records(self) -> SqliteSensorRecords:
         """The sensor port, for `doctor`'s NULL-cadence finding."""
         return self._cached("sensor_records", lambda: SqliteSensorRecords(self.backend))
+
+    def pack_records(self) -> SqlitePackRecords:
+        """The read port `adopt pack` assembles from (Build 4)."""
+        return self._cached("pack_records", lambda: SqlitePackRecords(self.backend))
 
     def export_records(self) -> SqliteExportRecords:
         """The read port `adopt_export.write_bundle` runs on."""

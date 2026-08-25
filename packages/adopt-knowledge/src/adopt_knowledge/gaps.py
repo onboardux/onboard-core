@@ -17,11 +17,39 @@ reshuffling underneath them.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Final, Protocol
 
 from adopt_identity import parse_uri
 
-__all__ = ["CoverageEntry", "Gap", "rank_gaps"]
+__all__ = ["GAP_KEY_SEPARATOR", "CoverageEntry", "Gap", "gap_key_for", "rank_gaps"]
+
+#: Separates the three parts of a `gap_key`. A pipe because it cannot occur in a
+#: canonical URI: every segment is percent-encoded by the builder, so a key can
+#: always be split back into its parts unambiguously.
+GAP_KEY_SEPARATOR: Final[str] = "|"
+
+
+def gap_key_for(uri: str) -> str:
+    """The deterministic key a disposition is recorded against.
+
+    v6.1 §6 Build 4 defines it as **identity URI + environment + kind**. The URI
+    already encodes both of the other two, so this is redundant by construction
+    -- and it is written the way the spec words it rather than shortened to the
+    URI alone, because the key is what a human copies out of a report and pastes
+    into `--ack`, and a key that names its environment and kind is one they can
+    check by eye before disposing of it.
+
+    Deterministic across runs and across machines: the same identity always
+    produces the same key, which is what lets a disposition survive
+    regeneration. An unparseable URI contributes `?` for the parts it could not
+    yield rather than raising -- a gap whose URI is malformed is still a gap,
+    and refusing to key it would remove it from the report entirely.
+    """
+    try:
+        parsed = parse_uri(uri)
+    except Exception:
+        return GAP_KEY_SEPARATOR.join((uri, "?", "?"))
+    return GAP_KEY_SEPARATOR.join((uri, parsed.environment, parsed.kind))
 
 
 class CoverageEntry(Protocol):
@@ -56,6 +84,11 @@ class Gap:
     @property
     def reason_count(self) -> int:
         return len(self.reasons)
+
+    @property
+    def gap_key(self) -> str:
+        """The key a disposition is recorded against (Build 4)."""
+        return gap_key_for(self.uri)
 
 
 def _kind_of(uri: str) -> str:

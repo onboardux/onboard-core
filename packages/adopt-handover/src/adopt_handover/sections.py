@@ -27,6 +27,7 @@ __all__ = [
     "UNVERIFIED_BANNER",
     "Section",
     "select",
+    "select_drafts",
     "stamp_for",
 ]
 
@@ -46,16 +47,16 @@ AUDIENCES: Final[tuple[str, ...]] = ("technical", "client_ops", "end_user", "adm
 #: a suffix: a reader who stops reading half way through a section must already
 #: have been told. v6.1 -- unverified content is "typographically unmistakable".
 #:
-#: The wording covers **both** ways a section is unverified (see `stamp_for`):
-#: no human has confirmed the content, or nothing has confirmed it is still
-#: true of the running system. Both mean the same thing to the person reading
-#: it -- do not treat this as checked -- and v6.1's stamp vocabulary is three
-#: values, so inventing a fourth to separate them would be a distinction the
-#: contract does not carry.
+#: It says exactly one thing -- *no human has confirmed this* -- because that is
+#: exactly what the stamp means (see `stamp_for`). An earlier wording covered a
+#: second case as well, and covering two cases is what made it worthless: it
+#: printed over human-written confirmed documents as readily as over drafts, so
+#: every section of every pack carried it and the word stopped distinguishing
+#: anything. A banner on everything is a banner on nothing.
 UNVERIFIED_BANNER: Final[str] = (
-    "> **UNVERIFIED — nothing has confirmed this section.**\n"
-    "> Either no human has approved it, or nothing has checked it against the "
-    "running system. Treat every statement in it as a proposal to verify."
+    "> **UNVERIFIED — no human has confirmed this section.**\n"
+    "> It was drafted or mined from what the system shows, and nobody has yet "
+    "agreed that it is true. Treat every statement in it as a proposal to verify."
 )
 
 #: Rendered above a stale body, for the same reason. The sentence is a **claim
@@ -67,11 +68,11 @@ STALE_BANNER: Final[str] = (
 )
 
 #: Freshness states that mean *something changed, or stopped being watched,
-#: under knowledge a human did confirm*. Everything outside this set and
-#: `fresh` is unverified rather than stale, which is not a nicety: the stale
-#: banner claims a change occurred, and printing it over an item that has
-#: simply never been observed is exactly the false-staleness noise v6.1 H5
-#: identifies as the thing that makes reviewers stop trusting the queue.
+#: under knowledge a human did confirm*. **Only these reach the stale banner**,
+#: which is not a nicety: that banner claims a change occurred, and printing it
+#: over an item nothing has ever observed is exactly the false-staleness noise
+#: v6.1 H5 identifies as what makes reviewers stop trusting the queue. Every
+#: other state on confirmed content is `fresh` -- see `stamp_for`.
 _STALE_FRESHNESS: Final[frozenset[str]] = frozenset({"stale", "observation_stale", "retired"})
 
 
@@ -130,32 +131,43 @@ SECTIONS: Final[tuple[Section, ...]] = (
 def stamp_for(revision: KnowledgeView, freshness: str) -> str:
     """The stamp one section carries. **Unverified always wins.**
 
-    Three inputs collapse to v6.1's three-value vocabulary, and the order is the
-    safety property:
+    Two inputs, two questions, and which one is asked first is the safety
+    property:
 
-    1. **A revision nobody confirmed is `unverified`**, whatever the freshness
-       resolution says. `resolve_freshness` answers *"has anything changed under
-       this?"* and an unconfirmed draft's problem is not staleness -- it is that
-       no human has ever agreed with it. Checking freshness first would let a
-       freshly-written draft render as `fresh`, which is precisely the sentence
-       v6.1 calls this build's worst failure. A missing marker counts as
-       unconfirmed: a verification that was never written is not a confirmation.
-    2. **`fresh` freshness on confirmed content is `fresh`.**
-    3. **Only a freshness state that means something actually changed is
-       `stale`.** The remaining states -- chiefly `unverified`, which is what a
-       store with no sensor observation reports -- are `unverified` too. This
-       distinction is not cosmetic: the stale banner *claims a change occurred*,
-       and printing it over knowledge that has simply never been checked
-       manufactures exactly the false staleness H5 identifies as the failure
-       that makes people stop trusting the queue. The honest sentence for
-       never-checked knowledge is "nothing has confirmed this", not "the system
-       changed".
+    1. **Did a human confirm this?** If not the stamp is `unverified`, whatever
+       the freshness resolution says. `resolve_freshness` answers a different
+       question -- *has anything changed under this?* -- and an unconfirmed
+       draft's problem is not staleness, it is that nobody has agreed with it.
+       Asking freshness first would let a draft written seconds ago render
+       `fresh`, which is the sentence v6.1 calls this build's worst failure. A
+       missing marker counts as unconfirmed: a verification that was never
+       written is not a confirmation.
+    2. **Has anything changed under it since?** Only a state that actually means
+       *something changed* is `stale`; everything else is `fresh`.
+
+    **The second half was wrong when S4.1 shipped it, and running the demo is
+    what showed it.** The rule then had a third branch: a confirmed revision
+    whose freshness was `unverified` -- which is *every* item in *every* store
+    before Build 5, because `knowledge_item.freshness_state` starts `unverified`
+    and only sensing ever moves it -- stamped `unverified` and carried the
+    banner. So a document a human wrote and confirmed rendered as unconfirmed,
+    every section of every pack was bannered, and demo line 3 (*confirm a draft,
+    watch it upgrade*) changed nothing a reader could see. A banner that appears
+    on everything distinguishes nothing, which makes it worse than absent: it
+    trains readers to skip the one line protecting them from a real draft.
+
+    What that branch was protecting is kept, and it is a different thing: the
+    **stale** banner claims the system changed, so a never-observed item must
+    not carry it. That is why `_STALE_FRESHNESS` is a membership test rather
+    than `!= fresh`. The correction is only about which of the two remaining
+    stamps a confirmed, unchanged item gets -- and in a three-value vocabulary
+    where `unverified` is false and `stale` is false, `fresh` is both the only
+    value left and the honest one: confirmed, and nothing has invalidated it.
+    The date rendered beside it says when.
     """
     if revision.verification != "verified":
         return UNVERIFIED
-    if freshness == FRESH:
-        return FRESH
-    return STALE if freshness in _STALE_FRESHNESS else UNVERIFIED
+    return STALE if freshness in _STALE_FRESHNESS else FRESH
 
 
 def banner_for(stamp: str) -> str | None:
@@ -190,4 +202,46 @@ def select(
         and revision.verification == "verified"
         and audience in revision.audiences
     ]
-    return tuple(sorted(chosen, key=lambda revision: (revision.title, revision.revision_id)))
+    return _ordered(chosen)
+
+
+def select_drafts(
+    section: Section, drafts: tuple[KnowledgeView, ...], audience: str
+) -> tuple[KnowledgeView, ...]:
+    """The **unverified drafts** a section renders, below its confirmed content.
+
+    Build 4's drafting half (v6.1 §6: drafts "rendered with UNVERIFIED stamps").
+    A separate function rather than a flag on `select`, and the separation is the
+    honesty invariant made structural: `select` is what "confirmed knowledge"
+    means everywhere in this package, and a boolean that relaxed it would be one
+    argument away from a pack that promoted every draft it found.
+
+    **The caller decides what a draft is.** This filters on kind, audience and
+    *not confirmed*; which revisions are drafts at all is the composition root's
+    answer, read from the `draft:` provenance a drafting run wrote. That matters:
+    a harvest candidate is also `unverified`, and it is review fodder rather than
+    handover content -- a filter that took every unverified revision would put
+    every unconfirmed commit in the client's document.
+
+    A confirmed draft leaves this set by itself. Confirming appends a `verified`
+    revision to the same item, so the head stops matching here and starts
+    matching `select` -- one item, one chain, and the stamp changes because the
+    revision did.
+    """
+    chosen = [
+        revision
+        for revision in drafts
+        if revision.kind in section.kinds
+        and revision.verification != "verified"
+        and audience in revision.audiences
+    ]
+    return _ordered(chosen)
+
+
+def _ordered(revisions: list[KnowledgeView]) -> tuple[KnowledgeView, ...]:
+    """By `(title, revision_id)` -- never by insertion order or by date.
+
+    The bytes must be a pure function of the revisions, and two revisions written
+    in the same millisecond would otherwise order by whatever the store returned.
+    """
+    return tuple(sorted(revisions, key=lambda revision: (revision.title, revision.revision_id)))

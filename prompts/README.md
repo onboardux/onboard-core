@@ -1,9 +1,12 @@
 # `prompts/` — immutable prompt versions
 
-AI spec §5, placed here by `03` §1.2 (CR-44). **Build 0 contains exactly one
-production prompt**, `detect-001@1`, and that ratio is deliberate: expensive and
+AI spec §5, placed here by `03` §1.2 (CR-44). **Build 0 contained exactly one
+production prompt**, `detect-001@1`, and that ratio was deliberate: expensive and
 non-deterministic work stays off the critical path, and the substrate is nothing
-but critical path.
+but critical path. Build 3 added `ask-001/v1` and Build 4 adds `draft-001/v1`;
+both are optional passes over work the deterministic path has already completed,
+so the ratio still holds where it matters -- nothing here is required for a
+command to produce its output.
 
 ## The layout
 
@@ -53,3 +56,35 @@ lets the offline and no-content-leaves-the-environment claims survive a security
 review **even when the flag is on** (AI spec §4). And whatever the model proposes,
 **a human must accept it before anything is written** — PRD §8 allows no confidence
 exemption.
+
+## `ask-001/v1`
+
+| | |
+|---|---|
+| Caller | `adopt_ask.synthesis.synthesize`, only when an answer already has citations and an adapter is configured |
+| Output schema | `{answer_md, cited_revision_ids}` |
+| Budget | `AGENT_ASK_MAX_USD` / `AGENT_ASK_MAX_WALL_SECONDS` (`03` §2.2) |
+| Sends | the question, and the passages the freshness check already approved |
+| Never sends | withheld unverified revisions, or anything the extractive answer would not have shown |
+
+**Nothing it produces is persisted.** Synthesis is a rendering: an ungrounded
+output is discarded and the extractive answer -- which is already complete --
+serves instead (critical semantic invariant #7).
+
+## `draft-001/v1`
+
+| | |
+|---|---|
+| Caller | `adopt_knowledge.drafting.draft_one`, from `adopt pack --draft-missing` and `adopt draft <uri>` |
+| Output schema | `{body_md, cited_facts, unknowns}` |
+| Budget | `AGENT_DRAFT_MAX_USD` / `AGENT_DRAFT_MAX_WALL_SECONDS` (`03` §2.2) |
+| Sends | one referent's canonical URI and kind, the facts the store already holds about it, and the audience |
+| Never sends | repository contents. Everything sent was already observed into the store by the deterministic mapper or written there by a human |
+
+**What it produces *is* persisted, and that is what makes it the strictest of the
+three.** A surviving draft lands as an `unverified` knowledge revision bound to
+its identity, so invariant #7's discard rule is the only thing between a
+fabricated citation and a client's handover pack. Every citation is checked
+against the exact fact set that was sent; one foreign key discards the whole
+draft. A landed draft renders with an UNVERIFIED banner and becomes confirmed
+only when a human confirms it in `adopt review`.

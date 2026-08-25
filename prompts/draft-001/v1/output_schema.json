@@ -1,0 +1,11 @@
+{
+  "type": "object", "additionalProperties": false,
+  "required": ["body_md", "cited_facts"],
+  "properties": {
+    "body_md":     { "type": "string", "maxLength": 4000 },
+    "cited_facts": { "type": "array", "maxItems": 24,
+                     "items": { "type": "string", "minLength": 1 } },
+    "unknowns":    { "type": "array", "maxItems": 12,
+                     "items": { "type": "string", "minLength": 1 } }
+  }
+}

@@ -25,6 +25,7 @@ from adopt_cli.commands import boundary as boundary_command
 from adopt_cli.commands import coverage as coverage_commands
 from adopt_cli.commands import detect as detect_command
 from adopt_cli.commands import doctor as doctor_command
+from adopt_cli.commands import draft as draft_command
 from adopt_cli.commands import freshness as freshness_commands
 from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import init as init_command
@@ -85,8 +86,14 @@ app.command("answer")(answer_commands.answer)
 app.command("serve")(serve_commands.serve)
 
 # Build 4. `pack` imports `adopt_handover` and the coverage recompute inside the
-# command body, so `adopt version` still pays for neither.
+# command body, so `adopt version` still pays for neither. `draft` is the
+# single-target door onto the same drafting pass `pack --draft-missing` runs in
+# bulk, and imports `adopt_knowledge.drafting` and the agent seam the same way --
+# so registering the model-calling verb costs `adopt version` one typer
+# signature and no adapter, which is what "offline by default" means at import
+# time as well as at run time.
 app.command("pack")(pack_commands.pack)
+app.command("draft")(draft_command.draft)
 
 # Registered as bare commands rather than a group: contracts §14 names them
 # `adopt export DIR` and `adopt import DIR`. `import` is a Python keyword, so the

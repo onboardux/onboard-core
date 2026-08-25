@@ -23,7 +23,14 @@ from adopt_handover.ports import (
     KnowledgeReader,
     KnowledgeView,
 )
-from adopt_handover.sections import SECTIONS, Section, banner_for, select, stamp_for
+from adopt_handover.sections import (
+    SECTIONS,
+    Section,
+    banner_for,
+    select,
+    select_drafts,
+    stamp_for,
+)
 
 __all__ = ["AssembledPack", "AssembledSection", "StampedRevision", "assemble"]
 
@@ -42,7 +49,14 @@ class StampedRevision:
 
 @dataclass(frozen=True, slots=True)
 class AssembledSection:
-    """One section, selected and stamped, ready to render."""
+    """One section, selected and stamped, ready to render.
+
+    Confirmed content and drafts arrive in **one** tuple, already ordered, and
+    the renderer cannot tell them apart -- it emits each body under the stamp it
+    was handed. That is deliberate: a renderer that knew which were drafts is a
+    renderer with a branch that could forget the banner. `stamp_for` decided
+    that, once, before any of these got here.
+    """
 
     section: Section
     revisions: tuple[StampedRevision, ...] = ()
@@ -54,6 +68,11 @@ class AssembledSection:
     @property
     def is_empty(self) -> bool:
         return not self.revisions
+
+    @property
+    def drafted(self) -> int:
+        """How many of them nobody has confirmed. For `--json`, never for bytes."""
+        return sum(1 for stamped in self.revisions if stamped.revision.verification != "verified")
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +97,7 @@ def assemble(
     freshness: FreshnessReader,
     boundary: BoundaryReader,
     gaps: tuple[GapView, ...],
+    drafts: tuple[KnowledgeView, ...] = (),
 ) -> AssembledPack:
     """Select, stamp and order everything the pack will contain.
 
@@ -90,6 +110,13 @@ def assemble(
             rather than read here because existence is `recompute_coverage()`'s
             answer and the join belongs to the composition root -- this module
             must not be able to produce a gap list of its own.
+        drafts: Unverified revisions a drafting run produced, to render **below**
+            each section's confirmed content under their UNVERIFIED banners
+            (Build 4, v6.1 §6). Passed separately from `knowledge` rather than
+            filtered out of it, because "which unverified revisions are drafts"
+            is a provenance question only the composition root can answer -- a
+            harvest candidate is unverified too and does not belong in a client's
+            document. Empty by default, so every no-model path is unchanged.
 
     Returns:
         An `AssembledPack` whose every ordering is deterministic, so `render`
@@ -102,7 +129,11 @@ def assemble(
         if not section.kinds:
             assembled.append(AssembledSection(section=section))
             continue
-        chosen = select(section, revisions, audience)
+        # Confirmed first, then drafts. The order is the reader's: what a human
+        # stands behind comes before what nobody has checked yet, and a section
+        # whose confirmed half is empty opens with the banner rather than
+        # burying it.
+        chosen = select(section, revisions, audience) + select_drafts(section, drafts, audience)
         assembled.append(
             AssembledSection(
                 section=section,

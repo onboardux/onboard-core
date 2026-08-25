@@ -614,12 +614,19 @@ jobs:
     # resolving to real revisions, and a gap disposition surviving an
     # `adopt map` rerun.
     #
-    # **Two demo lines are not here yet and their absence is deliberate.**
-    # `--draft-missing` and `--format docx` are S4.2's, and this job gains their
-    # legs in the sprint that builds them. What it asserts today is the half
-    # that must work with no model configured at all: R3 makes the no-model mode
-    # the product rather than a fallback, so no adapter is configured in this
-    # job and the journey checks that a complete pack still comes out.
+    # **All five demo lines run here** as of S4.2, including `--draft-missing`,
+    # the review confirm and `--format docx`.
+    #
+    # **The drafting leg opens no socket.** It drives the real `Runner` against
+    # the recorded fake adapter (kind `test`), configured per-test through the
+    # environment -- so the seam, the shipped prompt, the grounding check and the
+    # whole write path are exercised while the only thing scripted is the model's
+    # reply. No credential exists in this job and none is needed.
+    #
+    # **No adapter is configured for the job itself**, which is what keeps R3
+    # honest: the tests that assert a complete pack with no model in sight run in
+    # the same job as the ones that assert drafting works, so a change making the
+    # model mandatory goes red here rather than in the field.
     #
     # **A fixture repository rather than a pinned clone**, for `ask-journey`'s
     # reason: the assertions are about which knowledge a section selects, which
@@ -644,8 +651,24 @@ jobs:
         run: |
           git config --global user.name "adopt ci"
           git config --global user.email "ci@example.invalid"
+      # Pandoc is the demo's fourth line and is **installed here rather than
+      # vendored**: it is GPL-2.0-or-later, so `03` §7.3 permits it only across a
+      # process boundary, and a copy inside our artefact would be exactly the
+      # linking the policy forbids. `subprocess-deps.toml` declares the
+      # invocation site; this step is what makes the DOCX assertion run rather
+      # than skip. Typst is deliberately **not** installed: PDF is FR surface
+      # behind the identical wrapper and the demo does not name it, so its test
+      # skips here and the job stays a minute shorter.
+      - name: Install pandoc, the DOCX converter the demo's fourth line needs
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
       - name: The v6.1 §6 Build 4 demo, run literally
         run: uv run pytest tests/e2e/test_pack_journey.py -v
+      # The drafting invariant, separately and by name. It is in the unit suite
+      # the `unit` job already runs, and it is named again here because a job
+      # called "the Build 4 demo" that could go green while invariant #7 was
+      # broken would be a demo of the wrong thing.
+      - name: Invariant #7 for drafts -- ungrounded means nothing is written
+        run: uv run pytest tests/unit/test_drafting.py tests/unit/test_pack_derived.py -v
 
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)

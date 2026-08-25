@@ -32,6 +32,7 @@ second thing they never looked at.
 |---|---|---|
 | **suggestion** (`ingest:`) | "is this document about this identity?" | creates the binding rows |
 | **candidate** (`harvest:`) | "is this commit a real decision worth keeping?" | appends a `verified` revision |
+| **draft** (`draft:`) | "is this drafted section true of the system?" | appends a `verified` revision |
 
 A candidate already **has** its bindings -- its commit's files are structural
 evidence and bound at harvest (plan D4) -- so confirming one adds no link. A
@@ -40,6 +41,17 @@ human's own prose -- so confirming one appends no revision. Which population an
 item belongs to is read from `review_batch.batch_key`, whose prefix is stamped
 by whatever produced it; that is the field's declared job, and it is how Build 6
 and Build 8 will sit in this table without guessing about each other.
+
+**Build 4's drafts are the third population and they add no third mechanic.**
+A draft is `unverified` text bound to its identity at drafting time -- exactly a
+candidate's shape -- so it takes the candidate path unchanged: confirming
+appends a `verified`/`human_confirmed` revision and creates no binding. What
+`is_candidate` names is therefore not "came from harvest" but *"confirming this
+appends a revision"*, and it is spelled `_APPENDS_REVISION` so the next
+population is a membership decision rather than a new branch. The alternative --
+a `draft` branch beside the `harvest` branch doing the same thing -- is two
+places for the confirm rule to drift, and the drift would be silent: both
+branches would keep passing their own tests while meaning different things.
 
 **Editing is one mechanic for both**, and it is where `authored` becomes
 visible: `--edit` appends a `human_confirmed` revision whose provenance is
@@ -60,6 +72,7 @@ from adopt_model._enums import AuthorityClass, ReviewResolution, SourceType, Ver
 from adopt_obs import get_logger
 
 __all__ = [
+    "SOURCE_DRAFT",
     "SOURCE_HARVEST",
     "SOURCE_INGEST",
     "Outcome",
@@ -81,6 +94,18 @@ REJECTED: Final[ReviewResolution] = "rejected"
 #: thing that reads it, and adding a population means adding a prefix here.
 SOURCE_INGEST: Final[str] = "ingest"
 SOURCE_HARVEST: Final[str] = "harvest"
+#: Build 4's drafts. Duplicated from `drafting.DRAFT_PROVENANCE_PREFIX`'s family
+#: rather than imported, because `drafting` imports this module's writers and the
+#: cycle would be real -- and the string is the queue's vocabulary, which is this
+#: module's own to declare.
+SOURCE_DRAFT: Final[str] = "draft"
+
+#: Populations whose confirmation **appends a verified revision** rather than
+#: creating bindings. Membership, not a branch: a draft and a harvest candidate
+#: are the same shape to a reviewer -- unverified text already bound to what it
+#: is about -- so they take one code path, and the next population that fits
+#: joins by being added here.
+_APPENDS_REVISION: Final[frozenset[str]] = frozenset({SOURCE_HARVEST, SOURCE_DRAFT})
 
 #: A human looked at it and said yes, or wrote it themselves. Either way the
 #: authority is theirs and the provenance is `human` -- **never**
@@ -135,7 +160,12 @@ class PendingItem:
 
     @property
     def is_candidate(self) -> bool:
-        return self.source == SOURCE_HARVEST
+        """Whether confirming this item appends a revision.
+
+        The name is `02`'s and predates the draft population; what it means is
+        the predicate below, and the predicate is what `confirm` branches on.
+        """
+        return self.source in _APPENDS_REVISION
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,9 +216,9 @@ def confirm(
     already been confirmed once.
 
     Args:
-        knowledge: Required to confirm a **candidate**, which appends a
-            revision. Optional otherwise, so a caller resolving suggestions
-            need not hold a writer it will not use.
+        knowledge: Required for any population that **appends a revision** --
+            harvest candidates and Build 4's drafts. Optional otherwise, so a
+            caller resolving suggestions need not hold a writer it will not use.
 
     Returns:
         An `Outcome`. For a suggestion, the bindings actually created -- which
@@ -202,7 +232,7 @@ def confirm(
     if item.is_candidate:
         if knowledge is None:  # pragma: no cover -- a wiring mistake, not a state
             raise ValueError(
-                "confirming a harvest candidate appends a verified revision, so it "
+                f"confirming a {item.source!r} item appends a verified revision, so it "
                 "needs a knowledge writer. Pass one, or the confirmation would stamp "
                 "the queue and leave the knowledge unverified."
             )
@@ -302,6 +332,14 @@ def reject(
     revision it already had -- the mining happened and the record of it is
     evidence -- and stays unverified forever, so it never counts toward
     coverage and is never served as canon.
+
+    **A rejected draft is the same, and the consequence is worth naming**: the
+    revision stays in the store, stays `unverified`, and therefore keeps
+    rendering into the pack under its UNVERIFIED banner. That is the honest
+    outcome rather than an oversight -- a reviewer saying "this is wrong" is a
+    fact about the draft, not a reason to pretend it was never written -- and
+    Build 8's fix drafting is what supersedes it. Deleting it here would be the
+    only delete path in a store that has none.
     """
     reviews.resolve(review_item_id=item.review_item_id, resolution=REJECTED)
     _log.info("review.rejected", review_item=item.review_item_id, batch=item.review_batch_id)

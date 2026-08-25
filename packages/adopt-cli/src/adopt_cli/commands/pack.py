@@ -5,10 +5,17 @@ Builds 1-3 do it: v6.1 §2.1 requires new verbs to register lazily so
 `CLI_COLD_START_MS` holds, and `adopt version` must not pay for an assembler it
 never runs.
 
-The command writes two files and no store rows. Gap dispositions go through
-`adopt gaps`, and Build 4's drafting is S4.2's work -- so there is no path here
-that changes what the pack is assembled from, which is what lets the same store
-render the same bytes twice.
+**Assembly writes no store rows and never will.** `--draft-missing` does write --
+it is the drafting pass -- and it runs strictly *before* assembly, in its own
+step, so the pack that is rendered is a pure reading of the store as it stands
+after drafting finished. That ordering is what keeps the byte-stability claim
+true: the renderer is handed a store, never a store plus something in flight.
+
+**No adapter means no drafting and a complete pack anyway** (v6.1 R3). The flag
+reports that it drafted nothing and names the configuration that would let it;
+the Markdown, the sidecar and every stamp are identical to a run that never
+passed the flag. A capability that degraded into an error would make the model
+a dependency, which is the thing R3 forbids.
 """
 
 from pathlib import Path
@@ -32,6 +39,22 @@ OutOption = Annotated[
     Path,
     typer.Option("--out", help="Directory to write the pack into. Created if absent."),
 ]
+FormatOption = Annotated[
+    str,
+    typer.Option(
+        "--format",
+        help="md (canonical), docx (via pandoc) or pdf (via typst). Derived formats are "
+        "content-equivalent conversions of the Markdown, never canon.",
+    ),
+]
+DraftMissingOption = Annotated[
+    bool,
+    typer.Option(
+        "--draft-missing",
+        help="Draft uncovered sections through the configured model adapter. Drafts land "
+        "UNVERIFIED and must be confirmed in `adopt review` before they count.",
+    ),
+]
 ScopeOption = Annotated[
     str | None,
     typer.Option("--scope", help="firm/engagement/system/environment. Defaults to the store's."),
@@ -43,6 +66,8 @@ JsonOption = Annotated[bool, typer.Option("--json", help="Machine-readable outpu
 def pack(
     audience: AudienceOption = "technical",
     out: OutOption = Path("./handover"),
+    format_name: FormatOption = "md",
+    draft_missing: DraftMissingOption = False,
     scope: ScopeOption = None,
     store: StoreOption = None,
     json_output: JsonOption = False,
@@ -56,15 +81,26 @@ def pack(
 
     The Markdown is byte-stable given the same revisions -- no clock reaches it,
     so running this twice over an unchanged store produces identical files.
+    With `--draft-missing`, uncovered identities are drafted first and render
+    under UNVERIFIED banners until a human confirms them.
     """
-    from adopt_handover import assemble, render, render_sidecar
+    from adopt_handover import assemble, convert, converter_for, render, render_sidecar
     from adopt_knowledge import rank_gaps
 
     from adopt_cli.commands import _pack_support as support
     from adopt_cli.commands._map_support import resolve_scope
     from adopt_coverage import recompute_coverage
 
-    handle = open_configured_store(store)
+    # Resolved before the store is opened: an unknown `--format` must refuse
+    # before anything is written, not after a pack is on disk.
+    converter = converter_for(format_name)
+    if converter is not None and not out:  # pragma: no cover -- `--out` has a default
+        raise typer.BadParameter("--format needs --out: a derived file has to go somewhere.")
+
+    # Drafting writes; assembling does not. The store is opened writable only
+    # when the flag asked for it, so an ordinary `adopt pack` cannot modify a
+    # store even if something below it tried to.
+    handle = open_configured_store(store, read_only=not draft_missing)
     try:
         resolved = resolve_scope(handle, scope)
         if resolved.system is None:
@@ -76,6 +112,22 @@ def pack(
         system_id = str(resolved.system.id)
         environment_id = str(resolved.environment.id) if resolved.environment is not None else None
 
+        drafting = None
+        if draft_missing:
+            from adopt_cli.commands._drafting import draft_gaps
+
+            drafting = draft_gaps(
+                handle,
+                scope=resolved,
+                audience=audience,
+                system_id=system_id,
+                environment_id=environment_id,
+            )
+
+        # Recomputed **after** drafting, deliberately. Drafts are unverified, so
+        # they change no coverage number and the gap appendix is identical
+        # either way -- and computing it afterwards is what makes that a fact
+        # the command demonstrates rather than a claim the docstring makes.
         coverage = recompute_coverage(handle.coverage_records(), system_id, environment_id)
         covered = frozenset(row.identity_id for row in coverage.identities if row.covered)
         ranked = rank_gaps(coverage.identities)
@@ -93,6 +145,7 @@ def pack(
                 handle, system_id=system_id, environment_id=environment_id
             ),
             gaps=support.build_gaps(ranked, handle.governance().gap_dispositions()),
+            drafts=support.build_drafts(handle, system_id=system_id, environment_id=environment_id),
         )
         document = render(assembled)
         lineage = render_sidecar(assembled)
@@ -108,7 +161,16 @@ def pack(
     markdown_path.write_text(document, encoding="utf-8", newline="\n")
     sidecar_path.write_text(lineage, encoding="utf-8", newline="\n")
 
-    emit(_payload(assembled, markdown_path, sidecar_path), as_json=json_output, title="adopt pack")
+    payload = _payload(assembled, markdown_path, sidecar_path)
+    if converter is not None:
+        derived_path = out / f"{audience}.{converter.format}"
+        payload["derived"] = str(derived_path)
+        payload["derived_with"] = convert(markdown_path, derived_path, converter)
+
+    if drafting is not None:
+        payload["drafting"] = drafting
+
+    emit(payload, as_json=json_output, title="adopt pack")
 
 
 def _payload(assembled: Any, markdown_path: Path, sidecar_path: Path) -> dict[str, Any]:
@@ -127,6 +189,7 @@ def _payload(assembled: Any, markdown_path: Path, sidecar_path: Path) -> dict[st
                 # The stamps actually rendered, so `--json` shows an operator
                 # that a section went out unverified without reading the file.
                 "stamps": sorted({stamped.stamp for stamped in section.revisions}),
+                "unverified": section.drafted,
             }
             for section in assembled.sections
         ],

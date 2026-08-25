@@ -19,4 +19,22 @@
 #   invocation_site = "adopt_extract/ctags.py:run_ctags"
 #   reason = "Symbol extraction for languages without a tree-sitter grammar."
 
-subprocess = []
+# Build 4 (v6.1 §6) declares the first two. `adopt pack --format docx|pdf`
+# converts the canonical Markdown with an external binary; neither is imported,
+# neither is linked, and neither is bundled. Pandoc is the one the policy is
+# actually about -- GPL-2.0-or-later, which `03` §7.3 forbids in-binary
+# absolutely -- and typst is recorded on the same terms despite being permissive,
+# because the declaration is about *how it is invoked* and a rule that only
+# applied to copyleft tools would be a rule nobody applied to the next one.
+
+[[subprocess]]
+name = "pandoc"
+licence = "GPL-2.0-or-later"
+invocation_site = "adopt_handover/derived.py:convert"
+reason = "Markdown -> DOCX for `adopt pack --format docx` (v6.1 §6 Build 4 demo line 4). Derived, content-equivalent output; never read back into the store."
+
+[[subprocess]]
+name = "typst"
+licence = "Apache-2.0"
+invocation_site = "adopt_handover/derived.py:convert"
+reason = "Markdown -> PDF for `adopt pack --format pdf`. Same seam as pandoc; tool-optional and not installed in CI."

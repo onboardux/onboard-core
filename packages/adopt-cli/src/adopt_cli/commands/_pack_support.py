@@ -16,7 +16,14 @@ from typing import Any
 
 from adopt_handover import PackBoundary, PackGap, PackIdentity, PackKnowledge
 
-__all__ = ["FreshnessCache", "build_boundary", "build_gaps", "build_identities", "build_knowledge"]
+__all__ = [
+    "FreshnessCache",
+    "build_boundary",
+    "build_drafts",
+    "build_gaps",
+    "build_identities",
+    "build_knowledge",
+]
 
 
 class FreshnessCache:
@@ -88,6 +95,33 @@ def build_knowledge(handle: Any, *, system_id: str, environment_id: str | None) 
         )
     ]
     return _Reader(tuple(rows))
+
+
+def build_drafts(handle: Any, *, system_id: str, environment_id: str | None) -> tuple[Any, ...]:
+    """The **unverified drafts** in scope, for the pack's draft sections.
+
+    A subset of `build_knowledge`'s rows rather than a second query: the pack
+    renders drafts through the same view type, the same stamp rule and the same
+    renderer as confirmed content, and the only thing that differs is which set
+    a revision is in.
+
+    **Membership is a provenance question**, and that is why it is answered here
+    rather than in `adopt_handover`. `verification != verified` alone would sweep
+    in every harvest candidate -- unconfirmed commits mined from local history,
+    which are review fodder and have no business in a client's handover
+    document. What distinguishes a draft is the `draft:` provenance row a
+    drafting run wrote in the same transaction as the revision.
+    """
+    from adopt_cli.commands._draft_support import draft_revision_ids
+
+    drafts = draft_revision_ids(handle)
+    return tuple(
+        row
+        for row in build_knowledge(
+            handle, system_id=system_id, environment_id=environment_id
+        ).knowledge_for_pack()
+        if row.revision_id in drafts and row.verification != "verified"
+    )
 
 
 def build_identities(

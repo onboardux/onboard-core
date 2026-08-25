@@ -238,6 +238,13 @@ Audience-scoped handover materials, assembled from the store.
 adopt pack --audience client_ops --out ./handover
 # -> handover/client_ops.md           the pack
 #    handover/client_ops.lineage.json section -> the revisions it came from
+
+adopt pack --audience client_ops --out ./handover --draft-missing
+# -> uncovered sections drafted through the configured model adapter,
+#    landed as UNVERIFIED knowledge and queued in `adopt review`
+
+adopt pack --audience client_ops --out ./handover --format docx
+# -> handover/client_ops.docx via pandoc; content-equivalent, never canon
 ```
 
 Sections select **confirmed** knowledge by audience tag and kind; the map
@@ -245,10 +252,10 @@ contributes the inventory; the coverage join contributes the gap appendix; the
 observability boundary is embedded so the pack states its own limits.
 
 Every section carries a stamp and a date. `fresh` means a human confirmed it and
-nothing has changed under it; `stale` means something has; `unverified` means
-nothing has confirmed it — either no human approved it, or nothing has checked
-it against the running system. Unverified and stale sections carry a banner above
-the body, not a footnote after it.
+nothing has changed under it; `stale` means something has changed under it since;
+`unverified` means **no human has confirmed it** — a draft, or a candidate mined
+from history. Unverified and stale sections carry a banner above the body, not a
+footnote after it.
 
 **The Markdown is byte-stable given the same revisions.** No clock reaches it:
 every date comes from a revision's own timestamp, so regenerating a pack over an
@@ -256,8 +263,43 @@ unchanged store produces identical bytes and a diff shows only what actually
 changed. Write it outside the repository, or gitignore it — `adopt map` walks
 the tree, and a pack left inside becomes source on the next run.
 
-Assembly needs no model. Sections with no confirmed knowledge say so rather than
-disappearing; drafting them is a later build's work.
+**Assembly needs no model, and that stays true with `--draft-missing`.** Without
+a configured adapter the flag drafts nothing, says so, and writes the same
+complete pack — sections with no confirmed knowledge state that rather than
+disappearing. A model is an improvement to this command, never a dependency of
+it.
+
+### `adopt draft`
+
+One section, on request, from what the store already knows.
+
+```sh
+adopt draft 'onboard-v1://acme/erp/orders/prod/endpoint/-/POST %2Fv1%2Forders'
+```
+
+The same grounded pass `--draft-missing` runs in bulk, aimed at one identity.
+Both need a configured adapter (`ADOPT_ADAPTER`, `ADOPT_MODEL`) and both are
+bounded by `AGENT_DRAFT_MAX_USD` and `AGENT_DRAFT_MAX_WALL_SECONDS`.
+
+**A draft is grounded or it does not exist.** The model is sent only facts the
+store already holds — the identity's attributes, where each was observed, and
+any knowledge already bound to it — and it must cite the ones it used. A draft
+citing nothing, or citing a fact that was not sent, is **discarded whole**:
+nothing is written, and the identity stays in the gap appendix where it was.
+No file in your repository is opened at draft time.
+
+**What lands is unverified.** A surviving draft is a knowledge revision marked
+`unverified`, bound to its identity, and queued in `adopt review` beside
+harvest candidates. It renders into the pack under an UNVERIFIED banner, it
+counts toward no coverage, and `adopt ask` never serves it as a known answer.
+
+```sh
+adopt review                       # drafts appear here, source `draft`
+adopt review --confirm <item-id>   # appends a verified revision
+```
+
+Confirming is the only thing that promotes a draft, and it is always a person.
+The next pack renders that section without the banner.
 
 ### `adopt gaps`
 

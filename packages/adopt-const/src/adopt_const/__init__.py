@@ -202,6 +202,46 @@ AGENT_DETECT_MAX_WALL_SECONDS: Final[int] = 30
 AGENT_ASK_MAX_USD: Final[float] = 0.02
 AGENT_ASK_MAX_WALL_SECONDS: Final[int] = 15
 
+#: The `draft-001` handover-drafting pass's budget. **Larger than the ask pass
+#: and equal to the detect pass**, because drafting is the one generation path
+#: whose output is *persisted*: it runs in a batch nobody is watching, it writes
+#: a knowledge revision a human will later read, and a draft abandoned half way
+#: through its budget costs the run a section rather than costing a reader a
+#: prettier paragraph. Separate constants from `AGENT_DETECT_*` despite sharing
+#: both values today, for `AGENT_ASK_*`'s reason: they are bounded by different
+#: things -- disambiguation runs once per repository, this runs once per
+#: uncovered identity -- and two literals that happen to agree are two literals
+#: that silently disagree the first time one moves.
+AGENT_DRAFT_MAX_USD: Final[float] = 0.05
+AGENT_DRAFT_MAX_WALL_SECONDS: Final[int] = 30
+
+#: How many drafts one `adopt pack --draft-missing` invocation may generate.
+#:
+#: **A cap on spend per command, not a cap on the work.** A store with four
+#: hundred uncovered identities would otherwise make one flag press four hundred
+#: model calls, which is a bill an FDE did not agree to and a wait nobody sits
+#: through. The gap list is ranked deterministically, so the same twenty are
+#: drafted first and a second run continues rather than repeating: an identity
+#: that already carries an unverified draft is skipped, so the cap advances
+#: through the queue instead of re-drafting its head.
+DRAFT_MAX_PER_RUN: Final[int] = 20
+
+#: How much of one bound revision's body travels into a drafting prompt. A
+#: runbook bound to the same identity is evidence for a draft about it; the whole
+#: of one is not, and a store with three long documents on one endpoint would
+#: spend `AGENT_DRAFT_MAX_USD` on prose the model was only meant to summarise
+#: around. Truncation is visible in the fact text, so the model is never told a
+#: fragment is the whole.
+DRAFT_FACT_BODY_MAX_CHARS: Final[int] = 1_200
+
+#: How long `adopt pack --format docx|pdf` lets its converter run before killing
+#: it. A converter that has not finished a handover pack in two minutes is wedged
+#: rather than slow, and a subprocess with no timeout is how a CI job hangs until
+#: its own budget kills it with no message naming what it was waiting for.
+#: Shares its value with `AGENT_DEFAULT_MAX_WALL_SECONDS` and shares nothing
+#: else -- one bounds a model call, the other a local document conversion.
+PACK_CONVERT_TIMEOUT_SECONDS: Final[int] = 120
+
 #: How many tree entries the `detect-001` prompt's bounded listing may carry --
 #: the `{listing_limit}` placeholder in AI spec §5.1's user template.
 #:

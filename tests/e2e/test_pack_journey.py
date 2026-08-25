@@ -10,10 +10,17 @@ catches it because* every unit test in this suite hands `assemble` values it
 constructed; only this one proves the CLI reads a real store, resolves real
 freshness and writes real files.
 
-**Two demo lines are S4.2's and are deliberately absent**: `--draft-missing` and
-`--format docx`. They are asserted here only in the negative -- the no-model
-pack must be complete without them (R3) -- and the sprint that builds them adds
-their legs to this file.
+**All five demo lines run here** as of S4.2. The drafting leg drives the real
+`Runner` against the recorded fake adapter (kind `test`), so the seam, the
+prompt, the grounding check and the whole write path are exercised and only the
+model's reply is scripted -- no network, no credential, no provider. The DOCX
+leg skips when pandoc is absent, which is the honest treatment of a tool the CI
+job installs and a laptop does not.
+
+**The no-model assertions stay.** R3 makes a pack with no adapter a complete
+product, so the tests that prove it run in the same file as the ones that prove
+drafting works -- the two are not alternatives, and a change that made drafting
+mandatory would go red here rather than in the field.
 
 **Every step goes through the CLI as a subprocess**, the same entry-point module
 the release binary compiles (CR-56), and assertions read the store file directly
@@ -22,6 +29,7 @@ vouch for it.
 """
 
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -366,3 +374,315 @@ def test_unverified_knowledge_never_counts_as_coverage(journey: dict[str, Any]) 
     )
     assert payload["gaps"] == len(listed["gaps"])
     assert listed["uncovered"] == len(listed["gaps"])
+
+
+# -- demo lines 2-4: drafting, review, derived format ------------------------
+
+
+def _fake_adapter(journey: dict[str, Any], *turns: dict[str, Any]) -> dict[str, str]:
+    """Environment for a run whose model is the recorded fake.
+
+    The whole configuration is three variables and a file: no credential, no
+    network, no provider. `ADOPT_OFFLINE` stays at its default -- the fake is
+    adapter kind `test`, which the seam permits offline precisely so a journey
+    like this one can exercise the door without opening it.
+    """
+    endpoint = journey["checkout"].parent / "recorded.json"
+    endpoint.write_text(
+        json.dumps(
+            {
+                "turns": [
+                    {
+                        "text": json.dumps(turn),
+                        "tool_calls": [],
+                        "input_tokens": 10,
+                        "output_tokens": 5,
+                    }
+                    for turn in turns
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "ADOPT_ADAPTER": "fake_recorded",
+        "ADOPT_ADAPTER_ENDPOINT": str(endpoint),
+        "ADOPT_PROMPTS_DIR": str(Path(__file__).resolve().parents[2] / "prompts"),
+    }
+
+
+def _run_with(env: dict[str, str], *argv: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(ENTRY_POINT), *argv],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=str(cwd),
+        env={**os.environ, **env},
+    )
+
+
+def _first_gap_uri(journey: dict[str, Any]) -> str:
+    listed = _payload(
+        _run("gaps", "--store", str(journey["store"]), "--json", cwd=journey["checkout"])
+    )
+    return str(listed["gaps"][0]["uri"])
+
+
+def _draft_missing(
+    journey: dict[str, Any], env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    return _run_with(
+        env,
+        "pack",
+        "--audience",
+        AUDIENCE,
+        "--out",
+        str(journey["out"]),
+        "--store",
+        str(journey["store"]),
+        "--draft-missing",
+        "--json",
+        cwd=journey["checkout"],
+    )
+
+
+def test_draft_missing_lands_unverified_knowledge_the_pack_banners(
+    journey: dict[str, Any],
+) -> None:
+    """`adopt pack --audience client_ops --draft-missing`, the demo's second line.
+
+    *Fails when* drafting stops writing, stops binding, or -- worst -- writes
+    something the pack then renders without its banner. *Matters because* this
+    is H3's whole claim: the human never authors from blank, **and** a client
+    can never mistake a draft for verified truth. *No other instrument catches
+    it because* the unit tests hand `assemble` values they built; only this one
+    proves the CLI drafts through the real seam and renders what it wrote.
+    """
+    uri = _first_gap_uri(journey)
+    env = _fake_adapter(
+        journey,
+        {"body_md": "This is drafted from what the map observed.", "cited_facts": [uri]},
+    )
+
+    drafted = _draft_missing(journey, env)
+    assert drafted.returncode == ExitCode.SUCCESS, drafted.stderr
+    payload = _payload(drafted)
+
+    assert payload["drafting"]["available"] is True
+    assert payload["drafting"]["drafted"] == 1, payload["drafting"]["outcomes"][:4]
+
+    # Landed unverified and authored, read straight out of the store file.
+    rows = _sql(
+        journey["store"],
+        "SELECT verification, authority_class FROM knowledge_revision "
+        "WHERE created_by_actor_id = 'adopt-draft'",
+    )
+    assert rows == [("unverified", "human_confirmed")]
+
+    # Bound to its identity, so a change to that identity stales the draft.
+    bound = _sql(
+        journey["store"],
+        "SELECT COUNT(*) FROM binding b JOIN knowledge_revision kr ON kr.item_id = b.item_id "
+        "WHERE kr.created_by_actor_id = 'adopt-draft'",
+    )
+    assert bound[0][0] == 1
+
+    # And rendered with the banner. This is the assertion the build exists for.
+    document = (journey["out"] / f"{AUDIENCE}.md").read_text(encoding="utf-8")
+    assert "UNVERIFIED" in document
+    assert "This is drafted from what the map observed." in document
+    assert "*Status:* **unverified**" in document
+
+
+def test_an_ungrounded_draft_is_discarded_and_the_store_is_untouched(
+    journey: dict[str, Any],
+) -> None:
+    """Invariant #7, through the command an FDE actually types.
+
+    *Fails when* a draft citing nothing still reaches the store. *Matters
+    because* every other assertion about drafting assumes the discard holds; if
+    it does not, the product writes a model's unsourced prose into a client's
+    handover pack and stamps it. *No other instrument catches it because* the
+    command exits zero and reports a pack either way.
+    """
+    env = _fake_adapter(journey, {"body_md": "Orders are processed nightly.", "cited_facts": []})
+
+    completed = _draft_missing(journey, env)
+    assert completed.returncode == ExitCode.SUCCESS, completed.stderr
+
+    assert _payload(completed)["drafting"]["drafted"] == 0
+    assert (
+        _sql(
+            journey["store"],
+            "SELECT COUNT(*) FROM knowledge_revision WHERE created_by_actor_id = 'adopt-draft'",
+        )[0][0]
+        == 0
+    )
+
+
+def test_draft_missing_without_an_adapter_still_writes_a_complete_pack(
+    journey: dict[str, Any],
+) -> None:
+    """R3, at its sharpest: the flag is passed and no model exists.
+
+    *Fails when* `--draft-missing` becomes an error without an adapter. *Matters
+    because* R3 makes the no-model mode complete rather than degraded -- a
+    capability that turned into a failure would make the model a dependency of
+    the handover pack, which is the thing v6.1 forbids outright. *No other
+    instrument catches it because* every drafting test configures an adapter.
+    """
+    payload = _pack(journey, "--draft-missing")
+
+    assert payload["drafting"]["available"] is False
+    assert payload["drafting"]["drafted"] == 0
+    document = (journey["out"] / f"{AUDIENCE}.md").read_text(encoding="utf-8")
+    assert document.startswith("# Handover pack")
+
+
+def test_a_confirmed_draft_upgrades_to_confirmed_and_fresh(journey: dict[str, Any]) -> None:
+    """`adopt review` -> confirm, the demo's third line.
+
+    *Fails when* confirming a draft leaves it unverified, or when the next pack
+    still banners it. *Matters because* the confirm is the only thing in this
+    product that turns generated text into canon (D11), and the pack is where
+    that promotion becomes visible to a client. *No other instrument catches it
+    because* the review command reports `confirmed` whatever the revision says.
+    """
+    uri = _first_gap_uri(journey)
+    env = _fake_adapter(journey, {"body_md": "Drafted from the map.", "cited_facts": [uri]})
+    assert _draft_missing(journey, env).returncode == ExitCode.SUCCESS
+
+    queue = _payload(
+        _run("review", "--store", str(journey["store"]), "--json", cwd=journey["checkout"])
+    )
+    drafts = [row for row in queue["queue"] if row["source"] == "draft"]
+    assert len(drafts) == 1, "the draft did not appear in the one review queue"
+
+    confirmed = _run(
+        "review",
+        "--confirm",
+        drafts[0]["review_item"],
+        "--store",
+        str(journey["store"]),
+        "--json",
+        cwd=journey["checkout"],
+    )
+    assert confirmed.returncode == ExitCode.SUCCESS, confirmed.stderr
+
+    after = _pack(journey)
+    document = (journey["out"] / f"{AUDIENCE}.md").read_text(encoding="utf-8")
+    assert "Drafted from the map." in document
+    runbook = next(row for row in after["sections"] if row["section"] == "runbook")
+    assert runbook["unverified"] == 0, "a confirmed draft still rendered as unverified"
+    assert "fresh" in runbook["stamps"]
+
+
+def test_adopt_draft_drafts_one_named_identity(journey: dict[str, Any]) -> None:
+    """`adopt draft <uri>` -- the single-target door onto the same pass.
+
+    *Fails when* the verb drafts the wrong identity, or drafts nothing. *Matters
+    because* the bulk pass is ranked and capped, and an FDE who knows which
+    endpoint needs writing up should not have to wait for it to come up the
+    queue. *No other instrument catches it because* `--draft-missing` would keep
+    passing with this verb entirely broken.
+    """
+    uri = _first_gap_uri(journey)
+    env = _fake_adapter(journey, {"body_md": "One section, on request.", "cited_facts": [uri]})
+
+    completed = _run_with(
+        env,
+        "draft",
+        uri,
+        "--audience",
+        AUDIENCE,
+        "--store",
+        str(journey["store"]),
+        "--json",
+        cwd=journey["checkout"],
+    )
+    assert completed.returncode == ExitCode.SUCCESS, completed.stderr
+
+    payload = _payload(completed)
+    assert payload["drafted"] == 1
+    assert payload["outcomes"][0]["uri"] == uri
+
+
+def test_adopt_draft_refuses_an_unmapped_uri(journey: dict[str, Any]) -> None:
+    """A URI no identity carries is a usage error, not an empty success."""
+    completed = _run(
+        "draft",
+        f"onboard-v1://{SCOPE}/endpoint/-/GET %2Fnope",
+        "--store",
+        str(journey["store"]),
+        "--json",
+        cwd=journey["checkout"],
+    )
+
+    assert completed.returncode == ExitCode.USAGE_ERROR
+    assert "BIND_TARGET_NOT_FOUND" in completed.stdout + completed.stderr
+
+
+def test_drafting_changes_no_coverage_number(journey: dict[str, Any]) -> None:
+    """Build 2's honesty invariant against the build most likely to break it.
+
+    *Fails when* an unverified draft starts counting as coverage. *Matters
+    because* drafting writes a bound knowledge item for every gap it touches --
+    the exact shape coverage counts -- so the only thing keeping `adopt gaps`
+    honest is the verification filter. If it slipped, one `--draft-missing`
+    would close every gap in the report without a human reading a word. *No
+    other instrument catches it because* both numbers would agree with each
+    other and with the store; they would just be false.
+    """
+    before = _payload(
+        _run("gaps", "--store", str(journey["store"]), "--json", cwd=journey["checkout"])
+    )
+    uri = str(before["gaps"][0]["uri"])
+    env = _fake_adapter(journey, {"body_md": "Drafted.", "cited_facts": [uri]})
+    assert _draft_missing(journey, env).returncode == ExitCode.SUCCESS
+
+    after = _payload(
+        _run("gaps", "--store", str(journey["store"]), "--json", cwd=journey["checkout"])
+    )
+    assert after["uncovered"] == before["uncovered"]
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc is not installed")
+def test_the_docx_is_content_equivalent(journey: dict[str, Any]) -> None:
+    """`adopt pack --audience client_ops --format docx`, the demo's fourth line.
+
+    Structural, not byte-wise: v6.1 says derived formats are content-equivalent,
+    and two pandoc releases produce different bytes from one input.
+    """
+    payload = _pack(journey, "--format", "docx")
+    target = Path(payload["derived"])
+
+    assert target.exists()
+    assert payload["derived_with"], "the converter version was not recorded"
+    assert (journey["out"] / f"{AUDIENCE}.md").exists(), "the canonical pack was not written"
+
+
+def test_an_unknown_format_is_refused_before_anything_is_written(
+    journey: dict[str, Any],
+) -> None:
+    """*Fails when* a bad `--format` is discovered after the pack is on disk.
+    *Matters because* the refusal is only useful before the side effect: an
+    operator who mistypes should get a message, not a directory that looks
+    half-finished."""
+    completed = _run(
+        "pack",
+        "--audience",
+        AUDIENCE,
+        "--out",
+        str(journey["out"] / "epub"),
+        "--format",
+        "epub",
+        "--store",
+        str(journey["store"]),
+        "--json",
+        cwd=journey["checkout"],
+    )
+
+    assert completed.returncode == ExitCode.USAGE_ERROR
+    assert "PACK_RENDERER_MISSING" in completed.stdout + completed.stderr
+    assert not (journey["out"] / "epub").exists()

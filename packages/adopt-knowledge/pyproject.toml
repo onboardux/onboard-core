@@ -21,7 +21,13 @@ authors = [{ name = "The Adopt Authors" }]
 #
 # `pyyaml` is here for document frontmatter, which is the only YAML ingest
 # reads. No parser beyond the standard library and this one.
+# `adopt-agent` arrives with Build 4's `drafting` module -- the one place in
+# either repository where a model's words are persisted. It is the seam, not a
+# provider: `no-provider-sdk` still forbids every SDK, and this package reaches
+# a model only through a `Runner` the CLI hands it, so a caller with no adapter
+# simply never calls it (R3's no-model mode is an absent argument, not a flag).
 dependencies = [
+    "adopt-agent",
     "adopt-const",
     "adopt-identity",
     "adopt-model",

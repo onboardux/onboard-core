@@ -20,6 +20,7 @@ Four modules, one direction:
     assemble  the query: select, stamp, order -> AssembledPack
     render    AssembledPack -> byte-stable Markdown
     sidecar   AssembledPack -> lineage JSON for Build 8
+    derived   Markdown -> DOCX/PDF through a pinned subprocess (Build 4 S4.2)
 
 Rendering is a pure function of `AssembledPack`, and `AssembledPack` carries no
 clock. That is what makes a pack byte-stable given the same revisions, which
@@ -32,6 +33,7 @@ from adopt_handover.assemble import (
     StampedRevision,
     assemble,
 )
+from adopt_handover.derived import FORMATS, MARKDOWN, Converter, convert, converter_for
 from adopt_handover.ports import (
     BoundaryReader,
     BoundaryView,
@@ -53,6 +55,7 @@ from adopt_handover.sections import (
     Section,
     banner_for,
     select,
+    select_drafts,
     stamp_for,
 )
 from adopt_handover.sidecar import render_sidecar
@@ -60,7 +63,9 @@ from adopt_handover.views import PackBoundary, PackGap, PackIdentity, PackKnowle
 
 __all__ = [
     "AUDIENCES",
+    "FORMATS",
     "FRESH",
+    "MARKDOWN",
     "SECTIONS",
     "STALE",
     "UNVERIFIED",
@@ -69,6 +74,7 @@ __all__ = [
     "AssembledSection",
     "BoundaryReader",
     "BoundaryView",
+    "Converter",
     "FreshnessReader",
     "GapView",
     "IdentityReader",
@@ -83,8 +89,11 @@ __all__ = [
     "StampedRevision",
     "assemble",
     "banner_for",
+    "convert",
+    "converter_for",
     "render",
     "render_sidecar",
     "select",
+    "select_drafts",
     "stamp_for",
 ]

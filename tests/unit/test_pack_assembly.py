@@ -109,21 +109,52 @@ def test_a_revision_no_human_confirmed_is_unverified_however_fresh_it_is(
     assert stamp_for(_knowledge(verification=marker), FRESH) == UNVERIFIED
 
 
-def test_never_observed_knowledge_is_unverified_rather_than_stale() -> None:
-    """A store with no sensor reports `unverified` freshness, which is not staleness.
+def test_never_observed_confirmed_knowledge_is_fresh_and_never_stale() -> None:
+    """A store with no sensor reports `unverified` freshness. Neither stamp it wants
+    is available, and the one it must not get is `stale`.
 
-    *Fails when* every non-`fresh` state collapses to `stale`. *Matters because*
-    the stale banner claims *the system changed after this was confirmed* -- and
-    printing that over knowledge nothing has ever checked is a false statement
-    about the client's system, and precisely the false-staleness noise H5 names
-    as what makes reviewers stop trusting the queue.
+    *Fails when* every non-`fresh` state collapses to `stale`, **or** when a
+    confirmed item falls back to `unverified`. *Matters because* both mistakes
+    lie, in opposite directions: the stale banner claims *the system changed
+    after this was confirmed*, which is false about knowledge nothing has ever
+    checked (H5's false-staleness noise); and the unverified banner claims *no
+    human has confirmed this*, which is false about a document a human wrote and
+    confirmed. **S4.1 shipped the second one**, and because every item in every
+    pre-Build-5 store resolves `unverified` freshness, it bannered every section
+    of every pack -- so nothing was distinguished and demo line 3's upgrade was
+    invisible. *No other instrument catches it because* a pack where everything
+    carries a warning looks careful.
     """
-    assert stamp_for(_knowledge(), "unverified") == UNVERIFIED
+    assert stamp_for(_knowledge(), "unverified") == FRESH
+    assert stamp_for(_knowledge(), "unverified") != STALE
 
 
 @pytest.mark.parametrize("state", ["stale", "observation_stale", "retired"])
 def test_a_real_change_under_confirmed_knowledge_is_stale(state: str) -> None:
     assert stamp_for(_knowledge(), state) == STALE
+
+
+@pytest.mark.parametrize("state", ["stale", "observation_stale", "retired"])
+def test_an_unconfirmed_revision_over_a_changed_system_is_still_unverified(
+    state: str,
+) -> None:
+    """Verification is asked **first**, and this is the case that proves it.
+
+    *Fails when* the two questions are asked in the other order. *Matters
+    because* the stale banner says *what follows was true when it was written*
+    -- a claim that somebody once established it -- and printing that over a
+    draft no human ever confirmed asserts a verification that never happened.
+    The reader is told the wrong thing about the more dangerous of the two
+    states. *No other instrument catches it because* the section is bannered
+    either way and looks appropriately cautious; only the sentence is false.
+
+    **Added because a planted reordering survived the suite.** Every other stamp
+    test fixes one of the two inputs, so a rule that checked freshness first was
+    indistinguishable from one that checked verification first -- the two differ
+    only where both inputs are unhappy at once, and nothing exercised that
+    corner.
+    """
+    assert stamp_for(_knowledge(verification="unverified"), state) == UNVERIFIED
 
 
 def test_confirmed_and_fresh_is_fresh() -> None:
@@ -173,7 +204,7 @@ def test_an_unverified_revision_can_never_render_without_its_banner() -> None:
 
     assert body in document
     assert "**unverified**" in document
-    assert "UNVERIFIED — nothing has confirmed this section." in document
+    assert "UNVERIFIED — no human has confirmed this section." in document
     # The banner precedes the body: a reader who stops half way through has
     # already been told.
     assert document.index("UNVERIFIED") < document.index(body)

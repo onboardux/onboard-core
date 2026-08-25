@@ -21,6 +21,7 @@ the point:
 
 import datetime as _dt
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from typing import Protocol
 
 from adopt_model import Binding, ReviewItem
@@ -29,6 +30,7 @@ from adopt_scope import Scope
 
 __all__ = [
     "BindingWriter",
+    "DraftStore",
     "KnowledgeWriter",
     "ReviewWriter",
 ]
@@ -111,3 +113,24 @@ class ReviewWriter(Protocol):
     def items_in(self, review_batch_id: str) -> tuple[ReviewItem, ...]: ...
 
     def resolve(self, *, review_item_id: str, resolution: ReviewResolution) -> ReviewItem: ...
+
+
+class DraftStore(KnowledgeWriter, BindingWriter, ReviewWriter, Protocol):
+    """The three writers **plus the unit of work**, for `drafting` alone.
+
+    One protocol rather than three arguments, for the reason `adopt_ask.capture`
+    gives for its own: a draft is one transaction, and a caller that could supply
+    the knowledge writer and the binding writer separately could supply two that
+    do not share a connection -- which is precisely the half-written store the
+    single-transaction shape exists to make impossible. A draft whose revision
+    committed and whose binding did not is knowledge bound to nothing: it counts
+    toward no coverage, stales on no change, and appears in the review queue as
+    a section about an identity it cannot name.
+
+    `transaction` is therefore on the protocol rather than an implementation
+    detail of whoever calls it. Harvest and ingest do not need this -- a
+    partially written harvest is a candidate a re-harvest recreates -- which is
+    why the transactional slice arrives here rather than under every writer.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...

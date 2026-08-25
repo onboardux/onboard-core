@@ -151,6 +151,7 @@ class ErrorCode(StrEnum):
 
     GAP_NOT_FOUND = "GAP_NOT_FOUND"
     GAP_WAIVER_NEEDS_UNTIL = "GAP_WAIVER_NEEDS_UNTIL"
+    PACK_RENDERER_MISSING = "PACK_RENDERER_MISSING"
 
 
 #: Code -> category, verbatim from the contracts §13 table.
@@ -272,6 +273,13 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # rule is a statement about one status value rather than a column
     # constraint either dialect can express -- so it is refused here.
     ErrorCode.GAP_WAIVER_NEEDS_UNTIL: ErrorCategory.USAGE,
+    # Usage: `--format docx` or `--format pdf` was asked for and the pinned
+    # converter is not on this machine. Usage rather than transient because
+    # retrying changes nothing and the operator can fix it in one command -- and
+    # **refusing is the only honest answer**: the canonical Markdown was written
+    # either way, so a derived format that silently did not appear would leave
+    # somebody looking for a file nobody said was missing.
+    ErrorCode.PACK_RENDERER_MISSING: ErrorCategory.USAGE,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

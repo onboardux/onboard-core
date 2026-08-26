@@ -91,11 +91,19 @@ def pack(
     from adopt_cli.commands import _pack_support as support
     from adopt_cli.commands._map_support import resolve_scope
     from adopt_coverage import recompute_coverage
+    from adopt_obs import AdoptError, ErrorCode
 
     # Resolved before the store is opened: an unknown `--format` must refuse
     # before anything is written, not after a pack is on disk.
     converter = converter_for(format_name)
     if converter is not None and not out:  # pragma: no cover -- `--out` has a default
+        # Unreachable while `--out` carries a default, and left as a guard rather
+        # than deleted. **If it is ever made reachable it must not raise
+        # `typer.BadParameter`** -- see the note at the scope refusal below for
+        # why that exits 1 and bypasses the JSON envelope. It needs a registered
+        # code, and none of the current set means "you named a format with
+        # nowhere to put it", so choosing one is a decision for whoever makes
+        # this branch live.
         raise typer.BadParameter("--format needs --out: a derived file has to go somewhere.")
 
     # Drafting writes; assembling does not. The store is opened writable only
@@ -105,9 +113,22 @@ def pack(
     try:
         resolved = resolve_scope(handle, scope)
         if resolved.system is None:
-            raise typer.BadParameter(
-                "a pack is assembled for one system, and this store has no system in scope. "
-                "Pass --scope firm/engagement/system/environment, or run `adopt init` first."
+            # **`AdoptError`, not `typer.BadParameter`.** The installed typer
+            # vendors its own click under `typer._click`, so a `BadParameter`
+            # raised in a command body is not a `click.ClickException`: it never
+            # reaches `main._exit_code_of`, escapes as an unhandled exception,
+            # exits 1 instead of a contracts §13 code, and renders a rich panel
+            # where a `--json` caller was promised the one error envelope.
+            # Found while building Build 6's review actions, which needed
+            # refusals of exactly this shape.
+            #
+            # `SCOPE_VIOLATION` is the code the store's own facades already
+            # raise for an unresolved scope, so an operator gets one sentence
+            # for one situation whichever layer noticed it first.
+            raise AdoptError(
+                ErrorCode.SCOPE_VIOLATION,
+                message="a pack is assembled for one system, and this store has no system in scope",
+                hint="Pass --scope firm/engagement/system/environment, or run `adopt init` first.",
             )
 
         system_id = str(resolved.system.id)

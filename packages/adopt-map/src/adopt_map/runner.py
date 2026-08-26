@@ -140,6 +140,12 @@ class MapReport:
     #: write nothing, and they are carried here so the report can say so out
     #: loud rather than leaving the reader to infer silence.
     moves: MoveOutcome = field(default_factory=MoveOutcome)
+    #: Every referent this run saw, populated only when `stored` was supplied --
+    #: the same condition that enables move detection, because both are
+    #: comparisons against prior state. Build 6's diff consumes it: re-walking
+    #: the tree to rediscover what the run just extracted would be a second
+    #: extraction, and two extractions are two answers to what is there.
+    observed: tuple[ObservedIdentity, ...] = ()
 
     @property
     def failed(self) -> list[ExtractorOutcome]:
@@ -319,6 +325,9 @@ def run_map(
                                 namespace=observation.namespace,
                                 key=tuple(observation.key),
                                 digest=digest,
+                                extractor=extractor.name,
+                                extractor_version=extractor.version,
+                                source_path=observation.span.path,
                             )
                         )
                     outcome.written += 1
@@ -326,6 +335,7 @@ def run_map(
                     report.files_with_observations.add(observation.span.path)
 
     if stored is not None:
+        report.observed = tuple(observed)
         report.moves = _record_moves(
             outcome=detect_moves(observed=observed, stored=stored),
             scope=scope,

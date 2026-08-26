@@ -25,6 +25,7 @@ from adopt_cli.config import resolve_all
 from adopt_obs import AdoptError, Clock, ErrorCode
 from adopt_store import open_store
 from adopt_store.annex import SqliteAnnexRecords, annex_path, open_annex
+from adopt_store.annex.filestate import SqliteFileStateRecords, open_file_state
 from adopt_store.annex.questions import SqliteQuestionLog, open_question_log
 from adopt_store.annex.search import SqliteSearchRecords, open_search
 from adopt_store.api import SqliteStoreHandle, writer_identity
@@ -32,6 +33,7 @@ from adopt_store.api import SqliteStoreHandle, writer_identity
 __all__ = [
     "SqliteStoreHandle",
     "configured_annex",
+    "configured_file_state",
     "configured_question_log",
     "configured_search",
     "configured_store_path",
@@ -161,6 +163,24 @@ def configured_question_log(handle: SqliteStoreHandle) -> Iterator[SqliteQuestio
     """
     with open_question_log(annex_path(handle.backend.path)) as log:
         yield log
+
+
+@contextmanager
+def configured_file_state(handle: SqliteStoreHandle) -> Iterator[SqliteFileStateRecords]:
+    """The refresh file-state snapshot in the annex beside `handle`'s store.
+
+    Here rather than in `commands/_refresh_support.py`, for `configured_search`'s
+    reason: `no-raw-sqlite` follows indirect chains into `adopt_cli` and exempts
+    only this module by name. The refresh support module is handed the port and
+    never learns which engine answered -- which is also why the snapshot could
+    move into the plane's own storage in Build 8 without the write path noticing.
+
+    Resolved from the store's path, never from `ADOPT_RUNTIME_PATH`: a snapshot
+    beside a different store describes a tree that store was never mapped from,
+    and comparing against it would report the whole repository as rewritten.
+    """
+    with open_file_state(handle.backend.path) as records:
+        yield records
 
 
 def open_named_store(path: Path, *, migrate: bool = False) -> SqliteStoreHandle:

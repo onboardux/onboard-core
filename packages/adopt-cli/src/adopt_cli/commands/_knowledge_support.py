@@ -14,14 +14,22 @@ which is where the invariants live.
 """
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Any, Protocol
 
-from adopt_knowledge import IdentityView, PendingItem, StoredDocument, derive_suggestions
-from adopt_knowledge.review import SOURCE_INGEST, source_of
+from adopt_knowledge import (
+    ChangedBinding,
+    IdentityView,
+    PendingItem,
+    StoredDocument,
+    derive_suggestions,
+)
+from adopt_knowledge.review import SOURCE_INGEST, SOURCE_REFRESH, source_of
 from pydantic import BaseModel
 
 from adopt_model import (
     Binding,
+    BindingRevision,
+    ChangeEvent,
     Identity,
     IdentityRevision,
     KnowledgeItem,
@@ -30,15 +38,19 @@ from adopt_model import (
     ReviewBatch,
     ReviewItem,
 )
+from adopt_obs import AdoptError, ErrorCode
 from adopt_scope import Scope, ScopeFacade
 
 __all__ = [
     "KnowledgeStoreView",
     "bound_pairs",
+    "changed_bindings",
     "harvested_commits",
     "identity_views",
     "pending_items",
     "presented_revisions",
+    "rebind_target",
+    "refresh_population",
     "resolve_identity",
     "stored_documents",
 ]
@@ -68,6 +80,8 @@ class KnowledgeStoreView(Protocol):
     def scope(self) -> ScopeFacade: ...
 
     def export_records(self) -> _ExportReader: ...
+
+    def changes(self) -> Any: ...
 
 
 def _rows[TModel: BaseModel](
@@ -370,6 +384,116 @@ def pending_items(
     return sorted(pending, key=lambda entry: entry.review_item_id)
 
 
+def refresh_population(
+    handle: KnowledgeStoreView, scope: Scope, pending: Sequence[PendingItem]
+) -> dict[str, Any]:
+    """The change population's two halves: causes per queued item, and the rest.
+
+    **Why the rest exists at all.** v6.1 requires that *nothing is silent*: every
+    class lands in the review queue. But `review_item.item_id` is a NOT NULL
+    foreign key to `knowledge_item`, so a class whose subject nobody has written
+    about -- a new endpoint, a cosmetic edit, a deleted referent with no note --
+    has no row it could occupy (plan decision D6). Those render here, read from
+    `classification`, in the queue surface and outside the actionable list.
+
+    The alternative repairs are both worse: an additive schema column
+    re-litigates §8's budget for a value already derivable, and a stub knowledge
+    item would fabricate canon to hold a pointer -- inventing a note about an
+    endpoint precisely because nobody wrote one.
+    """
+    if scope.system is None:
+        return {"causes": {}, "informational": []}
+
+    open_batches = {
+        item.review_batch_id: item.batch_key
+        for item in pending
+        if source_of(item.batch_key) == SOURCE_REFRESH
+    }
+    batch_keys = set(open_batches.values()) | _unresolved_refresh_batch_keys(handle, scope)
+    if not batch_keys:
+        return {"causes": {}, "informational": []}
+
+    identities = {row.id: row.uri for row in _rows(handle, "identity", Identity)}
+    bound_items = _items_by_identity(handle)
+    item_of_review = {item.review_item_id: item.item_id for item in pending}
+
+    causes: dict[str, list[dict[str, str]]] = {}
+    informational: list[dict[str, str]] = []
+    for batch_key in sorted(batch_keys):
+        for row in handle.changes().classifications_in(batch_key):
+            entry = {
+                "uri": identities.get(row.identity_id, row.identity_id),
+                "class": str(row.class_),
+                "evidence": row.evidence,
+            }
+            owners = bound_items.get(row.identity_id, frozenset())
+            targets = [
+                review_item_id
+                for review_item_id, item_id in item_of_review.items()
+                if item_id in owners
+            ]
+            if targets and str(row.class_) != _RENDER_ONLY:
+                for review_item_id in targets:
+                    causes.setdefault(review_item_id, []).append(entry)
+            else:
+                informational.append({**entry, "note": _informational_note(str(row.class_))})
+
+    return {"causes": causes, "informational": informational}
+
+
+#: The informational class. Recorded and rendered like every other -- nothing is
+#: silent -- but never queued: a reviewer cannot act on "a comment moved".
+_RENDER_ONLY = "BINDING_INTACT_RENDER_ONLY"
+
+
+def _informational_note(impact_class: str) -> str:
+    """Why this change is being shown rather than asked about."""
+    if impact_class == _RENDER_ONLY:
+        return "cosmetic: the file changed, this referent did not"
+    if impact_class == "UNBOUND_NEW":
+        return "new referent; no knowledge covers it yet -- it appears in `adopt gaps`"
+    return "no load-bearing knowledge is bound to this referent"
+
+
+def _unresolved_refresh_batch_keys(handle: KnowledgeStoreView, scope: Scope) -> set[str]:
+    """Refresh batch keys whose run produced no queue entry at all.
+
+    A run whose every finding was informational opens no batch -- `open_batch`
+    refuses an empty one -- so its classifications would be invisible to this
+    surface if the keys were read only from `pending`. They are read from the
+    events instead, which is the record that the run happened.
+    """
+    system_id = str(scope.system.id) if scope.system is not None else None
+    resolved = {
+        row.batch_key
+        for row in _rows(handle, "review_batch", ReviewBatch)
+        if row.resolution is not None and row.batch_key
+    }
+    return {
+        str(row.batch_key)
+        for row in _rows(handle, "change_event", ChangeEvent)
+        if row.batch_key
+        and row.system_id == system_id
+        and source_of(str(row.batch_key)) == SOURCE_REFRESH
+        and str(row.batch_key) not in resolved
+    }
+
+
+def _items_by_identity(handle: KnowledgeStoreView) -> dict[str, frozenset[str]]:
+    """`identity_id -> the items load-bearingly bound to it`.
+
+    Load-bearing only, matching `resolve_freshness`' rule (PRD F8.3) and the
+    write path's queue rule: a queue that used a different predicate from the
+    freshness it explains would show an item as needing review while
+    `adopt ask` still served it as fresh.
+    """
+    grouped: dict[str, set[str]] = {}
+    for binding in _rows(handle, "binding", Binding):
+        if binding.is_load_bearing:
+            grouped.setdefault(binding.identity_id, set()).add(binding.item_id)
+    return {identity_id: frozenset(items) for identity_id, items in grouped.items()}
+
+
 def _evidence_by_revision(
     handle: KnowledgeStoreView,
 ) -> dict[str, tuple[tuple[str, str], ...]]:
@@ -402,3 +526,123 @@ def _revision_of(
     if candidate is None:
         candidate = revisions.get(item.current_revision_id or "")
     return candidate
+
+
+#: Binding head statuses a review action may still act on. A link already
+#: superseded by an earlier rebind, or retired, is **not** one: superseding it
+#: again would append a second `moved` revision saying the same thing, and
+#: freshening it would re-affirm a link no longer anchoring anything.
+_ACTIONABLE_BINDING_STATUSES = frozenset({"active"})
+
+
+def changed_bindings(handle: KnowledgeStoreView, item: PendingItem) -> tuple[ChangedBinding, ...]:
+    """The (item <-> changed identity) links one queue entry is about.
+
+    **Read from `classification`, not from the queue entry.** `review_item` says
+    which item a reviewer must look at and nothing about why -- the why is the
+    run's classifications, keyed by identity (plan D6). Joining them here is what
+    lets an action supersede exactly the links a change made wrong and leave the
+    item's other bindings alone: a note bound to three endpoints, one of which
+    moved, keeps the two that did not.
+
+    Ordered by binding id so two invocations agree, for the reason every listing
+    in this file is ordered.
+    """
+    if source_of(item.batch_key) != SOURCE_REFRESH:
+        return ()
+
+    uris = {row.id: row.uri for row in _rows(handle, "identity", Identity)}
+    classified: dict[str, str] = {}
+    for row in handle.changes().classifications_in(item.batch_key):
+        classified.setdefault(row.identity_id, str(row.class_))
+
+    statuses = _binding_head_statuses(handle)
+    links = [
+        ChangedBinding(
+            binding_id=binding.id,
+            item_id=binding.item_id,
+            identity_id=binding.identity_id,
+            identity_uri=uris.get(binding.identity_id, binding.identity_id),
+            impact_class=classified[binding.identity_id],
+            is_load_bearing=binding.is_load_bearing,
+        )
+        for binding in _rows(handle, "binding", Binding)
+        if binding.item_id == item.item_id
+        and binding.identity_id in classified
+        and statuses.get(binding.id, "active") in _ACTIONABLE_BINDING_STATUSES
+    ]
+    return tuple(sorted(links, key=lambda link: link.binding_id))
+
+
+def _binding_head_statuses(handle: KnowledgeStoreView) -> dict[str, str]:
+    """`binding_id -> its head revision's status`.
+
+    By the parent's head pointer, which the binding family carries -- unlike
+    `identity`, whose head is derived. A binding whose pointer is unset has no
+    revision to read a status from and is treated as `active`, the value the
+    schema gives a fresh row.
+    """
+    revisions = {row.id: row for row in _rows(handle, "binding_revision", BindingRevision)}
+    statuses: dict[str, str] = {}
+    for binding in _rows(handle, "binding", Binding):
+        head = revisions.get(binding.current_revision_id or "")
+        if head is not None:
+            statuses[binding.id] = str(head.status)
+    return statuses
+
+
+def rebind_target(
+    handle: KnowledgeStoreView, affected: Sequence[ChangedBinding], to_uri: str | None
+) -> tuple[str, str]:
+    """`(identity_id, uri)` for a rebind: the given `--to`, or the recorded alias.
+
+    **The default only exists where the store already knows the answer.** A
+    MOVED classification carries a successor -- `IdentityFacade.move` wrote
+    `alias_of_identity_id` on the old identity's `moved` revision -- so asking a
+    reviewer to retype a URI the map already resolved is asking them to make a
+    typo. Every other class has no successor to infer: an endpoint that was
+    deleted, or whose parameters changed, does not name what replaced it, and
+    guessing one would be the tool inventing a link a human never approved.
+
+    Raises:
+        AdoptError: ``BIND_TARGET_NOT_FOUND`` when `--to` names no identity,
+            when no successor is recorded and none was given, and when the
+            affected referents moved to **different** successors -- the last
+            because "rebind to which one?" is a question only the reviewer can
+            answer, and picking the first would be a silent choice about where
+            a note now belongs.
+    """
+    if to_uri:
+        found = resolve_identity(handle, to_uri)
+        if found is None:
+            raise AdoptError(
+                ErrorCode.BIND_TARGET_NOT_FOUND,
+                message=f"no identity matches {to_uri!r}",
+                hint="Run `adopt map --report` to list the referents in scope. A rebind "
+                "target has to be something the map has actually seen -- binding to a "
+                "URI nobody observed would create coverage for a referent that may "
+                "not exist.",
+            )
+        return found.id, found.uri
+
+    successors = {
+        target
+        for link in affected
+        if (target := _alias_target(handle, link.identity_id)) is not None
+    }
+    uris = {row.id: row.uri for row in _rows(handle, "identity", Identity)}
+    if len(successors) == 1:
+        identity_id = next(iter(successors))
+        return identity_id, uris.get(identity_id, identity_id)
+
+    raise AdoptError(
+        ErrorCode.BIND_TARGET_NOT_FOUND,
+        message=(
+            "the changed referents name several successors, so --to is required"
+            if successors
+            else "no successor is recorded for this change, so --to is required"
+        ),
+        hint="Pass `--to <uri>` naming the referent this note now describes. Only a "
+        "MOVED referent records where it went; a deleted or semantically changed "
+        "one does not, and inferring a target would be the tool inventing a link.",
+    )

@@ -43,6 +43,7 @@ from adopt_cli.commands import policy as policy_commands
 # itself imports `adopt_probe` only inside its command bodies, so this costs
 # typer options and nothing else.
 from adopt_cli.commands import probe as probe_commands  # noqa: F401
+from adopt_cli.commands import refresh as refresh_commands
 from adopt_cli.commands import serve as serve_commands
 from adopt_cli.commands import store as store_commands
 from adopt_cli.commands import version as version_command
@@ -110,6 +111,12 @@ app.command("draft")(draft_command.draft)
 # surface is the contract, not the identifier that happens to implement it.
 app.command("export")(interchange_commands.export)
 app.command("import")(interchange_commands.import_)
+
+# Build 6. `refresh` imports `adopt_map` and the annex inside its body, so the
+# verb that re-walks a repository costs `adopt version` one typer signature.
+# The review queue it fills is `adopt review`'s, already registered above --
+# one surface, one habit (v6.1 F5), so no verb is added for the change items.
+app.command("refresh")(refresh_commands.refresh)
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 NetworkOption = Annotated[

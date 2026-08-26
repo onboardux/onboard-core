@@ -29,8 +29,11 @@ from adopt_model._enums import AuthorityClass, ItemKind, ReviewResolution, Sourc
 from adopt_scope import Scope
 
 __all__ = [
+    "BindingFreshener",
+    "BindingSuperseder",
     "BindingWriter",
     "DraftStore",
+    "ItemRetirer",
     "KnowledgeWriter",
     "ReviewWriter",
 ]
@@ -113,6 +116,44 @@ class ReviewWriter(Protocol):
     def items_in(self, review_batch_id: str) -> tuple[ReviewItem, ...]: ...
 
     def resolve(self, *, review_item_id: str, resolution: ReviewResolution) -> ReviewItem: ...
+
+
+class ItemRetirer(Protocol):
+    """The one door that ends a knowledge item -- Build 6's `retire` action.
+
+    **Separate from `KnowledgeWriter` rather than added to it**, and the split is
+    the same argument the module docstring makes about `BindingWriter`: ingest,
+    harvest and drafting write knowledge and must never be able to end an item,
+    so the method they would reach for does not exist on the protocol they hold.
+    Ending an item is a reviewer's decision, and only the code acting on one is
+    handed this.
+    """
+
+    def retire(self, *, item_id: str, reason: str, actor_id: str | None = ...) -> str: ...
+
+
+class BindingSuperseder(BindingWriter, Protocol):
+    """`rebind`'s two writes: supersede the old link, create the replacement.
+
+    `supersede` is the `moved`-status append, and it is the reason this is a
+    separate protocol from `BindingWriter`: the matchers may propose links and
+    must not be able to say a link was replaced, because "replaced" is a claim
+    about a *successor* that only a reviewer naming one can make.
+    """
+
+    def supersede(self, *, binding_id: str, actor_id: str | None = ...) -> str: ...
+
+
+class BindingFreshener(Protocol):
+    """Propagation, reversed: what `confirm-current` re-affirms stops being stale.
+
+    Narrow to one method on purpose. The refresh write path stales bindings
+    through the same facade; this is the only thing a review action is allowed
+    to do to a freshness column, so nothing here can set `retired`,
+    `observation_stale` or any other state a *measurement* is supposed to decide.
+    """
+
+    def freshen_bindings(self, binding_ids: Sequence[str]) -> tuple[str, ...]: ...
 
 
 class DraftStore(KnowledgeWriter, BindingWriter, ReviewWriter, Protocol):

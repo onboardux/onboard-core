@@ -26,6 +26,9 @@ from adopt_model import (
     BaselineVersion,
     Binding,
     BindingRevision,
+    ChangeEvent,
+    Classification,
+    ClassifierVersion,
     Conflict,
     CoverageGap,
     Engagement,
@@ -56,12 +59,13 @@ from adopt_model._enums import (
     ReviewResolution,
     SensorHealth,
 )
-from adopt_obs import format_timestamp
+from adopt_obs import format_timestamp, new_id
 from adopt_store.sqlite.store import SqliteStore
 
 __all__ = [
     "SqliteBindingRecords",
     "SqliteBoundaryRecords",
+    "SqliteChangeRecords",
     "SqliteCoverageGapRecords",
     "SqliteCoverageRecords",
     "SqliteEscalationRecords",
@@ -669,6 +673,83 @@ class SqliteCoverageGapRecords:
         """Every disposition, ordered by key so a report is stable across runs."""
         rows = self._store.query("SELECT * FROM coverage_gap ORDER BY gap_key")
         return [_from_row(CoverageGap, dict(row)) for row in rows]
+
+
+class SqliteChangeRecords:
+    """The SQLite implementation of `ChangeRecords` (Build 6).
+
+    **The `class` column is why `_to_row` dumps by alias.** `class` is a Python
+    keyword, so the generated model spells the field `class_` with
+    `alias="class"`; a dump by field name would build `INSERT INTO
+    classification (…, class_, …)` and fail against the real table. That is
+    already the module's rule and this is the class that first depends on it.
+
+    Reads are ordered by `id` so two runs over one store render the same
+    session in the same order -- ULIDs are monotonic, so id order is insertion
+    order, which is the cascade's own order.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_change_event(self, row: ChangeEvent) -> None:
+        _insert(self._store, "change_event", row)
+
+    def insert_classification(self, row: Classification) -> None:
+        _insert(self._store, "classification", row)
+
+    def ensure_classifier_version(
+        self, *, version_label: str, training_data_categories: str, released_at: _dt.datetime
+    ) -> str:
+        """Get-or-create, inside the caller's transaction.
+
+        The read and the write share the caller's unit of work, so two refreshes
+        cannot both miss and both insert: `version_label` has no UNIQUE index in
+        the manifest, and a duplicate would give one classifier two ids and make
+        "which version decided this" ambiguous forever.
+        """
+        with self._store.transaction():
+            existing = self._store.query(
+                "SELECT id FROM classifier_version WHERE version_label = ? ORDER BY id LIMIT 1",
+                (version_label,),
+            )
+            if existing:
+                return str(existing[0]["id"])
+            row = ClassifierVersion(
+                id=new_id("clsv"),
+                version_label=version_label,
+                training_data_categories=training_data_categories,
+                released_at=released_at,
+            )
+            _insert(self._store, "classifier_version", row)
+            return row.id
+
+    def set_binding_freshness(
+        self, binding_id: str, freshness_state: FreshnessState, *, updated_at: _dt.datetime
+    ) -> None:
+        del updated_at  # `binding` carries no updated column at schema v3.
+        self._store.execute(
+            "UPDATE binding SET freshness_state = ? WHERE id = ?",
+            (freshness_state, binding_id),
+        )
+
+    def classifications_for_batch(self, batch_key: str) -> Sequence[Classification]:
+        rows = self._store.query(
+            "SELECT c.* FROM classification c "
+            "JOIN change_event e ON e.id = c.change_event_id "
+            "WHERE e.batch_key = ? ORDER BY c.id",
+            (batch_key,),
+        )
+        return [_from_row(Classification, dict(row)) for row in rows]
+
+    def change_events_for_batch(self, batch_key: str) -> Sequence[ChangeEvent]:
+        rows = self._store.query(
+            "SELECT * FROM change_event WHERE batch_key = ? ORDER BY id", (batch_key,)
+        )
+        return [_from_row(ChangeEvent, dict(row)) for row in rows]
 
 
 class SqliteBindingRecords:

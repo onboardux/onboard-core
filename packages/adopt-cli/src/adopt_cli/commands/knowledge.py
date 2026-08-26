@@ -584,6 +584,25 @@ ConfirmBatchOption = Annotated[
         help="Confirm every open item in one batch -- the per-document batch confirm.",
     ),
 ]
+ResolveOption = Annotated[
+    str | None,
+    typer.Option("--resolve", help="Resolve one refresh change item by id. Needs --action."),
+]
+ActionOption = Annotated[
+    str | None,
+    typer.Option(
+        "--action",
+        help="What the change means for the item: retire | rebind | confirm-current.",
+    ),
+]
+ToOption = Annotated[
+    str | None,
+    typer.Option(
+        "--to",
+        help="The successor identity URI for --action rebind. Defaults to the recorded "
+        "alias when the referent moved; required otherwise.",
+    ),
+]
 
 CONFIRM: Final[str] = "confirmed"
 CORRECT: Final[str] = "corrected"
@@ -596,17 +615,28 @@ def review(
     edit_item: EditOption = None,
     file: EditFileOption = None,
     confirm_batch: ConfirmBatchOption = None,
+    resolve_item: ResolveOption = None,
+    action: ActionOption = None,
+    to_uri: ToOption = None,
     scope: ScopeOption = None,
     actor: ActorOption = None,
     store: StoreOption = None,
     json_output: JsonOption = False,
 ) -> None:
-    """The one review queue: harvest candidates and suggested bindings, together.
+    """The one review queue: harvest candidates, suggested bindings and changes.
 
     With no flag it lists. With one it resolves. What confirming *does* depends
     on which population the item belongs to -- bindings for a suggestion, a
     verified revision for a candidate -- and `adopt_knowledge.review` is where
     that rule lives and is documented.
+
+    **`--resolve --action` is the change population's separate door, and the
+    separation is deliberate.** `--confirm` on a suggestion answers "is this
+    document about this identity?"; the three change actions answer "the
+    referent moved -- what should this note do about it?". One flag meaning both
+    is how a reviewer presses a button for one reason and gets a second thing
+    they never looked at, which is the failure the two-populations rule in
+    `adopt_knowledge.review` exists to prevent.
     """
     from adopt_knowledge import confirm as confirm_pending
     from adopt_knowledge import edit as edit_pending
@@ -617,10 +647,12 @@ def review(
         identity_views,
         known_review_items,
         pending_items,
+        refresh_population,
     )
     from adopt_cli.commands._map_support import resolve_scope
 
-    writing = bool(confirm_item or reject_item or edit_item or confirm_batch)
+    _check_resolve_flags(resolve_item, action, to_uri)
+    writing = bool(confirm_item or reject_item or edit_item or confirm_batch or resolve_item)
     body_md = _edit_body(edit_item, file)
     handle = open_configured_store(store, read_only=not writing)
     try:
@@ -628,8 +660,19 @@ def review(
         identities = identity_views(handle, resolved)
         pending = pending_items(handle, resolved, identities)
 
-        if not writing:
+        if resolve_item:
+            payload = _resolve_change(
+                handle,
+                pending,
+                known_review_items(handle),
+                review_item_id=resolve_item,
+                action=action or "",
+                to_uri=to_uri,
+                actor=actor,
+            )
+        elif not writing:
             payload = _queue_payload(pending)
+            payload.update(_refresh_payload(refresh_population(handle, resolved, pending)))
         else:
             targets = _targets(
                 pending,
@@ -675,6 +718,179 @@ def review(
         handle.close()
 
     emit(payload, as_json=json_output, title="adopt review")
+
+
+def _check_resolve_flags(resolve_item: str | None, action: str | None, to_uri: str | None) -> None:
+    """Refuse an incoherent flag combination before the store is opened.
+
+    **`AdoptError`, not `typer.BadParameter`, and that is a measured choice
+    rather than a preference.** The installed typer vendors its own click under
+    `typer._click`, so a `typer.BadParameter` raised in a command body is not a
+    `click.ClickException` and never reaches `main._exit_code_of` -- it escapes
+    as an unhandled exception, exits `1` instead of contracts §13's `2`, and
+    renders a rich panel where a `--json` caller was promised the one error
+    envelope. Verified in this tree, not assumed.
+
+    The code is `REVIEW_ITEM_NOT_FOUND` for all three refusals, on `_edit_body`'s
+    precedent in this same file: reuse the registered code whose subject matches
+    -- here, a `--resolve` invocation that cannot be carried out -- and let the
+    message name the flags. Build 6 registers no new error code (plan D14).
+    """
+    from adopt_knowledge import ACTIONS
+
+    from adopt_obs import AdoptError, ErrorCode
+
+    def refuse(message: str, hint: str) -> AdoptError:
+        return AdoptError(ErrorCode.REVIEW_ITEM_NOT_FOUND, message=message, hint=hint)
+
+    if action and not resolve_item:
+        raise refuse(
+            "--action needs --resolve <review-item>",
+            "An action with nothing named to act on would resolve whatever the queue "
+            "happened to list first.",
+        )
+    if to_uri and not resolve_item:
+        raise refuse(
+            "--to has no effect without --resolve --action rebind",
+            "Pass the review item and the action it takes. A target with no rebind is a "
+            "binding nobody asked for.",
+        )
+    if resolve_item and not action:
+        raise refuse(
+            "--resolve needs --action: " + " | ".join(ACTIONS),
+            "There is no default: retiring a note and re-pointing it are opposite "
+            "decisions, and one of them cannot be undone by appending.",
+        )
+    if action and action not in ACTIONS:
+        raise refuse(
+            f"--action {action!r} is not one of: " + " | ".join(ACTIONS),
+            "The three actions are what a reviewer can say about a changed referent. "
+            "A suggestion or a candidate is answered with --confirm, --reject or --edit.",
+        )
+
+
+def _resolve_change(
+    handle: Any,
+    pending: list[Any],
+    known: dict[str, str | None],
+    *,
+    review_item_id: str,
+    action: str,
+    to_uri: str | None,
+    actor: str | None,
+) -> dict[str, Any]:
+    """Run one change action and render what it did to the store.
+
+    The item is looked up in the **open** queue and its causes are read in the
+    same breath, so the links an action supersedes or re-affirms are the ones
+    the listing showed. `adopt_knowledge.changes` owns every decision from here;
+    this function is composition -- which is why the honest `confirm-current`
+    sentence is built from `still_stale` rather than restated.
+    """
+    from adopt_knowledge import (
+        ACTION_CONFIRM_CURRENT,
+        ACTION_REBIND,
+        ACTION_RETIRE,
+        confirm_current_item,
+        rebind_item,
+        retire_item,
+    )
+
+    from adopt_cli.commands._knowledge_support import changed_bindings, rebind_target
+
+    item = _change_target(pending, known, review_item_id)
+    affected = changed_bindings(handle, item)
+
+    if action == ACTION_RETIRE:
+        outcome = retire_item(
+            item, reviews=handle.governance(), knowledge=handle.items(), actor_id=actor
+        )
+        target_uri = None
+    elif action == ACTION_REBIND:
+        target_id, target_uri = rebind_target(handle, affected, to_uri)
+        outcome = rebind_item(
+            item,
+            reviews=handle.governance(),
+            bindings=handle.bindings(),
+            affected=affected,
+            target_identity_id=target_id,
+            target_uri=target_uri,
+            actor_id=actor,
+        )
+    else:
+        outcome = confirm_current_item(
+            item,
+            reviews=handle.governance(),
+            knowledge=handle.items(),
+            freshener=handle.changes(),
+            affected=affected,
+            actor_id=actor,
+        )
+        target_uri = None
+
+    return {
+        "resolved": 1,
+        "resolutions": [
+            {
+                "review_item": item.review_item_id,
+                "action": outcome.action,
+                "resolution": outcome.resolution,
+                "source": item.source,
+                "item": item.item_id,
+                "revision": outcome.revision_id,
+                "superseded_bindings": list(outcome.superseded_bindings),
+                "new_binding": outcome.new_binding_id,
+                "rebound_to": target_uri,
+                "freshened_bindings": list(outcome.freshened_bindings),
+                # The honest half. An item that stays STALE after a confirmation
+                # needs the reason and the way out on screen, or the reviewer
+                # concludes the freshness state is broken.
+                "still_stale": list(outcome.still_stale),
+                "note": _CONFIRM_STILL_STALE_NOTE
+                if outcome.action == ACTION_CONFIRM_CURRENT and outcome.still_stale
+                else None,
+            }
+        ],
+    }
+
+
+#: Said when `confirm-current` cannot clear a cause. Not a failure: the referent
+#: really is gone, and the two actions that help are named rather than left for
+#: the reviewer to rediscover by watching `adopt ask` keep saying STALE.
+_CONFIRM_STILL_STALE_NOTE: Final[str] = (
+    "the note is confirmed, but these referents are dead or moved, so the item stays "
+    "STALE by the source rule -- use --action rebind --to <uri>, or --action retire"
+)
+
+
+def _change_target(pending: list[Any], known: dict[str, str | None], review_item_id: str) -> Any:
+    """The open change item that id names.
+
+    Raises:
+        AdoptError: ``REVIEW_ITEM_RESOLVED`` when it was already decided and
+            ``REVIEW_ITEM_NOT_FOUND`` when it names nothing -- the same two
+            sentences `_targets` distinguishes, for the same reason. The
+            wrong-population refusal belongs to `adopt_knowledge.changes`, which
+            is where the rule about which actions apply to which population is
+            written down.
+    """
+    from adopt_obs import AdoptError, ErrorCode
+
+    for item in pending:
+        if item.review_item_id == review_item_id:
+            return item
+    if review_item_id in known:
+        raise AdoptError(
+            ErrorCode.REVIEW_ITEM_RESOLVED,
+            message=f"review item {review_item_id} is already {known[review_item_id]}",
+            hint="A disposition is recorded once. Re-reviewing the same subject means a "
+            "new item in a new batch, so the queue keeps what was decided and when.",
+        )
+    raise AdoptError(
+        ErrorCode.REVIEW_ITEM_NOT_FOUND,
+        message=f"no open review item {review_item_id!r}",
+        hint="Run `adopt review` to list the open queue.",
+    )
 
 
 def _edit_body(edit_item: str | None, file: Path | None) -> str:
@@ -772,6 +988,26 @@ def _targets(
     return [(item, CORRECT if edit_item else REJECT)]
 
 
+def _refresh_payload(population: dict[str, Any]) -> dict[str, Any]:
+    """Build 6's two halves of the queue, flat for the same reason the rest is.
+
+    `causes` explains why a queued item is queued -- one row per (item, changed
+    referent), because a note bound to three rebased endpoints has three reasons
+    and a reviewer needs all of them. `informational` is everything recorded
+    that no human is being asked to act on: new referents, cosmetic edits, and
+    changes to referents nobody has written about. It is listed rather than
+    counted because "3 informational" tells a reviewer nothing they can check.
+    """
+    return {
+        "causes": [
+            {"review_item": review_item_id, **cause}
+            for review_item_id, entries in sorted(population["causes"].items())
+            for cause in entries
+        ],
+        "informational": population["informational"],
+    }
+
+
 def _queue_payload(pending: list[Any]) -> dict[str, Any]:
     """The queue, with each population carrying what makes it reviewable.
 
@@ -789,6 +1025,11 @@ def _queue_payload(pending: list[Any]) -> dict[str, Any]:
             {
                 "review_item": item.review_item_id,
                 "source": item.source,
+                # The knowledge item the entry is about. Two notes can share a
+                # title -- `adopt ingest` takes it from the document's first
+                # heading -- so a listing that named only the title would leave
+                # a reader unable to tell which of them an entry belongs to.
+                "item": item.item_id,
                 "title": item.title,
                 "suggested": len(item.suggestions),
                 "evidence": len(item.evidence),

@@ -21,7 +21,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-__all__ = ["StoredRevision", "build_report", "chain_summary"]
+__all__ = ["StoredRevision", "build_report", "chain_summary", "digest_summary"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,3 +123,30 @@ def chain_summary(
             revision,
         )
     return chains
+
+
+def digest_summary(revisions: Sequence[StoredRevision]) -> Mapping[str, StoredRevision]:
+    """`identity_id -> the latest revision carrying a digest`.
+
+    **A third reading of one chain, and the one Build 6's diff compares
+    against.** `chain_summary`'s two ends answer "where was this first seen" and
+    "is it still there"; neither answers "what did it look like last time we
+    looked", which is the question a semantic diff asks.
+
+    The distinction had no consequences before Build 6, because every identity
+    had exactly one revision and all three readings returned it. Refresh appends
+    a digest-recording revision whenever attributes change, and from then on the
+    creating revision holds the *original* digest forever: comparing against it
+    would re-report the same edit at every subsequent refresh, which is the
+    change storm H5 exists to prevent, arriving through the back door.
+
+    Revisions with no `source_version` are skipped rather than treated as a
+    digest of `None` -- a `moved` or `dead` revision carries no digest, and
+    letting one win would blank the comparison and read as "never observed".
+    """
+    latest: dict[str, StoredRevision] = {}
+    for revision in sorted(revisions, key=lambda row: (row.created_at, row.revision_id)):
+        if revision.source_version is None:
+            continue
+        latest[revision.identity_id] = revision
+    return latest

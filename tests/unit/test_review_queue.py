@@ -5,7 +5,7 @@ and once*. Each test names the defect it catches.
 """
 
 import pytest
-from adopt_knowledge import Gap, rank_gaps
+from adopt_knowledge import ChangeCause, Gap, coalesce_changes, rank_gaps
 
 from adopt_obs import AdoptError, ErrorCode
 from adopt_scope import Scope
@@ -171,3 +171,73 @@ class TestGapRanking:
 
         assert ranked[0].kind == "job"
         assert isinstance(ranked[0], Gap)
+
+
+@pytest.mark.unit
+class TestBuild6Coalescing:
+    """One refresh run is one review session -- v6.1's anti-flood rule.
+
+    The queue's fourth population (`refresh:`) is the first whose entries are
+    produced in bulk by a machine rather than one per document a human wrote.
+    A rebase touching two hundred files is the case these tests exist for.
+    """
+
+    def _cause(self, identity: str, impact_class: str = "BINDING_MOVED") -> ChangeCause:
+        return ChangeCause(
+            identity_id=f"idn_{identity}",
+            identity_uri=f"onboard-v1://f/e/s/prod/endpoint/-/{identity}",
+            impact_class=impact_class,
+            evidence="moved",
+        )
+
+    def test_one_item_appears_once_however_many_referents_changed(self) -> None:
+        """*Fails when* an item bound to three changed identities produces three
+        queue entries. *Matters because* the reviewer would resolve the same note
+        three times with no way to tell the entries apart, and after a rebase the
+        queue would be two hundred rows long -- the flood v6.1 coalescing exists
+        to prevent. *No other instrument catches it* because each row is
+        individually well-formed and every foreign key resolves."""
+        items = coalesce_changes(
+            [
+                ("ki_runbook", self._cause("a")),
+                ("ki_runbook", self._cause("b")),
+                ("ki_runbook", self._cause("c")),
+            ]
+        )
+
+        assert len(items) == 1
+        assert items[0].item_id == "ki_runbook"
+        assert items[0].blast_radius == 3
+
+    def test_items_are_ordered_by_blast_radius_then_id(self) -> None:
+        """*Fails when* order becomes dict-insertion order. *Matters because* the
+        item covering the most changed referents is the one whose answer usually
+        decides the rest, and an unstable order makes a reviewer re-read what
+        they already triaged."""
+        items = coalesce_changes(
+            [
+                ("ki_small", self._cause("a")),
+                ("ki_big", self._cause("b")),
+                ("ki_big", self._cause("c")),
+            ]
+        )
+
+        assert [item.item_id for item in items] == ["ki_big", "ki_small"]
+
+    def test_the_same_identity_and_class_is_not_counted_twice(self) -> None:
+        """*Fails when* a duplicated pair inflates a blast radius. *Matters
+        because* the ordering above is derived from that number, so a duplicate
+        would silently reorder the queue by an artefact rather than by impact."""
+        items = coalesce_changes(
+            [("ki_runbook", self._cause("a")), ("ki_runbook", self._cause("a"))]
+        )
+
+        assert items[0].blast_radius == 1
+
+    def test_causes_are_ordered_deterministically_within_an_item(self) -> None:
+        first = coalesce_changes([("ki_x", self._cause("b")), ("ki_x", self._cause("a"))])
+        second = coalesce_changes([("ki_x", self._cause("a")), ("ki_x", self._cause("b"))])
+
+        assert [cause.identity_uri for cause in first[0].causes] == [
+            cause.identity_uri for cause in second[0].causes
+        ]

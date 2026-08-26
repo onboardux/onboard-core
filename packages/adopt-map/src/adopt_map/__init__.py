@@ -24,8 +24,11 @@ The pack layout is one distribution with packs as modules (v6.1 §6), so
 `pip install adopt-cli` always yields a working `adopt map`.
 """
 
+from adopt_map.diff import ChangeEntry, DiffOutcome, Exemption, FileDelta, Rebaseline
+from adopt_map.diff import compute as compute_diff
 from adopt_map.digest import attribute_digest, canonical_attributes
 from adopt_map.expected import load_expected, missing_identities
+from adopt_map.filestate import FileState, changed_paths, hash_file
 from adopt_map.moves import (
     MoveCandidate,
     MoveOutcome,
@@ -35,7 +38,7 @@ from adopt_map.moves import (
 )
 from adopt_map.observation import Extractor, Observation, Span
 from adopt_map.packs import registry
-from adopt_map.report import StoredRevision, build_report
+from adopt_map.report import StoredRevision, build_report, digest_summary
 from adopt_map.runner import (
     ExtractorOutcome,
     IdentityWriter,
@@ -47,8 +50,13 @@ from adopt_map.runner import (
 from adopt_map.tree import SourceTree, TreeFile
 
 __all__ = [
+    "ChangeEntry",
+    "DiffOutcome",
+    "Exemption",
     "Extractor",
     "ExtractorOutcome",
+    "FileDelta",
+    "FileState",
     "IdentityWriter",
     "MapReport",
     "MoveCandidate",
@@ -56,6 +64,7 @@ __all__ = [
     "Observation",
     "ObservedIdentity",
     "Pack",
+    "Rebaseline",
     "SourceTree",
     "Span",
     "StoredIdentity",
@@ -64,7 +73,11 @@ __all__ = [
     "attribute_digest",
     "build_report",
     "canonical_attributes",
+    "changed_paths",
+    "compute_diff",
     "detect_moves",
+    "digest_summary",
+    "hash_file",
     "load_expected",
     "missing_identities",
     "registry",

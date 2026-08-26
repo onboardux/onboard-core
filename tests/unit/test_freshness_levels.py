@@ -117,6 +117,41 @@ class TestTheLevelAndRuleMatrix:
         assert resolution.level == "binding"
         assert resolution.deciding_rule == RULE_BINDING_RETIRED
 
+    def test_a_superseded_binding_no_longer_blocks_the_item(
+        self, s4_store: SqliteStoreHandle, s4_scope: Scope, s4_clock: ManualClock
+    ) -> None:
+        """**Build 6's one substrate amendment.** A binding whose head status is
+        `moved` was replaced by a rebind, and its identity is dead or moved by
+        definition.
+
+        *Fails when* a superseded binding keeps deciding. *Matters because*
+        `rebind` would then be a review action that changes nothing: the item
+        would resolve STALE forever through the link the reviewer just replaced,
+        and a queue whose resolutions do not resolve is a queue people stop
+        working. *No other instrument catches it* because the successor binding
+        is perfectly correct -- the stale answer comes from the row beside it.
+
+        `binding_status` has carried `moved` since schema v3 with no writer, so
+        this changes no existing behaviour; the two rules beside it -- `retired`
+        stales, an active binding to a dead identity stales -- are asserted
+        above and unchanged.
+        """
+        item_id, binding_id, identity_id = _bound_item(s4_store, s4_scope, key="POST /v1/orders")
+        # The referent died, which is what would have prompted the rebind.
+        s4_store.identities().retire(identity_id=identity_id, reason="endpoint removed")
+        s4_store.revisions().append_revision(
+            parent_id=binding_id,
+            draft=BindingRevisionDraft(status="moved"),
+            expected_head_id=s4_store.revisions().current_head(binding_id),
+        )
+
+        resolution = resolve_freshness(s4_store.freshness_records(), item_id, clock=s4_clock)
+
+        assert resolution.state != "stale", (
+            "a binding the reviewer already replaced still decided the item's freshness"
+        )
+        assert resolution.deciding_rule == RULE_ITEM_STATE
+
     def test_a_stale_load_bearing_binding_stales_the_item(
         self,
         s4_store: SqliteStoreHandle,

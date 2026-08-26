@@ -31,6 +31,19 @@ Three further postures, each inherited rather than invented:
   acquire it after the fact.
 """
 
+from adopt_knowledge.changes import (
+    ACTION_CONFIRM_CURRENT,
+    ACTION_REBIND,
+    ACTION_RETIRE,
+    ACTIONS,
+    SOURCE_RULED_CLASSES,
+    ChangedBinding,
+    ChangeOutcome,
+    confirm_current_item,
+    rebind_item,
+    retire_item,
+    still_stale_after_confirm,
+)
 from adopt_knowledge.documents import (
     AUDIENCES,
     DEFAULT_AUDIENCE,
@@ -104,13 +117,25 @@ from adopt_knowledge.matchers import (
     path_matches,
     structural_matches,
 )
-from adopt_knowledge.ports import BindingWriter, DraftStore, KnowledgeWriter, ReviewWriter
+from adopt_knowledge.ports import (
+    BindingFreshener,
+    BindingSuperseder,
+    BindingWriter,
+    DraftStore,
+    ItemRetirer,
+    KnowledgeWriter,
+    ReviewWriter,
+)
 from adopt_knowledge.review import (
     SOURCE_DRAFT,
     SOURCE_HARVEST,
     SOURCE_INGEST,
+    SOURCE_REFRESH,
+    ChangeCause,
+    ChangedItem,
     Outcome,
     PendingItem,
+    coalesce_changes,
     confirm,
     derive_suggestions,
     edit,
@@ -119,6 +144,10 @@ from adopt_knowledge.review import (
 )
 
 __all__ = [
+    "ACTIONS",
+    "ACTION_CONFIRM_CURRENT",
+    "ACTION_REBIND",
+    "ACTION_RETIRE",
     "AUDIENCES",
     "CREATED",
     "DEFAULT_AUDIENCE",
@@ -139,11 +168,19 @@ __all__ = [
     "SOURCE_DRAFT",
     "SOURCE_HARVEST",
     "SOURCE_INGEST",
+    "SOURCE_REFRESH",
+    "SOURCE_RULED_CLASSES",
     "STRUCTURAL_TIERS",
     "UNCHANGED",
     "UPDATED",
+    "BindingFreshener",
+    "BindingSuperseder",
     "BindingWriter",
     "Candidate",
+    "ChangeCause",
+    "ChangeOutcome",
+    "ChangedBinding",
+    "ChangedItem",
     "Commit",
     "ConflictRow",
     "CoverageEntry",
@@ -159,6 +196,7 @@ __all__ = [
     "HarvestReport",
     "IdentityView",
     "IngestReport",
+    "ItemRetirer",
     "KnowledgeWriter",
     "Match",
     "MatchOutcome",
@@ -170,7 +208,9 @@ __all__ = [
     "StoredDocument",
     "batch_key",
     "body_digest",
+    "coalesce_changes",
     "confirm",
+    "confirm_current_item",
     "decision_record_titles",
     "derive_suggestions",
     "discover",
@@ -187,13 +227,16 @@ __all__ = [
     "rank_gaps",
     "read_commits",
     "read_document",
+    "rebind_item",
     "reject",
     "render_body",
+    "retire_item",
     "run_drafting",
     "run_harvest",
     "run_ingest",
     "source_of",
     "split_frontmatter",
+    "still_stale_after_confirm",
     "structural_matches",
     "title_for",
 ]

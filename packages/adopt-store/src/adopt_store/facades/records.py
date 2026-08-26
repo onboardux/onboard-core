@@ -26,6 +26,8 @@ from adopt_model import (
     AudienceTag,
     Binding,
     BindingRevision,
+    ChangeEvent,
+    Classification,
     CoverageGap,
     Escalation,
     Identity,
@@ -45,6 +47,7 @@ from adopt_model._enums import EscalationStatus, FreshnessState, ReviewResolutio
 
 __all__ = [
     "BindingRecords",
+    "ChangeRecords",
     "CoverageGapRecords",
     "EscalationRecords",
     "IdentityRecords",
@@ -262,6 +265,74 @@ class CoverageGapRecords(Protocol):
         and `gap_key` carries the full identity URI: joining a scoped list onto
         every disposition can only match dispositions in that scope.
         """
+        ...
+
+
+class ChangeRecords(Protocol):
+    """`change_event`, `classification`, `classifier_version` -- and one binding write.
+
+    Introduced by Build 6, the first code that writes any of them (v6.1 §6
+    Build 6). Build 8 operates the same cascade server-side against a Postgres
+    realization of this port; that is why the diff and the write path above it
+    hold no dialect.
+
+    **Nothing here decides anything.** The cascade lives in `adopt_map.diff` as
+    a pure function, and this port records what it concluded. A port that could
+    classify would be a second opinion about impact, and the two would disagree
+    the first time one of them was fixed.
+
+    **`set_binding_freshness` lives here rather than on `BindingRecords`, and
+    that placement is deliberate.** Propagation is this build's write: it is the
+    first and only writer of `binding.freshness_state = stale`, and keeping it
+    on the port that Build 8 will realize means `BindingRecords` -- which the
+    plane already realizes -- grows no new query path in this build, so the
+    escape suite's denominator is unchanged. `binding` is a parent row, so the
+    `UPDATE` leaves `no-revision-update` untouched, and the column list is
+    closed to exactly one column for the reason `SensorRecords` closes its own:
+    a mutation surface that grows by convenience is how a parent row starts
+    carrying state its revisions should have held.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+    def insert_change_event(self, row: ChangeEvent) -> None: ...
+    def insert_classification(self, row: Classification) -> None: ...
+
+    def ensure_classifier_version(
+        self, *, version_label: str, training_data_categories: str, released_at: _dt.datetime
+    ) -> str:
+        """The id of the classifier version with this label, creating it once.
+
+        Get-or-create rather than insert, because every refresh run classifies
+        with the same deterministic cascade and a row per run would turn a
+        version table into a run log. Build 8's ML classifier lands as a second
+        label here -- a version, not a rewrite (v6.1 §6 Build 8) -- which is the
+        whole reason the deterministic cascade records one at all.
+        """
+        ...
+
+    def set_binding_freshness(
+        self, binding_id: str, freshness_state: FreshnessState, *, updated_at: _dt.datetime
+    ) -> None:
+        """Propagation's one write: a binding's denormalized freshness.
+
+        `updated_at` is accepted for symmetry with `set_item_freshness` and to
+        keep the caller's clock the only clock, though `binding` carries no
+        updated column at schema v3 -- the timestamp of record is the
+        `change_event` that caused this, which is the row a reader needs anyway.
+        """
+        ...
+
+    def classifications_for_batch(self, batch_key: str) -> Sequence[Classification]:
+        """Every classification produced by one refresh run, in id order.
+
+        Keyed on the batch rather than on the event, because a run's meaning is
+        the whole batch: `adopt review` renders one session, and the classes
+        that have no `review_item` row (D6) are readable only from here.
+        """
+        ...
+
+    def change_events_for_batch(self, batch_key: str) -> Sequence[ChangeEvent]:
+        """The events of one refresh run, in id order."""
         ...
 
 

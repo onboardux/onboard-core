@@ -20,6 +20,13 @@ exclusion is by construction rather than by a filter someone could forget --
 which is the same argument S5 recorded for the annex in the first place.
 """
 
+from adopt_store.annex.filestate import SqliteFileStateRecords, open_file_state
 from adopt_store.annex.sqlite_annex import SqliteAnnexRecords, annex_path, open_annex
 
-__all__ = ["SqliteAnnexRecords", "annex_path", "open_annex"]
+__all__ = [
+    "SqliteAnnexRecords",
+    "SqliteFileStateRecords",
+    "annex_path",
+    "open_annex",
+    "open_file_state",
+]

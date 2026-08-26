@@ -23,19 +23,21 @@ logs.
 
 ## What is included
 
-The uv workspace contains 16 publishable packages:
+The uv workspace contains 20 publishable packages:
 
 | Area | Packages |
 |---|---|
 | CLI and workflow | `adopt-cli`, `adopt-workflow` |
 | Store and schema | `adopt-store`, `adopt-schema`, `adopt-model`, `adopt-identity`, `adopt-scope` |
 | Analysis | `adopt-detect`, `adopt-map`, `adopt-coverage`, `adopt-freshness`, `adopt-policy`, `adopt-agent` |
+| Knowledge and delivery | `adopt-knowledge`, `adopt-ask`, `adopt-handover`, `adopt-probe` |
 | Portability and operations | `adopt-export`, `adopt-obs`, `adopt-const` |
 
 The command surface includes `init`, `detect`, `map`, `boundary`, store
 migration and inspection, identity parsing, coverage and freshness evaluation,
-export/import, policy validation, adapter checks, `doctor`, and release
-provenance reporting.
+export/import, policy validation, adapter checks, `doctor`, release provenance
+reporting, the knowledge verbs (`ingest`, `harvest`, `bind`, `review`, `gaps`),
+`ask`/`answer`/`serve`, `pack`/`draft`, `probe`, and `refresh`.
 
 ## Install
 
@@ -390,6 +392,98 @@ Not in this version: generated-code probes, browser/UI probes, scheduled
 execution, cleanup verification (`probe_run.cleanup_verified` is recorded
 `false` and judged by nobody), and the `embedding_sim` / `llm_judge` /
 `contract_delta` diff methods, which are refused at `add` with a named message.
+
+### `adopt refresh`
+
+Knowledge rots because systems move and documents do not. `refresh` is the verb
+that notices: it re-maps the repository, re-runs the probes, compares both
+against what the store already believed, and turns the difference into
+classified change events, staled knowledge and one review session.
+
+```sh
+adopt refresh                     # re-map (+ re-probe if probes exist)
+# -> counts by class, a batch id, and what was staled
+adopt review                      # the session: DEAD, MOVED, SEMANTICS-CHANGED, NEW
+adopt ask "how are orders created?"
+# -> STALE, naming the change that made it stale
+adopt review --resolve ri_01J… --action retire|rebind|confirm-current [--to <uri>]
+```
+
+**Exit `4` means the command worked and found something.** A run that reaches
+the tree, holds every invariant and observes that the system moved has done its
+job; `4` is degraded-with-findings, the same reading `adopt probe diff` and
+`adopt map --check-expected` carry. Exit `1` is reserved for a run that could
+not do its job — an extractor that raised, which makes every absence below it
+unreliable evidence. A clean run exits `0` and writes nothing at all.
+
+**A comment cannot stale anything, by construction.** Staleness is decided by
+the per-kind **attribute digest** — method + path + parameter names for an
+endpoint, key + type + default for a config, whitespace-normalized text where
+the value *is* text — never a file hash. Reformat a file, add a docstring,
+reorder imports: the digest is identical, the change is recorded as
+`BINDING_INTACT_RENDER_ONLY`, listed as informational, and no exit code fires.
+False staleness is the failure that makes people stop reading the queue, so it
+is made unrepresentable rather than merely unlikely.
+
+**An extractor upgrade re-baselines; it does not produce a change storm.**
+Digests are compared only within the same extractor version. Change how we look
+and the run reports *"instrument changed, system not re-judged"*, records the
+new digest, and classifies nothing.
+
+The five classes, and what each means:
+
+| Class | What happened | Where it goes |
+|---|---|---|
+| `BINDING_DEAD` | the referent was looked for and not found | the review queue |
+| `BINDING_MOVED` | it is at a new address; its history follows it | the review queue |
+| `BINDING_INTACT_SEMANTICS_CHANGED` | same address, different meaning | the review queue |
+| `UNBOUND_NEW` | a referent nobody has written about | `adopt gaps` |
+| `BINDING_INTACT_RENDER_ONLY` | the file changed, the referent did not | informational |
+
+**Nothing is silent.** Every class is recorded with the deterministic
+classifier's version and rendered in `adopt review`; the informational ones are
+shown without asking anything of a reviewer. Silence has to be earned with
+measured evidence, and nothing in this version has earned it.
+
+**Propagation is narrow on purpose.** Only **load-bearing** bindings stale their
+item — the same rule `adopt ask` resolves freshness by, so the queue can never
+show an item as needing review while `ask` still serves it as fresh. A change to
+a referent nobody documented queues nothing and is reported so the counts add up.
+
+**One run is one review session.** Every event of a run shares a batch key, and
+the items are coalesced — one entry per knowledge item however many changed
+referents it is bound to — ordered by blast radius. A big rebase is a session,
+not two hundred entries.
+
+Three actions resolve a change item, and each has a store consequence rather
+than only a disposition:
+
+- `--action retire` — the note is obsolete. A terminal revision is appended and
+  the item resolves `retired` forever. Nothing is deleted.
+- `--action rebind [--to <uri>]` — the note followed its referent. The old link
+  appends a `moved` revision and a new binding is created to the successor;
+  `--to` defaults to the alias a MOVED classification already recorded, and is
+  required for any other class, because a deleted endpoint does not name what
+  replaced it.
+- `--action confirm-current` — still true as written. A `human_confirmed` /
+  `verified` revision is appended and the links it re-affirmed go `fresh`. If a
+  cause is a dead or moved referent, the command **says** the item stays STALE
+  and points at the two actions that help, because no binding write can clear a
+  rule that reads the referent's own state.
+
+**The probe half runs only if there is something to run.** With probes defined
+and a baseline set, `refresh` re-runs them and a drift becomes a `provider`
+change event classifying every identity the probe's `exercises` declares — the
+same propagation, the same batch, the same review. A probe compared against a
+baseline of another revision reports `probe_changed` and is never drift: *you*
+edited the question. A probe that could not reach its system is reported as a
+failure and its sensor heartbeat is what makes the knowledge
+`observation_stale` rather than `stale` — "we cannot currently tell" is a
+different answer from "this is out of date". `--no-probes` skips the half
+entirely, and nothing else in `refresh` opens a socket.
+
+Not in this version: continuous or scheduled execution, filesystem watchers,
+webhooks, ML classification and silent repair. `refresh` runs when you run it.
 
 ## Validate a checkout
 

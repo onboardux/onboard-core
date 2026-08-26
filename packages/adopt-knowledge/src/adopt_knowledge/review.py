@@ -75,8 +75,12 @@ __all__ = [
     "SOURCE_DRAFT",
     "SOURCE_HARVEST",
     "SOURCE_INGEST",
+    "SOURCE_REFRESH",
+    "ChangeCause",
+    "ChangedItem",
     "Outcome",
     "PendingItem",
+    "coalesce_changes",
     "confirm",
     "derive_suggestions",
     "edit",
@@ -99,6 +103,12 @@ SOURCE_HARVEST: Final[str] = "harvest"
 #: cycle would be real -- and the string is the queue's vocabulary, which is this
 #: module's own to declare.
 SOURCE_DRAFT: Final[str] = "draft"
+#: Build 6's change items -- the fourth population, and the first whose subject
+#: is a *change to the system* rather than a proposal about knowledge. What a
+#: reviewer is asked is therefore different again ("this endpoint moved; is this
+#: note still right?"), and what confirming does is different too: the three
+#: actions land in Build 6's second sprint. Until then the population lists.
+SOURCE_REFRESH: Final[str] = "refresh"
 
 #: Populations whose confirmation **appends a verified revision** rather than
 #: creating bindings. Membership, not a branch: a draft and a harvest candidate
@@ -119,6 +129,80 @@ _HUMAN_SOURCE: Final[SourceType] = "human"
 def source_of(batch_key: str) -> str:
     """Which population a batch belongs to, from the key its producer stamped."""
     return batch_key.split(":", 1)[0]
+
+
+@dataclass(frozen=True, slots=True)
+class ChangeCause:
+    """Why one knowledge item is in a refresh batch: one classified change.
+
+    An item can have several -- a runbook bound to three endpoints in a rebased
+    directory has three -- and all of them travel, because a reviewer deciding
+    whether a note is still true needs to see everything that happened to what
+    it describes, not the first thing the query returned.
+    """
+
+    identity_id: str
+    identity_uri: str
+    impact_class: str
+    evidence: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChangedItem:
+    """One knowledge item a refresh affected, with every cause, ordered."""
+
+    item_id: str
+    causes: tuple[ChangeCause, ...]
+
+    @property
+    def blast_radius(self) -> int:
+        """How many changed referents this one item covers."""
+        return len(self.causes)
+
+
+def coalesce_changes(
+    causes: Sequence[tuple[str, ChangeCause]],
+) -> tuple[ChangedItem, ...]:
+    """Group `(item_id, cause)` pairs into one entry per item, ordered by blast radius.
+
+    **This is the coalescing v6.1 §6 requires**: *"events coalesce per refresh
+    run (one batch, ordered by blast radius) so a big rebase is one review
+    session, not two hundred entries."* One item appears once however many
+    changed identities it is bound to -- the schema would happily hold two
+    `review_item` rows for one item in one batch, and a reviewer would have to
+    resolve the same note twice with no way to tell the entries apart.
+
+    **Ordered by blast radius, descending, then by item id.** The item covering
+    the most changed referents is the one whose resolution teaches the reviewer
+    the most about the run, and it is usually the one whose answer decides the
+    rest. The id tie-break is what makes the order total: a queue that
+    reshuffled between two listings of the same batch would make a reviewer
+    re-read what they had already triaged.
+    """
+    grouped: dict[str, list[ChangeCause]] = {}
+    for item_id, cause in causes:
+        bucket = grouped.setdefault(item_id, [])
+        if any(
+            existing.identity_id == cause.identity_id
+            and existing.impact_class == cause.impact_class
+            for existing in bucket
+        ):
+            # One identity classified once per run: the UNIQUE index on
+            # `(change_event_id, identity_id)` says so, and a duplicate here
+            # would inflate a blast radius and reorder the queue by an artefact.
+            continue
+        bucket.append(cause)
+
+    items = [
+        ChangedItem(
+            item_id=item_id,
+            causes=tuple(
+                sorted(bucket, key=lambda cause: (cause.impact_class, cause.identity_uri))
+            ),
+        )
+        for item_id, bucket in grouped.items()
+    ]
+    return tuple(sorted(items, key=lambda item: (-item.blast_radius, item.item_id)))
 
 
 @dataclass(frozen=True, slots=True)

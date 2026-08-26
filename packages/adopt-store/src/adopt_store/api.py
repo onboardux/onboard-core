@@ -28,8 +28,9 @@ arrives with Build 2, which writes the first of the tables §10.3 assigns it --
 the review queue. Its other subjects (approval, escalation, ownership, audit)
 gain methods in the build that writes them, on the same rule: an accessor that
 raises is not a seam, it is a placeholder wearing one, and a method that has no
-table yet is the same thing one level down. The remaining two -- `changes()`
-and `value()` -- land in the sprints that write the tables they front.
+table yet is the same thing one level down. `changes()` arrives with Build 6,
+which writes `change_event` and `classification`; `value()` is the last one
+outstanding and lands in the sprint that writes the tables it fronts.
 
 **Two ports are exposed that §10.3 does not declare**, and deliberately so:
 `coverage_records()` and `freshness_records()` are the storage halves of
@@ -55,6 +56,7 @@ from adopt_schema.assets import assets_root
 from adopt_schema.migrate import apply as apply_migrations
 from adopt_scope import ScopeFacade
 from adopt_store.facades.boundary import BoundaryFacade
+from adopt_store.facades.change import ChangeFacade
 from adopt_store.facades.identity import IdentityFacade
 from adopt_store.facades.knowledge import (
     BindingFacade,
@@ -68,6 +70,7 @@ from adopt_store.revisions import RevisionWriter
 from adopt_store.sqlite.records import (
     SqliteBindingRecords,
     SqliteBoundaryRecords,
+    SqliteChangeRecords,
     SqliteCoverageGapRecords,
     SqliteCoverageRecords,
     SqliteEscalationRecords,
@@ -172,6 +175,7 @@ class Store(Protocol):
     def probes(self) -> ProbeFacade: ...
     def sensors(self) -> SensorFacade: ...
     def governance(self) -> GovernanceFacade: ...
+    def changes(self) -> ChangeFacade: ...
     def boundary(self) -> BoundaryFacade: ...
     def revisions(self) -> RevisionWriter: ...
     def close(self) -> None: ...
@@ -251,6 +255,12 @@ class SqliteStoreHandle:
                 SqliteCoverageGapRecords(self.backend),
                 clock=self.clock,
             ),
+        )
+
+    def changes(self) -> ChangeFacade:
+        return self._cached(
+            "changes",
+            lambda: ChangeFacade(SqliteChangeRecords(self.backend), clock=self.clock),
         )
 
     def probes(self) -> ProbeFacade:

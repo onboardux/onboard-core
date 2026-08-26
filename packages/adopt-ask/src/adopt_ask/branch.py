@@ -60,10 +60,20 @@ UNKNOWN: Final[Branch] = "unknown"
 #: pre-B6 nothing sets an item to `fresh`, so treating `unverified` as STALE
 #: means `adopt ask` could never answer KNOWN until Build 6 shipped.
 #:
-#: v6.1 §6 F3 is the authority and is explicit about the pre-B6 scope: staleness
-#: arises from identity **death and moves** surfaced by map reruns, and from
+#: v6.1 §6 F3 is the authority and was explicit about the pre-B6 scope: staleness
+#: arose from identity **death and moves** surfaced by map reruns, and from
 #: **retirement**. Those three arrive as `stale` and `retired`, each carrying the
-#: rule that produced it. Nothing else is staleness yet.
+#: rule that produced it.
+#:
+#: **Build 6 has since shipped, and F3's boundary has moved -- with no change to
+#: this module.** `adopt refresh` adds the fourth source: a changed attribute
+#: digest on a bound referent stales the *binding*, which `resolve_freshness`
+#: already reads as `RULE_BINDING_STALE`. That the sensitivity of STALE could
+#: grow without this file being edited is F3's design working as intended: the
+#: three-way contract was complete at Build 3, and Build 6 fed it rather than
+#: extending it. The one thing that did change is `adopt_freshness`' treatment of
+#: a **superseded** binding, which a rebind now creates -- and that is a rule
+#: about which bindings are consulted, not about which states serve.
 #:
 #: Naming the servable states rather than the unservable ones is deliberate in
 #: the other direction: a `freshness_state` added to the manifest later falls

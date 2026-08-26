@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from adopt_map import StoredIdentity, StoredRevision
-from adopt_map.report import chain_summary
+from adopt_map.report import chain_summary, digest_summary
 from pydantic import BaseModel
 
 from adopt_model import Engagement, Environment, Firm, Identity, IdentityRevision, System
@@ -169,16 +169,39 @@ def stored_identities(handle: StoreView, scope: Scope) -> list[StoredIdentity]:
     while every test that seeded state beforehand still passed.
     """
     identities = scope_identities(handle, scope)
-    chains = chain_summary(scope_revisions(handle, identities))
+    revisions = scope_revisions(handle, identities)
+    chains = chain_summary(revisions)
+    digests = digest_summary(revisions)
     stored: list[StoredIdentity] = []
     for row in identities:
         chain = chains.get(row.id)
+        # The **latest** digest-bearing revision, not the creating one. Identical
+        # on every store written before Build 6 -- one revision per identity, so
+        # both readings return it -- and different from the moment refresh
+        # records a changed digest, which is exactly when reading the creating
+        # revision would start re-reporting the same edit forever.
+        digest = digests.get(row.id)
         stored.append(
             StoredIdentity(
                 identity_id=row.id,
                 uri=row.uri,
-                digest=chain[0].source_version if chain else None,
+                digest=digest.source_version if digest else None,
                 status=chain[1].status if chain else "active",
+                extractor_version=digest.extractor_version if digest else None,
+                extractor=digest.extractor if digest else None,
+                source_path=_path_only(digest.source_ref) if digest else None,
             )
         )
     return stored
+
+
+def _path_only(source_ref: str | None) -> str | None:
+    """`<path>:<start>-<end>` without the span.
+
+    The span moves whenever anything above it in the file moves, so a guard
+    keyed on the whole `source_ref` would stop matching after an unrelated edit
+    -- and the oversized exemption would silently stop exempting.
+    """
+    if source_ref is None:
+        return None
+    return source_ref.rsplit(":", 1)[0]

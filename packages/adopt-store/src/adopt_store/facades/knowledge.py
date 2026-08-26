@@ -15,6 +15,7 @@ normal path.
 
 import datetime as _dt
 from collections.abc import Sequence
+from typing import Final
 
 from adopt_model import (
     AudienceTag,
@@ -29,6 +30,7 @@ from adopt_model import (
 )
 from adopt_model._enums import (
     AuthorityClass,
+    BindingStatus,
     DiffMethod,
     EscalationBranch,
     EscalationStatus,
@@ -59,6 +61,12 @@ from adopt_store.revisions import (
 )
 
 __all__ = ["BindingFacade", "GovernanceFacade", "KnowledgeFacade", "ProbeFacade"]
+
+#: `binding_status`'s middle value, and the one nothing wrote before Build 6.
+#: Spelled here rather than inline so the two readers of the value -- this
+#: facade, which writes it, and `adopt_freshness.resolve`, which skips it --
+#: cannot drift into meaning different things by one of them being edited.
+_BINDING_SUPERSEDED: Final[BindingStatus] = "moved"
 
 
 class KnowledgeFacade:
@@ -197,6 +205,24 @@ class KnowledgeFacade:
 
     def audiences(self, item_id: str) -> tuple[str, ...]:
         return tuple(self._records.audiences_for_item(item_id))
+
+    def retire(self, *, item_id: str, reason: str, actor_id: str | None = None) -> str:
+        """Append the item's terminal revision and set it `retired`.
+
+        **Build 6's `retire` review action, and the only way an item ends.** The
+        knowledge family has no status column on its revisions, so the terminal
+        state is the parent's `freshness_state` (contracts §5 obligation 6) --
+        `RevisionWriter.retire` writes both in one transaction, and this door
+        exists so a reviewer's decision goes through the same writer as
+        everything else rather than through a second path that would have to
+        remember the pair.
+
+        The item stays readable forever. A retired note is the answer to "what
+        did we believe in March", and `resolve_freshness` reports it as
+        `retired` rather than as absent -- which is what lets `adopt ask` say
+        "that was withdrawn" instead of "no idea".
+        """
+        return self._writer.retire(parent_id=item_id, reason=reason, actor_id=actor_id)
 
 
 def _batch_resolution(outcomes: Sequence[ReviewResolution | None]) -> ReviewResolution:
@@ -667,6 +693,35 @@ class BindingFacade:
         """Append a `retired` revision. The binding stays readable, because
         coverage provenance depends on it (PRD F6.7)."""
         return self._writer.retire(parent_id=binding_id, reason=reason, actor_id=actor_id)
+
+    def supersede(self, *, binding_id: str, actor_id: str | None = None) -> str:
+        """Append a `moved` revision: this link was **replaced**, not withdrawn.
+
+        **Build 6's `rebind` action is `binding_status = 'moved'`'s first
+        writer.** The value has sat in the manifest since schema v3 with nothing
+        writing it, declared for exactly this: a reviewer has re-pointed the item
+        at the referent's successor, and the successor's binding is what anchors
+        it now.
+
+        The distinction from `retire` is the whole reason both exist, and it is
+        load-bearing in `resolve_freshness`:
+
+        * `retired` means the link was **withdrawn** and nothing replaced it, so
+          the item still stales -- there is no anchor.
+        * `moved` means the link was **replaced**, so it is skipped rather than
+          consulted. Its identity is dead or moved by definition, and reading it
+          would block the item forever -- making every rebind a resolution that
+          changed nothing, which is how a reviewer learns the queue is fake.
+
+        Nothing is edited and nothing is deleted: the old chain keeps every
+        revision it had, and "what was this bound to in March" still answers.
+        """
+        return self._writer.append_revision(
+            parent_id=binding_id,
+            draft=BindingRevisionDraft(status=_BINDING_SUPERSEDED),
+            expected_head_id=self._writer.current_head(binding_id),
+            actor_id=actor_id,
+        )
 
 
 class ProbeFacade:

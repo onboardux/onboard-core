@@ -52,24 +52,54 @@ class StoredIdentity:
 
     identity_id: str
     uri: str
-    #: `identity_revision.source_version` from the creating revision -- the H5
-    #: attribute digest, with the extractor version already mixed in.
+    #: `identity_revision.source_version` from the **latest digest-bearing**
+    #: revision -- the H5 attribute digest, with the extractor version already
+    #: mixed in. Until Build 6 every identity had exactly one revision, so this
+    #: was the creating one; refresh appends digest-recording revisions, and
+    #: reading the creating revision after that would compare this run against
+    #: the *original* observation forever -- one edit reported at every
+    #: subsequent refresh.
     digest: str | None
     #: The head revision's status. A `moved` or `dead` identity is not a
     #: candidate: it has already been accounted for, and pairing it again would
     #: chain an alias onto an alias for no reason anyone could later read.
     status: str
+    #: The extractor version that produced `digest`. Carried separately from the
+    #: digest it is mixed into, because the fence needs to *compare* versions:
+    #: across an upgrade every digest differs by construction, and a diff that
+    #: could not see the version would read an instrument change as a change
+    #: storm (H5).
+    extractor_version: str | None = None
+    #: The extractor that produced `digest`, for the pack-universe guard: an
+    #: identity whose extractor did not run this time has not been looked for,
+    #: and absence of a look is not evidence of death.
+    extractor: str | None = None
+    #: The repo-relative path `digest` was read from, without the span. Feeds the
+    #: oversized-file exemption for the same reason: a file the walk skipped was
+    #: never examined.
+    source_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ObservedIdentity:
-    """A referent this run saw, with everything `move()` needs to address it."""
+    """A referent this run saw, with everything `move()` needs to address it.
+
+    The last three fields are what `adopt_map.diff` records alongside a changed
+    digest, so the next refresh compares against this run's instrument rather
+    than the original one. They carry defaults because move detection needs none
+    of them -- pairing is by digest alone.
+    """
 
     uri: str
     kind: IdentityKind
     namespace: str | None
     key: tuple[str, ...]
     digest: str
+    extractor: str | None = None
+    extractor_version: str | None = None
+    #: Repo-relative path, without the span. The span is not carried because
+    #: nothing compares it: a referent that moved down a file did not change.
+    source_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

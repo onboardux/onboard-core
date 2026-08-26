@@ -205,6 +205,52 @@ class IdentityFacade:
             )
         return destination
 
+    def record_digest(
+        self,
+        *,
+        identity_id: str,
+        source_version: str,
+        extractor: str | None = None,
+        extractor_version: str | None = None,
+        source_ref: str | None = None,
+        confidence: float | None = None,
+        actor_id: str | None = None,
+    ) -> str:
+        """Append an `active` revision recording what the referent looks like now.
+
+        **Build 6's write, and the reason `observe` deliberately has none.**
+        `observe` sees a known URI and touches `last_seen` only: comparison,
+        the `change_event` and the review queue are Build 6's, and an append
+        with nowhere to report it would stale bound knowledge silently -- the
+        exact failure H5 exists to prevent. Once refresh *has* somewhere to
+        report it, the new digest has to be recorded, or the next run compares
+        against the original observation and re-reports one edit forever.
+
+        The revision is `active` because the referent is alive and where it was:
+        what changed is its attributes, and the chain is how that history is
+        kept. A caller that wanted to say something else about it -- moved, dead
+        -- has `move` and `retire`, which are the only other things that can be
+        true of a referent.
+
+        Raises:
+            AdoptError: ``REVISION_CHAIN_FORK`` when the head moved under the
+                caller, through `append_revision`'s own check. Two refreshes
+                racing on one store is exactly what that guard is for.
+        """
+        return self._writer.append_revision(
+            parent_id=identity_id,
+            draft=IdentityRevisionDraft(
+                status="active",
+                extractor=extractor,
+                extractor_version=extractor_version,
+                source_version=source_version,
+                source_ref=source_ref,
+                confidence=confidence,
+            ),
+            expected_head_id=self._writer.current_head(identity_id),
+            actor_id=actor_id,
+        )
+
     def retire(self, *, identity_id: str, reason: str, actor_id: str | None = None) -> str:
         """Append a `dead` revision. The row and its URI remain readable."""
         return self._writer.retire(parent_id=identity_id, reason=reason, actor_id=actor_id)

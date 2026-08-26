@@ -21,6 +21,7 @@ port is excluded in the plane rather than realized.
 
 from collections.abc import Sequence
 from contextlib import ExitStack
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from adopt_probe import Baseline, ProbeSpec
@@ -43,10 +44,13 @@ from adopt_scope import Scope
 
 __all__ = [
     "AddOutcome",
+    "Execution",
     "SensorAdapter",
     "active_revision",
     "add_probe",
+    "compare_in_scope",
     "diff_probes",
+    "execute_in_scope",
     "probes_in_scope",
     "resolve_probe",
     "run_targets",
@@ -394,60 +398,104 @@ def run_targets(
         definitions = probes_in_scope(handle, scope)
         if not run_all and target is not None:
             definitions = [resolve_probe(handle, scope, target)]
-
-        pairs: list[tuple[ProbeDefinition, ProbeDefinitionRevision, ProbeSpec]] = []
-        skipped: list[dict[str, str]] = []
-        for probe in definitions:
-            revision = active_revision(handle, probe)
-            if revision is None:
-                skipped.append({"probe": probe.name, "reason": "no revision"})
-                continue
-            if revision.status != "active":
-                skipped.append({"probe": probe.name, "reason": f"revision is {revision.status}"})
-                continue
-            pairs.append((probe, revision, parse_probe(revision.capability_manifest)))
-
-        sensor = SensorAdapter(handle, scope) if pairs else None
-        records = handle.probe_run_records()
-
-        # The annex stays open for the whole set of runs and closes with the
-        # stack -- see `_agent_for`.
-        with ExitStack() as stack:
-            agent = _agent_for(
-                [spec for _, _, spec in pairs],
-                stack,
-                allow_network=allow_network,
-                audience="probe",
-            )
-            reports = [
-                execute_probe(
-                    spec,
-                    probe_definition_id=probe.id,
-                    probe_definition_revision_id=revision.id,
-                    records=records,
-                    environ=os.environ,
-                    agent=agent,
-                    sensor=sensor,
-                    clock=handle.clock,
-                    baseline=_baseline_for(handle, revision.id),
-                )
-                for probe, revision, spec in pairs
-            ]
-        # The conflict pass runs **after** every probe, not inside the loop: a
-        # probe that drifted late must still be able to conflict, and a pass per
-        # probe would re-read the whole knowledge join once per probe to answer
-        # the same question.
-        conflicts = _record_conflicts(handle, records, pairs, reports)
+        execution = execute_in_scope(handle, scope, definitions, allow_network=allow_network)
     finally:
         handle.close()
 
-    payload = summarize(reports)
+    payload = summarize(execution.reports)
     payload["stored"] = True
-    if conflicts:
-        payload["conflicts"] = conflicts
-    if skipped:
-        payload["skipped"] = skipped
+    if execution.conflicts:
+        payload["conflicts"] = execution.conflicts
+    if execution.skipped:
+        payload["skipped"] = execution.skipped
     return payload
+
+
+@dataclass(frozen=True, slots=True)
+class Execution:
+    """One set of probe runs: what ran, what was skipped, what conflicted.
+
+    Returned rather than rendered, because two callers need it and they render
+    differently: `adopt probe run` summarizes it for an operator, and
+    `adopt refresh` turns drift into change events. **One execution path for
+    both** -- a second copy of this sequence would be a second place for the
+    sensor registration, the annex lifetime or the conflict pass to be got
+    subtly wrong, and the two would drift exactly as two extraction paths do.
+    """
+
+    reports: tuple[Any, ...]
+    pairs: tuple[tuple[ProbeDefinition, ProbeDefinitionRevision, ProbeSpec], ...]
+    skipped: tuple[dict[str, str], ...]
+    conflicts: tuple[dict[str, str], ...]
+
+
+def execute_in_scope(
+    handle: Any,
+    scope: Scope,
+    definitions: Sequence[ProbeDefinition],
+    *,
+    allow_network: bool,
+) -> Execution:
+    """Run each definition at its active revision, recording everything.
+
+    Extracted from `run_targets` unchanged so `adopt refresh` reaches the probes
+    through the same code an operator does. Nothing here decides what a result
+    *means*: the runner records outcomes, the conflict pass writes Bet 4's rows,
+    and classification is the caller's.
+    """
+    import os
+
+    from adopt_probe import execute_probe, parse_probe
+
+    pairs: list[tuple[ProbeDefinition, ProbeDefinitionRevision, ProbeSpec]] = []
+    skipped: list[dict[str, str]] = []
+    for probe in definitions:
+        revision = active_revision(handle, probe)
+        if revision is None:
+            skipped.append({"probe": probe.name, "reason": "no revision"})
+            continue
+        if revision.status != "active":
+            skipped.append({"probe": probe.name, "reason": f"revision is {revision.status}"})
+            continue
+        pairs.append((probe, revision, parse_probe(revision.capability_manifest)))
+
+    sensor = SensorAdapter(handle, scope) if pairs else None
+    records = handle.probe_run_records()
+
+    # The annex stays open for the whole set of runs and closes with the
+    # stack -- see `_agent_for`.
+    with ExitStack() as stack:
+        agent = _agent_for(
+            [spec for _, _, spec in pairs],
+            stack,
+            allow_network=allow_network,
+            audience="probe",
+        )
+        reports = [
+            execute_probe(
+                spec,
+                probe_definition_id=probe.id,
+                probe_definition_revision_id=revision.id,
+                records=records,
+                environ=os.environ,
+                agent=agent,
+                sensor=sensor,
+                clock=handle.clock,
+                baseline=_baseline_for(handle, revision.id),
+            )
+            for probe, revision, spec in pairs
+        ]
+    # The conflict pass runs **after** every probe, not inside the loop: a
+    # probe that drifted late must still be able to conflict, and a pass per
+    # probe would re-read the whole knowledge join once per probe to answer
+    # the same question.
+    conflicts = _record_conflicts(handle, records, pairs, reports)
+    return Execution(
+        reports=tuple(reports),
+        pairs=tuple(pairs),
+        skipped=tuple(skipped),
+        conflicts=tuple(conflicts),
+    )
 
 
 def _record_conflicts(
@@ -665,47 +713,9 @@ def diff_probes(handle: Any, scope: Scope) -> dict[str, Any]:
             baseline. A single probe without one is listed and does not fail a
             command whose other probes compared cleanly.
     """
-    from adopt_probe import DRIFT, NO_BASELINE, compare_run, parse_probe
+    from adopt_probe import DRIFT
 
-    records = handle.probe_run_records()
-    comparisons: list[dict[str, Any]] = []
-    any_baseline = False
-
-    for probe in probes_in_scope(handle, scope):
-        revision = active_revision(handle, probe)
-        latest = records.latest_run(probe_definition_id=probe.id)
-        if revision is None or latest is None:
-            # No run means no baseline: a baseline is made *from* a run. Reported
-            # as the same "nothing to compare against yet" answer rather than as
-            # a third vocabulary item saying the same thing.
-            comparisons.append(
-                {
-                    "probe": probe.name,
-                    "verdict": NO_BASELINE,
-                    "baseline": None,
-                    "baseline_revision": None,
-                    "run_revision": None,
-                    "run": None,
-                    "steps": [],
-                }
-            )
-            continue
-
-        baseline = _probe_baselines(handle, _revision_ids(handle, probe))
-        any_baseline = any_baseline or baseline is not None
-        run, observations = latest
-        comparisons.append(
-            _comparison_payload(
-                compare_run(
-                    probe=probe.name,
-                    baseline=baseline,
-                    run_revision_id=run.probe_definition_revision_id,
-                    run_id=run.id,
-                    outputs=[row.output or "" for row in observations],
-                    steps=parse_probe(revision.capability_manifest).steps,
-                )
-            )
-        )
+    comparisons, any_baseline = compare_in_scope(handle, scope)
 
     if not any_baseline:
         raise AdoptError(
@@ -716,11 +726,60 @@ def diff_probes(handle: Any, scope: Scope) -> dict[str, Any]:
             "yet that says how the system behaved before.",
         )
 
+    rendered = [_comparison_payload(comparison) for comparison in comparisons]
     return {
-        "probes": len(comparisons),
-        "comparisons": comparisons,
-        "drifted": sum(1 for row in comparisons if row["verdict"] == DRIFT),
+        "probes": len(rendered),
+        "comparisons": rendered,
+        "drifted": sum(1 for row in rendered if row["verdict"] == DRIFT),
     }
+
+
+def compare_in_scope(handle: Any, scope: Scope) -> tuple[list[Any], bool]:
+    """Every probe's latest run against its baseline. `(comparisons, any_baseline)`.
+
+    Extracted from `diff_probes` so `adopt refresh` compares exactly as
+    `adopt probe diff` does -- including the rule that makes the whole thing
+    trustworthy: a run and a baseline of **different revisions** report
+    `probe_changed`, never drift. Refresh must inherit that rather than
+    reimplement it, because "we edited the probe" reported as "the client's
+    system changed" is the one mistake that would train an FDE to ignore both
+    commands.
+
+    Writes nothing, here as there: `probe_run.outcome` was decided when the run
+    finished, and a comparison that could re-judge it would make the record a
+    running opinion.
+    """
+    from adopt_probe import NO_BASELINE, ProbeComparison, compare_run, parse_probe
+
+    records = handle.probe_run_records()
+    comparisons: list[Any] = []
+    any_baseline = False
+
+    for probe in probes_in_scope(handle, scope):
+        revision = active_revision(handle, probe)
+        latest = records.latest_run(probe_definition_id=probe.id)
+        if revision is None or latest is None:
+            # No run means no baseline: a baseline is made *from* a run. Reported
+            # as the same "nothing to compare against yet" answer rather than as
+            # a third vocabulary item saying the same thing.
+            comparisons.append(ProbeComparison(probe=probe.name, verdict=NO_BASELINE))
+            continue
+
+        baseline = _probe_baselines(handle, _revision_ids(handle, probe))
+        any_baseline = any_baseline or baseline is not None
+        run, observations = latest
+        comparisons.append(
+            compare_run(
+                probe=probe.name,
+                baseline=baseline,
+                run_revision_id=run.probe_definition_revision_id,
+                run_id=run.id,
+                outputs=[row.output or "" for row in observations],
+                steps=parse_probe(revision.capability_manifest).steps,
+            )
+        )
+
+    return comparisons, any_baseline
 
 
 def _comparison_payload(comparison: Any) -> dict[str, Any]:

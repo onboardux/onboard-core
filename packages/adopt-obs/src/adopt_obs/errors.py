@@ -157,6 +157,9 @@ class ErrorCode(StrEnum):
     PROBE_BUDGET_EXCEEDED = "PROBE_BUDGET_EXCEEDED"
     PROBE_BASELINE_MISSING = "PROBE_BASELINE_MISSING"
 
+    PLANE_AUTH_INVALID = "PLANE_AUTH_INVALID"
+    PLANE_ACTIVATION_UNOWNED = "PLANE_ACTIVATION_UNOWNED"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -301,6 +304,23 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # returns when it *did* compare and found drift: 'I could not answer' and
     # 'the answer is that it changed' send a reader to different places.
     ErrorCode.PROBE_BASELINE_MISSING: ErrorCategory.USAGE,
+    # Build 7's two, and both are policy for the same reason the `ENVELOPE_*`
+    # codes are: the request was well-formed and nothing is broken -- a rule the
+    # operator declared is what refused it.
+    #
+    # `PLANE_AUTH_INVALID` is deliberately **one** code for every way a bearer
+    # token can fail to resolve: absent, malformed, unknown, revoked, expired.
+    # Distinguishing them in the response would let an unauthenticated caller
+    # enumerate which tokens exist, and the plane's own logs carry the reason
+    # for the one reader entitled to it.
+    ErrorCode.PLANE_AUTH_INVALID: ErrorCategory.POLICY,
+    # `PLANE_ACTIVATION_UNOWNED` is v6.1 §6's "an unowned live system is a
+    # refused activation, not a warning" in one code. Policy rather than usage
+    # although the fix is to supply an owner: the refusal exists because an
+    # operated system with nobody to route an escalation to is a service that
+    # cannot do its job, which is a decision about what we will operate rather
+    # than a malformed request.
+    ErrorCode.PLANE_ACTIVATION_UNOWNED: ErrorCategory.POLICY,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

@@ -23,13 +23,37 @@ import sqlite3
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-
-from adopt_map.filestate import FileState
+from typing import Protocol, runtime_checkable
 
 from adopt_obs import format_timestamp
 from adopt_store.annex.sqlite_annex import annex_path, connect_annex
 
-__all__ = ["SqliteFileStateRecords", "open_file_state"]
+__all__ = ["FileStateRow", "SqliteFileStateRecords", "open_file_state"]
+
+
+@runtime_checkable
+class FileStateRow(Protocol):
+    """One hashed path, as this module reads it.
+
+    **Structural, not `adopt_map.filestate.FileState` imported.** The pure half
+    of this pair lives in `adopt_map`, and annotating against it would make
+    `adopt-store` depend on `adopt-map` -- eleven extractors pulled into any
+    consumer of the store, to name two strings. `first-party-deps` caught
+    exactly that: the import was real, undeclared, and invisible to every test,
+    because `uv sync --all-packages` supplies every distribution whatever one of
+    them declares. The gap only appears to somebody installing a subset.
+
+    So the two fields are read structurally, which is the reason
+    `ChangeFacade.ClassifiedChange` is a protocol too: the value crosses a
+    package boundary, and re-declaring it on this side would be one more place
+    for a field name to be transcribed wrong.
+    """
+
+    @property
+    def path(self) -> str: ...
+
+    @property
+    def sha256(self) -> str: ...
 
 
 class SqliteFileStateRecords:
@@ -55,7 +79,7 @@ class SqliteFileStateRecords:
         return {str(row["path"]): str(row["sha256"]) for row in rows}
 
     def replace(
-        self, scope_ref: str, states: Iterable[FileState], *, observed_at: _dt.datetime
+        self, scope_ref: str, states: Iterable[FileStateRow], *, observed_at: _dt.datetime
     ) -> int:
         """Replace the scope's snapshot wholesale. Returns the row count written."""
         stamp = format_timestamp(observed_at)

@@ -57,7 +57,14 @@ ANSWERS = {"artifact_access": True, "deploy_signal": True, "safe_interaction": T
 #: the prompt step contributes no drift of its own and the http step is the only
 #: thing that can change. A prompt step that varied would make this journey
 #: report drift whatever the fixture did.
-FAKE_REPLY = {"reply": "Checkout requires an approved payment method and a stocked SKU."}
+#:
+#: **Plain prose, not a JSON envelope.** `probe-001/v1` declares no output schema
+#: -- a probe records what the system *said* -- so a real model answers in prose
+#: and this fixture must too. It used to reply `{"reply": "..."}`, which is what
+#: let a schema the prompt never asked for survive CI: the recorded fake replays
+#: its script whatever it is sent, so the mismatch was invisible until the first
+#: real provider run (CR-51's finding, arriving a second time).
+FAKE_REPLY = "Checkout requires an approved payment method and a stocked SKU."
 
 STEADY: dict[str, Any] = {"order_id": "ord_1", "total": 12, "status": "accepted"}
 #: The system, changed underneath its documentation. No commit, no deploy of
@@ -260,7 +267,7 @@ def journey(tmp_path: Path, system: str) -> dict[str, Any]:
             {
                 "turns": [
                     {
-                        "text": json.dumps(FAKE_REPLY),
+                        "text": FAKE_REPLY,
                         "tool_calls": [],
                         "input_tokens": 10,
                         "output_tokens": 5,

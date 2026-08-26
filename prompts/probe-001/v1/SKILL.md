@@ -36,3 +36,10 @@ fingerprinted, and compared against the probe's baseline on every later run. It
 is never shown to a client as guidance and never becomes knowledge in the store.
 Nobody reads it as truth about the system; it is read only as *what the system
 said when asked this*.
+
+**There is no output envelope, and that is deliberate.** Reply with your answer
+and nothing around it — no JSON wrapper, no markdown fence, no key. This prompt
+declares **no output schema**, because a probe records what the client's system
+*said*, and a schema would make the recording a measurement of how well the model
+follows *our* formatting instead. It would also turn ordinary variation — a fence,
+a preamble — into a failed run rather than the observation it is.

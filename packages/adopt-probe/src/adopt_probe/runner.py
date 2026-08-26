@@ -453,7 +453,15 @@ def _run_prompt_step(
             "manifest. The seam's meter is what refused it, not a second budget.",
         )
     if result.status != "ok":
-        raise _StepFailure(f"the prompt step ended {result.status}")
+        # **The seam's own reason travels with the outcome.** Reporting only the
+        # status produced `the prompt step ended error` against a real provider,
+        # which names nothing an operator can act on -- the credential, the model,
+        # the schema and the network all end `error`. The first real-model run
+        # cost an hour to `AGENT_OUTPUT_SCHEMA` for exactly this reason. A
+        # diagnosis nobody can act on is not a diagnosis.
+        detail = getattr(result, "error", None)
+        because = f": {detail}" if detail is not None else ""
+        raise _StepFailure(f"the prompt step ended {result.status}{because}")
 
     text = _prompt_text(result)
     violation = _check_expectations(step.expect, status=None, body_text=text, latency_ms=latency_ms)

@@ -95,7 +95,7 @@ only when a human confirms it in `adopt review`.
 | | |
 |---|---|
 | Caller | `adopt_probe.runner._run_prompt_step`, from `adopt probe run` |
-| Output schema | `{reply}` |
+| Output schema | **none, deliberately** — the reply is recorded verbatim. See below |
 | Budget | the **probe's own** `cost` block (`max_model_calls`, `max_tokens`), not a programme default |
 | Sends | one probe step's authored `input` text, verbatim |
 | Never sends | anything else. Not the store, not the repository, not the other steps' results |
@@ -106,6 +106,18 @@ interaction would be recorded as part of that behaviour and compared against the
 baseline forever. So the skill text says only "answer the supplied text directly,
 add nothing, prefer the plain phrasing" — the rules exist to keep our own
 contribution constant, not to shape the answer.
+
+**It declares no output schema, and the first real-model run is what proved it
+must not.** `probe-001/v1` originally carried `output_schema.json` requiring
+`{"reply": "..."}`. The seam **validates** an output schema but never sends it to
+the provider — a prompt has to ask for the shape it wants — and this skill's text
+says the opposite: *answer directly, in your own words, add nothing*. A real model
+obeyed the text, failed the schema, burned the single retry `04` §3 allows and
+returned `status=error`. **`fake_recorded` could not show it**: the recorded fake
+replays a scripted `{"reply": ...}` whatever it is sent, so the contradiction
+between the prompt and its own schema was structurally invisible in CI, which is
+CR-51's finding arriving a second time. The schema was the defect, not the model:
+a probe records what the system said, so the reply is now taken verbatim as text.
 
 **Its output never becomes knowledge.** Unlike `draft-001`, nothing here lands as
 a knowledge revision: the reply is recorded as a `probe_observation`,

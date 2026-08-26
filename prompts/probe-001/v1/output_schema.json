@@ -1,7 +1,0 @@
-{
-  "type": "object", "additionalProperties": false,
-  "required": ["reply"],
-  "properties": {
-    "reply": { "type": "string", "maxLength": 8000 }
-  }
-}

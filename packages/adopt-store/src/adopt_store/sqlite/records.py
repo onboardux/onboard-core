@@ -22,7 +22,9 @@ from pydantic import BaseModel
 
 from adopt_model import (
     MODEL_FOR_TABLE,
+    Approval,
     AudienceTag,
+    AuditEvent,
     BaselineVersion,
     Binding,
     BindingRevision,
@@ -40,6 +42,7 @@ from adopt_model import (
     KnowledgeItem,
     KnowledgeRevision,
     ObservabilityBoundary,
+    OwnershipAssignment,
     ProbeDefinition,
     ProbeDefinitionRevision,
     ProbeObservation,
@@ -51,6 +54,7 @@ from adopt_model import (
     SensorHeartbeat,
     System,
     SystemLifecycleEvent,
+    ValueEvent,
 )
 from adopt_model._enums import (
     EscalationStatus,
@@ -74,6 +78,7 @@ __all__ = [
     "SqliteIdentityRecords",
     "SqliteImportRecords",
     "SqliteKnowledgeRecords",
+    "SqliteOperationsRecords",
     "SqlitePackRecords",
     "SqliteProbeRecords",
     "SqliteProbeRunRecords",
@@ -514,6 +519,89 @@ class SqliteEscalationRecords:
                 escalation_id,
             ),
         )
+
+
+class SqliteOperationsRecords:
+    """The SQLite implementation of `OperationsRecords` (Build 7).
+
+    Realized locally as well as in the plane because Build 9's self-serve
+    handover writes ownership rows against this store with no plane involved,
+    and because the escape gate's membership test only sees a port that has a
+    `Sqlite*Records` class. Neither reason is decorative — see the port.
+
+    `close_assignment` is the only mutation, and it writes one column of one
+    non-revision table. Nothing here can reach `actor_or_group_id` or
+    `effective_from`: an assignment whose *subject* or *start* could be rewritten
+    would make the ownership history unfalsifiable, and the history is what an
+    audit reads to answer who was responsible on a given day.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_assignment(self, row: OwnershipAssignment) -> None:
+        _insert(self._store, "ownership_assignment", row)
+
+    def insert_approval(self, row: Approval) -> None:
+        _insert(self._store, "approval", row)
+
+    def insert_audit_event(self, row: AuditEvent) -> None:
+        _insert(self._store, "audit_event", row)
+
+    def insert_value_event(self, row: ValueEvent) -> None:
+        _insert(self._store, "value_event", row)
+
+    def current_owner(self, *, system_id: str, at: _dt.datetime) -> OwnershipAssignment | None:
+        """Narrowest active assignment; `None` when nobody owns the system.
+
+        Ordering does the choosing rather than a Python pass over candidates,
+        so the SQLite and Postgres realizations cannot disagree about which of
+        two overlapping assignments is "the" owner — a disagreement that would
+        route an escalation to different people depending on where it was
+        answered.
+
+        The engagement branch resolves through `system.engagement_id` rather
+        than trusting a caller to supply it, because a caller that supplied the
+        wrong engagement would silently produce a plausible owner.
+        """
+        moment = format_timestamp(at)
+        rows = self._store.query(
+            "SELECT oa.* FROM ownership_assignment AS oa "
+            "WHERE (oa.system_id = ? "
+            "   OR (oa.system_id IS NULL AND oa.engagement_id = "
+            "       (SELECT s.engagement_id FROM system AS s WHERE s.id = ?))) "
+            "  AND oa.effective_from <= ? "
+            "  AND (oa.effective_to IS NULL OR oa.effective_to > ?) "
+            "ORDER BY CASE WHEN oa.system_id IS NOT NULL THEN 0 ELSE 1 END, "
+            "         oa.effective_from DESC, oa.id DESC "
+            "LIMIT 1",
+            (system_id, system_id, moment, moment),
+        )
+        return None if not rows else _from_row(OwnershipAssignment, dict(rows[0]))
+
+    def close_assignment(self, assignment_id: str, *, effective_to: _dt.datetime) -> None:
+        self._store.execute(
+            "UPDATE ownership_assignment SET effective_to = ? WHERE id = ?",
+            (format_timestamp(effective_to), assignment_id),
+        )
+
+    def list_value_events(
+        self, *, system_id: str, event_type: str | None = None
+    ) -> Sequence[ValueEvent]:
+        """Newest first. Ids are ULID-prefixed, so `id DESC` is time order."""
+        if event_type is None:
+            rows = self._store.query(
+                "SELECT * FROM value_event WHERE system_id = ? ORDER BY id DESC", (system_id,)
+            )
+        else:
+            rows = self._store.query(
+                "SELECT * FROM value_event WHERE system_id = ? AND event_type = ? ORDER BY id DESC",
+                (system_id, event_type),
+            )
+        return [_from_row(ValueEvent, dict(row)) for row in rows]
 
 
 class SqlitePackRecords:

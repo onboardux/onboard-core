@@ -79,6 +79,7 @@ from adopt_store.sqlite.records import (
     SqliteIdentityRecords,
     SqliteImportRecords,
     SqliteKnowledgeRecords,
+    SqliteOperationsRecords,
     SqlitePackRecords,
     SqliteProbeRecords,
     SqliteProbeRunRecords,
@@ -297,6 +298,15 @@ class SqliteStoreHandle:
     def pack_records(self) -> SqlitePackRecords:
         """The read port `adopt pack` assembles from (Build 4)."""
         return self._cached("pack_records", lambda: SqlitePackRecords(self.backend))
+
+    def operations_records(self) -> SqliteOperationsRecords:
+        """Ownership, approvals, audit and value rows (Build 7).
+
+        Exposed on the local handle as well as in the plane because Build 9's
+        self-serve handover writes ownership transfer rows here, with no plane
+        involved.
+        """
+        return self._cached("operations_records", lambda: SqliteOperationsRecords(self.backend))
 
     def probe_run_records(self) -> SqliteProbeRunRecords:
         """The port `adopt probe run` records through (Build 5).

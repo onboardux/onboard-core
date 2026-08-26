@@ -23,7 +23,9 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 
 from adopt_model import (
+    Approval,
     AudienceTag,
+    AuditEvent,
     Binding,
     BindingRevision,
     ChangeEvent,
@@ -35,6 +37,7 @@ from adopt_model import (
     KnowledgeItem,
     KnowledgeRevision,
     ObservabilityBoundary,
+    OwnershipAssignment,
     ProbeDefinition,
     ProbeDefinitionRevision,
     Provenance,
@@ -42,6 +45,7 @@ from adopt_model import (
     ReviewItem,
     Sensor,
     SensorHeartbeat,
+    ValueEvent,
 )
 from adopt_model._enums import EscalationStatus, FreshnessState, ReviewResolution, SensorHealth
 
@@ -53,6 +57,7 @@ __all__ = [
     "IdentityRecords",
     "KnowledgeRecords",
     "ObservabilityBoundaryRecords",
+    "OperationsRecords",
     "ProbeRecords",
     "ReviewRecords",
     "RevisionRecords",
@@ -333,6 +338,83 @@ class ChangeRecords(Protocol):
 
     def change_events_for_batch(self, batch_key: str) -> Sequence[ChangeEvent]:
         """The events of one refresh run, in id order."""
+        ...
+
+
+class OperationsRecords(Protocol):
+    """`ownership_assignment`, `approval`, `audit_event`, `value_event`.
+
+    Build 7's port: the four tables an **operated** system writes that are about
+    the operation rather than about the knowledge. They share a port because
+    they share a caller — every capture-class action assigns or consults an
+    owner, records the human who approved it, and lands one audit and one value
+    row — and separating them into four ports would mean four realizations to
+    escape-test for one transaction.
+
+    **Why a new port rather than methods on the ports that already exist.**
+    `BindingRecords`, `KnowledgeRecords` and the rest are realized in
+    `plane-store` today and fully covered by the escape suite. Extending one of
+    them with a method no Postgres class implements produces a *partial*
+    realization, which `escape_coverage.py` calls the harder case to see — B5
+    put probe execution on its own `ProbeRunRecords` for exactly this reason,
+    and this follows that precedent rather than inventing one.
+
+    **Both realizations exist, and the SQLite half is not dead code.** Two
+    reasons, either sufficient: the coverage denominator's membership test is
+    *a store-records port is one a `Sqlite*Records` class realizes* (CR-67), so
+    a port with no SQLite half is invisible to the gate that decides what must
+    be isolated; and Build 9's self-serve handover writes ownership transfer
+    rows against the local store, with no plane involved. A later
+    "simplification" that deletes the SQLite half would silently shrink the
+    denominator, which is precisely the evasion CR-68 made impossible for
+    exclusions and nobody has made impossible for deletions.
+
+    None of these four tables is a revision family, so `no-revision-update`
+    does not reach them. There is still no update method on this port: an
+    ownership assignment ends by having its `effective_to` set, which is what
+    `close_assignment` does and the only mutation any of the four permits.
+    Approvals, audit events and value events are append-only by absence of a
+    method, the same way `RevisionRecords` states it.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+
+    def insert_assignment(self, row: OwnershipAssignment) -> None: ...
+    def insert_approval(self, row: Approval) -> None: ...
+    def insert_audit_event(self, row: AuditEvent) -> None: ...
+    def insert_value_event(self, row: ValueEvent) -> None: ...
+
+    def current_owner(self, *, system_id: str, at: _dt.datetime) -> OwnershipAssignment | None:
+        """Who owns `system_id` at `at`, or `None` if nobody does.
+
+        **Narrowest active assignment wins.** A system-scoped row beats an
+        engagement-scoped one covering the same system, because the specific
+        assignment is the one somebody made deliberately. Ties inside a scope
+        break by `effective_from` then `id`, newest first — the same
+        millisecond-collision reasoning `latest_boundary` documents.
+
+        "Active" means `effective_from <= at` and `effective_to` is either NULL
+        or after `at`. Returning `None` is a real answer and the caller must
+        treat it as one: v6.1 §6 Build 7 makes an unowned live system a
+        **refused activation**, not a warning, and a port that fell back to some
+        default owner would make that refusal unreachable.
+        """
+        ...
+
+    def close_assignment(self, assignment_id: str, *, effective_to: _dt.datetime) -> None:
+        """End one assignment. Never deletes: who owned what, when, is history."""
+        ...
+
+    def list_value_events(
+        self, *, system_id: str, event_type: str | None = None
+    ) -> Sequence[ValueEvent]:
+        """The value ledger for one system, newest first.
+
+        Read by the SLO measurement in S7.3 and by B10's console. It lives on
+        this port rather than in a reporting module because the rows are
+        tenant-scoped and every reader of them must go through a scoped
+        realization to see them.
+        """
         ...
 
 

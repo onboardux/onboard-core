@@ -191,6 +191,21 @@ PROBE_TIMEOUT_SECONDS: Final[int] = 60
 #: three literals that silently disagree the first time one moves.
 REMOTE_CHANNEL_TIMEOUT_SECONDS: Final[int] = 60
 
+#: How long `adopt pull` waits for the plane to stream a whole bundle.
+#:
+#: **Five minutes rather than the sixty seconds every other HTTP call here
+#: gets**, and the difference is the payload rather than caution: the channel
+#: verbs post a question and read a sentence, while this reads an entire
+#: engagement's canon over whatever link an FDE is on. A pull is also not on the
+#: interactive path in the way `adopt ask` is -- an operator who typed `pull`
+#: expects to wait -- so the number that would be wrong for a prompt is right
+#: here.
+#:
+#: Bounded rather than absent, because an unbounded read against a wedged proxy
+#: hangs a terminal with no message naming what it was waiting for, and the
+#: replica it was refreshing is left exactly as stale as before with nobody told.
+PULL_TIMEOUT_SECONDS: Final[int] = 300
+
 #: `Budget` defaults for the agent seam.
 AGENT_DEFAULT_MAX_USD: Final[float] = 0.50
 AGENT_DEFAULT_MAX_WALL_SECONDS: Final[int] = 120

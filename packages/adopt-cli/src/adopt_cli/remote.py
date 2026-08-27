@@ -35,7 +35,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Final
 
-from adopt_const import REMOTE_CHANNEL_TIMEOUT_SECONDS
+from adopt_const import PULL_TIMEOUT_SECONDS, REMOTE_CHANNEL_TIMEOUT_SECONDS
 from adopt_obs import AdoptError, ErrorCode, get_logger
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     "PLANE_TOKEN_ENV_KEY",
     "PLANE_URL_KEY",
     "Remote",
+    "fetch_bytes",
     "post_json",
     "resolve_remote",
 ]
@@ -167,6 +168,52 @@ def post_json(remote: Remote, path: str, body: dict[str, Any]) -> dict[str, Any]
             "captive portal, or the wrong URL.",
         )
     return payload
+
+
+def fetch_bytes(remote: Remote, path: str) -> tuple[bytes, dict[str, str]]:
+    """GET `path` and return its body and response headers.
+
+    The sibling of `post_json`, and separate rather than a `method` argument on
+    it, because the two differ in everything after the URL: this one carries no
+    request body, decodes nothing, and returns headers -- `adopt pull` needs
+    `X-Adopt-Bundle-Sha256` to record what it pulled, and a function that threw
+    the headers away would make the replica marker unwritable.
+
+    **Read whole rather than streamed to disk.** A bundle is bounded by what an
+    engagement's canon weighs, and the caller writes it to a temporary file
+    immediately; streaming would buy nothing here and would mean this module
+    knowing about paths, which is the one thing keeping it a transport.
+
+    Raises:
+        AdoptError: The plane's own typed error, rebuilt from the contracts §13
+            envelope, exactly as `post_json` does -- so a `401` from the plane
+            exits `3` on the operator's machine with the plane's own message. A
+            transport failure becomes ``ADOPT_OFFLINE_DENIED`` naming the URL
+            and never the token.
+    """
+    request = urllib.request.Request(  # noqa: S310 -- the URL is the operator's own configuration
+        remote.endpoint(path),
+        headers={"Authorization": f"Bearer {remote.token}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(  # noqa: S310 -- as above
+            request, timeout=PULL_TIMEOUT_SECONDS
+        ) as response:
+            body = bytes(response.read())
+            headers = {str(name).lower(): str(value) for name, value in response.headers.items()}
+    except urllib.error.HTTPError as failure:
+        raise _from_response(failure.read(), failure.code) from failure
+    except (urllib.error.URLError, TimeoutError, OSError) as failure:
+        _log.warn("remote_unreachable", url=remote.url)
+        raise AdoptError(
+            ErrorCode.ADOPT_OFFLINE_DENIED,
+            message=f"the control plane at {remote.url} could not be reached: {failure}",
+            hint="Check the URL and that the plane is running. The replica beside you "
+            "is untouched and still answers `adopt ask` -- a pull that could not "
+            "start has cost you nothing but freshness.",
+        ) from failure
+    return body, headers
 
 
 def _from_response(raw: bytes, status: int) -> AdoptError:

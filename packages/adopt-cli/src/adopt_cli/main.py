@@ -43,6 +43,7 @@ from adopt_cli.commands import policy as policy_commands
 # itself imports `adopt_probe` only inside its command bodies, so this costs
 # typer options and nothing else.
 from adopt_cli.commands import probe as probe_commands  # noqa: F401
+from adopt_cli.commands import pull as pull_commands
 from adopt_cli.commands import refresh as refresh_commands
 from adopt_cli.commands import serve as serve_commands
 from adopt_cli.commands import store as store_commands
@@ -117,6 +118,12 @@ app.command("import")(interchange_commands.import_)
 # The review queue it fills is `adopt review`'s, already registered above --
 # one surface, one habit (v6.1 F5), so no verb is added for the change items.
 app.command("refresh")(refresh_commands.refresh)
+
+# Build 7. `pull` refreshes this store from the plane it replicates -- v6.1 §6
+# demo line 4. Registered bare rather than under a group for the reason `export`
+# and `import` are: it is one verb an FDE types, and the direction it moves canon
+# is the whole of what it does.
+app.command("pull")(pull_commands.pull)
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 NetworkOption = Annotated[

@@ -160,6 +160,7 @@ class ErrorCode(StrEnum):
     PLANE_AUTH_INVALID = "PLANE_AUTH_INVALID"
     PLANE_ACTIVATION_UNOWNED = "PLANE_ACTIVATION_UNOWNED"
     PLANE_REMOTE_NOT_CONFIGURED = "PLANE_REMOTE_NOT_CONFIGURED"
+    PULL_TARGET_NOT_REPLICA = "PULL_TARGET_NOT_REPLICA"
 
 
 #: Code -> category, verbatim from the contracts §13 table.
@@ -329,6 +330,14 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # names. Exiting `2` rather than `3` keeps it distinguishable from a plane
     # that answered and said no.
     ErrorCode.PLANE_REMOTE_NOT_CONFIGURED: ErrorCategory.USAGE,
+    # `PULL_TARGET_NOT_REPLICA` is **policy**, back with the first two, and the
+    # test is the same one: nothing is malformed and nothing is broken. `adopt
+    # pull` replaces a store file wholesale, and a store that is not already a
+    # replica may hold canon nobody has exported -- so the refusal is a rule
+    # about what this command is allowed to destroy, not a complaint about the
+    # request. `--init-replica` is the operator saying they know, which is why
+    # the fix is a flag rather than configuration and why this is not usage.
+    ErrorCode.PULL_TARGET_NOT_REPLICA: ErrorCategory.POLICY,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

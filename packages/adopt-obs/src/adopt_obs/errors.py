@@ -159,6 +159,7 @@ class ErrorCode(StrEnum):
 
     PLANE_AUTH_INVALID = "PLANE_AUTH_INVALID"
     PLANE_ACTIVATION_UNOWNED = "PLANE_ACTIVATION_UNOWNED"
+    PLANE_REMOTE_NOT_CONFIGURED = "PLANE_REMOTE_NOT_CONFIGURED"
 
 
 #: Code -> category, verbatim from the contracts §13 table.
@@ -321,6 +322,13 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # cannot do its job, which is a decision about what we will operate rather
     # than a malformed request.
     ErrorCode.PLANE_ACTIVATION_UNOWNED: ErrorCategory.POLICY,
+    # `PLANE_REMOTE_NOT_CONFIGURED` is **usage**, unlike the two above it, and
+    # the difference is the fix: the operator asked a local verb to reach a
+    # control plane and never said which one. Nothing refused anything and
+    # nothing is broken -- three configuration keys are absent, which the hint
+    # names. Exiting `2` rather than `3` keeps it distinguishable from a plane
+    # that answered and said no.
+    ErrorCode.PLANE_REMOTE_NOT_CONFIGURED: ErrorCategory.USAGE,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

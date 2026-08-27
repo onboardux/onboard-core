@@ -22,6 +22,20 @@ fail to type-check. That is critical semantic invariant #5, and
 lifetimes -- one command, versus one request on a server that must not hold a
 connection across threads.
 
+**Build 7 gives escalation a second destination.** With a control plane
+configured, a consented escalation is posted to
+`POST /v1/systems/{id}/escalations` and opened in the tenant's canon, where the
+owner is resolved and the draft is routed; with none, it is written to the local
+store exactly as Build 3 wrote it. **The consent decision is unchanged and
+happens first** -- `consented()` still decides whether the text may be stored at
+all, and only then does the destination question arise. Reversing those two
+would make a network configuration able to change what a human agreed to.
+
+**Answering is never routed.** Only the escalation is: reading is what a replica
+is for, so `adopt ask` on an operated system answers from the local store at
+local latency and reaches the plane only when a question turns into work
+somebody else has to do.
+
 **Synthesis is the last step and changes nothing but the rendering.** It runs
 only when an adapter is configured, only over passages the branch already
 approved, and only if `ground` accepts what came back (invariant #7). The
@@ -164,6 +178,7 @@ def answer_question(
             )
 
     escalation_id: str | None = None
+    routed_to_plane = False
     if consented(answer, escalate_flag=escalate_flag, interactive=interactive, confirm=confirm):
         if system is None:
             raise AdoptError(
@@ -173,7 +188,14 @@ def answer_question(
                 hint="Pass --scope firm/engagement/system/environment, or open a store whose "
                 "default scope resolves to a system.",
             )
-        escalation_id = escalate(handle.governance(), answer, system_id=system.id)
+        from adopt_cli.commands._remote_support import configured_remote
+
+        remote = configured_remote(config)
+        if remote is None:
+            escalation_id = escalate(handle.governance(), answer, system_id=system.id)
+        else:
+            escalation_id = _escalate_remotely(remote, question)
+            routed_to_plane = True
 
     payload = dict(json_payload(answer))
     human = render(answer)
@@ -188,8 +210,12 @@ def answer_question(
         human = render_with(answer, synthesis)
     if escalation_id is not None:
         payload["escalation_id"] = escalation_id
-        human += f"\n\nRecorded as open question {escalation_id}."
+        payload["routed_to_plane"] = routed_to_plane
+        where = "on the control plane" if routed_to_plane else "in this store"
+        human += f"\n\nRecorded as open question {escalation_id} {where}."
         human += f'\nAnswer it with: adopt answer {escalation_id} --text "..."'
+        if routed_to_plane:
+            human += "\nIts owner has been routed a draft reply."
     elif may_escalate(answer) and not escalate_flag:
         human += "\n\nRecord it as an open question with `--escalate`."
 
@@ -246,3 +272,28 @@ def _synthesize(answer: Any, *, question: str, config: Mapping[str, str | None])
             return run_synthesis(runner, answer, idempotency_key=key)
     except AdoptError:
         return None
+
+
+def _escalate_remotely(remote: Any, question: str) -> str | None:
+    """Open the question on the configured plane. Returns its id.
+
+    **The plane runs the same `adopt_ask` code on its own side**, so the branch
+    it decides and the branch decided here agree -- and the id that comes back is
+    the plane's, which is the one `adopt answer` will confirm against. Returning
+    a local id would be worse than returning none: it would name a row nobody
+    else can see, in a command whose whole point is that somebody else acts on it.
+
+    `None` comes back only when the plane answered `escalated: false`, meaning
+    *it* could answer the question. That is a real outcome rather than a failure:
+    the replica is behind the plane's canon, which is exactly what `adopt pull`
+    is for.
+    """
+    from adopt_cli.remote import post_json
+
+    response = post_json(
+        remote,
+        f"/v1/systems/{remote.system_id}/escalations",
+        {"question": question},
+    )
+    escalation_id = response.get("escalation_id")
+    return str(escalation_id) if isinstance(escalation_id, str) else None

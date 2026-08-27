@@ -8,6 +8,16 @@ commands loses to a Slack reply and the store stays ignorant.
 **Every `adopt_ask` import happens inside the command body**, as `ask` and
 `map_command` do it, so `CLI_COLD_START_MS` holds.
 
+**Build 7 gives this verb a second destination and not a second implementation.**
+With a control plane configured, the capture is posted to
+`POST /v1/escalations/{id}/confirm` and lands in the tenant's canon; with none,
+it is written locally exactly as before. Which of the two applies is decided once,
+in `_remote_support.configured_remote`, and the deciding is the only thing that
+branches -- the plane runs `adopt_ask.capture.capture_answer` on its own side, so
+both paths write the same rows through the same rules. R9's *one writer* is what
+this is for: a replica that captured locally would hold an answer the next asker
+in Slack never gets.
+
 **The adapter below is the whole of this module's own logic**, and it is
 deliberately dumb: `adopt_ask.capture` decides what a captured answer is --
 human-authored, verified, bound structurally, stamped last -- and this class only
@@ -119,6 +129,15 @@ def answer(
 ) -> None:
     """Bank a human's answer as confirmed knowledge and resolve the question."""
     from adopt_ask.capture import capture_answer, identities_to_bind
+
+    from adopt_cli.commands._remote_support import configured_remote
+
+    remote = configured_remote()
+    if remote is not None:
+        _confirm_remotely(
+            remote, escalation_id, text=text, uris=uri or [], actor=actor, json_output=json_output
+        )
+        return
 
     from adopt_cli.commands._knowledge_support import identity_views
     from adopt_cli.commands._map_support import resolve_scope
@@ -239,3 +258,61 @@ class _StoreAdapter:
         self._handle.governance().answer_escalation(
             escalation_id=escalation_id, candidate_revision_id=candidate_revision_id
         )
+
+
+def _confirm_remotely(
+    remote: object,
+    escalation_id: str,
+    *,
+    text: str,
+    uris: list[str],
+    actor: str | None,
+    json_output: bool,
+) -> None:
+    """Post the capture to the configured plane and print what it wrote.
+
+    **The store is never opened.** Not an optimisation: opening it would give a
+    reader the impression that something local was consulted, and the whole claim
+    of remote mode is that this laptop holds a replica whose contents have no
+    bearing on what the plane banks.
+
+    `--actor` is **required** here and optional locally, and the asymmetry is
+    real. A local capture is one operator writing into their own store, and the
+    store's owner is implicit. A hosted `approval` row is the record an audit
+    reads to answer who said this was true, so an anonymous one is a row that
+    looks like governance and provides none.
+    """
+    from adopt_cli.remote import Remote, post_json
+    from adopt_obs import AdoptError, ErrorCode
+
+    if not isinstance(remote, Remote):  # pragma: no cover -- typing shim
+        raise TypeError("a remote capture needs a resolved Remote")
+    if not actor:
+        raise AdoptError(
+            ErrorCode.PLANE_REMOTE_NOT_CONFIGURED,
+            message="--actor is required when a control plane is configured",
+            hint="The plane records an `approval` row attributing this answer to a "
+            "human, and an unattributed approval is a row that looks like "
+            "governance and provides none. Pass --actor with your actor id.",
+        )
+
+    payload = post_json(
+        remote,
+        f"/v1/escalations/{escalation_id}/confirm",
+        {"text": text, "actor": actor, "uris": list(uris)},
+    )
+    if json_output:
+        emit(payload, as_json=True)
+        return
+    typer.echo(
+        "\n".join(
+            [
+                f"Captured {payload.get('revision_id')} as confirmed canon on the plane.",
+                f"  item:       {payload.get('item_id')}",
+                f"  approval:   {payload.get('approval_id')}",
+                f"  bindings:   {len(payload.get('binding_ids') or [])}",
+                f"  escalation: {escalation_id} -> promoted",
+                "Run `adopt pull` to serve it from this replica.",
+            ]
+        )
+    )

@@ -117,6 +117,41 @@ REGISTRY: Final[tuple[ConfigKey, ...]] = (
         "the tunable behind it is `ASK_LOG_QUESTIONS` -- a config key is an environment "
         "variable and every one of them is namespaced.",
     ),
+    # Build 7 S7.2 -- remote mode. **Three keys rather than one URL**, because a
+    # remote is three separate facts and conflating them is how a CLI ends up
+    # posting one engagement's answers into another's canon: *where* the plane is,
+    # *which* system this store is a replica of, and *where the credential lives*.
+    #
+    # `ADOPT_PLANE_TOKEN_ENV` names the variable holding the token rather than
+    # holding the token: a secret in `.adopt/config.toml` is a secret in the
+    # client's repository, and this file is committed more often than not.
+    #
+    # Spelled `ADOPT_PLANE_*` rather than the sprint plan's `plane.url` shorthand
+    # because `03` §3 makes every config key an environment variable and every
+    # one of them namespaced -- and `load_config_file` skips TOML tables, so a
+    # `[plane]` section would resolve to nothing at all and report `default`.
+    ConfigKey(
+        "ADOPT_PLANE_URL",
+        None,
+        "Control-plane base URL. **Configuring it is the consent** (sprint plan D-9): "
+        "with it set, capture-class writes go to the plane rather than to this store; "
+        "absent, they are refused rather than written locally.",
+    ),
+    ConfigKey(
+        "ADOPT_PLANE_SYSTEM",
+        None,
+        "The `system_id` this store is a replica of. Required in remote mode: the plane "
+        "addresses systems by id, and guessing one from the local store is how an answer "
+        "about one system lands on another.",
+    ),
+    ConfigKey(
+        "ADOPT_PLANE_TOKEN_ENV",
+        "ADOPT_PLANE_TOKEN",
+        "**The name of the environment variable holding the engagement token**, never the "
+        "token. Defaulted rather than left empty so the ordinary case needs no "
+        "configuration at all -- and the value it names is read from the environment, "
+        "which `doctor` reports by presence and never by value.",
+    ),
     ConfigKey("ADOPT_API_KEY", None, "Provider credential, when an adapter is configured.", True),
 )
 

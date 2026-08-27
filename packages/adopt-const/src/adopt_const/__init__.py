@@ -178,6 +178,19 @@ PROBE_DIFF_SIM_THRESHOLD: Final[float] = 0.92
 #: the unbounded probe in a client environment the manifest exists to prevent.
 PROBE_TIMEOUT_SECONDS: Final[int] = 60
 
+#: How long a CLI verb in **remote mode** waits on the control plane before
+#: giving up. `adopt ask --escalate` and `adopt answer` post to `plane-api` when
+#: a remote is configured, and an FDE typing into a terminal is on the
+#: interactive path (R8) -- a request with no timeout hangs a prompt until
+#: somebody hits Ctrl-C, and the answer they wanted is one they could have got
+#: from the replica.
+#:
+#: Shares its value with `AGENT_ADAPTER_TIMEOUT_S` and `PROBE_TIMEOUT_SECONDS`
+#: and shares nothing else: one bounds a model call, one a probe, this one an
+#: HTTP round trip to our own service. Three literals that happen to agree are
+#: three literals that silently disagree the first time one moves.
+REMOTE_CHANNEL_TIMEOUT_SECONDS: Final[int] = 60
+
 #: `Budget` defaults for the agent seam.
 AGENT_DEFAULT_MAX_USD: Final[float] = 0.50
 AGENT_DEFAULT_MAX_WALL_SECONDS: Final[int] = 120

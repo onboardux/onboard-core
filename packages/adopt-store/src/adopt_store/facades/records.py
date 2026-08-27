@@ -417,6 +417,32 @@ class OperationsRecords(Protocol):
         """
         ...
 
+    def list_audit_events(self, *, event_types: Sequence[str]) -> Sequence[AuditEvent]:
+        """Audit rows of the named types for this tenant, newest first.
+
+        **The read half of `insert_audit_event`, and it exists because an
+        outcome nobody can read back is not a record.** S7.3's continuity export
+        writes `continuity_export_delivered` / `continuity_export_failed` and
+        v6.1 §7 requires the delivery status be *visible to the customer* — so
+        the status endpoint, the cadence decision ("is this tenant due?") and
+        B10's red tile all answer from these rows and from nothing else. A
+        plane-local status table would have been a second record of the same
+        fact, free to disagree with the audit trail an auditor reads.
+
+        Scoped by the realization rather than by an argument, exactly as
+        `list_value_events` is: `audit_event` is `firm`-scoped, so the rows a
+        caller can see are the rows their session can see. There is deliberately
+        no `firm_id` parameter — a caller that could name a firm is a caller
+        that could name somebody else's.
+
+        Args:
+            event_types: The types to include. Required and never defaulted to
+                "everything": the audit trail is the widest read in the product,
+                and a caller that has to name what it wants cannot accidentally
+                page the whole of it into a response.
+        """
+        ...
+
 
 class ProbeRecords(Protocol):
     """`probe_definition` and `probe_definition_revision`."""

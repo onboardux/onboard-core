@@ -257,3 +257,69 @@ def test_approvals_audit_and_value_rows_round_trip(
     assert (
         records.list_value_events(system_id=scope_ids["system"], event_type="capture_banked") == []
     )
+
+
+@pytest.mark.unit
+def test_audit_events_come_back_newest_first_and_only_the_types_asked_for(
+    handle: SqliteStoreHandle, scope_ids: dict[str, str]
+) -> None:
+    """`list_audit_events` filters by type and orders newest first.
+
+    *Fails when* the type filter admits a row it was not asked for, or the order
+    is not newest-first. *Matters because* S7.3's continuity status reads "the
+    last delivery" as `[0]` of this list and decides dueness from its
+    `occurred_at` — so a reversed order reports a tenant's *first* copy as their
+    most recent one, which makes a stale tenant look current and silently
+    doubles the loss window the cadence exists to bound. *No other instrument
+    catches it because* both wrong answers are well-formed rows of the right
+    shape: nothing downstream can tell a mis-ordered list from a correct one.
+
+    The empty-list case is here rather than in its own test because it is the
+    same defect wearing a different hat: SQLite would make `IN ()` a syntax
+    error and Postgres would match nothing, so a caller passing no types has to
+    mean "no rows" in both realizations or the two disagree about a caller
+    mistake.
+    """
+    records = handle.operations_records()
+    later = _START + _dt.timedelta(hours=1)
+    delivered_first = AuditEvent(
+        id=new_id("aud"),
+        firm_id=scope_ids["firm"],
+        event_type="continuity_export_delivered",
+        actor_id="plane.continuity_export",
+        subject_ref="digest-one",
+        detail="s3://bucket/northwind-acme-erp.tar",
+        occurred_at=_START,
+    )
+    delivered_second = AuditEvent(
+        id=new_id("aud"),
+        firm_id=scope_ids["firm"],
+        event_type="continuity_export_delivered",
+        actor_id="plane.continuity_export",
+        subject_ref="digest-two",
+        detail="s3://bucket/northwind-acme-erp.tar",
+        occurred_at=later,
+    )
+    unrelated = AuditEvent(
+        id=new_id("aud"),
+        firm_id=scope_ids["firm"],
+        system_id=scope_ids["system"],
+        event_type="export_served",
+        actor_id="operator",
+        subject_ref="digest-three",
+        occurred_at=later,
+    )
+    with records.transaction():
+        records.insert_audit_event(delivered_first)
+        records.insert_audit_event(delivered_second)
+        records.insert_audit_event(unrelated)
+
+    found = records.list_audit_events(event_types=("continuity_export_delivered",))
+    assert [row.id for row in found] == [delivered_second.id, delivered_first.id]
+    assert found[0] == delivered_second
+
+    both = records.list_audit_events(event_types=("continuity_export_delivered", "export_served"))
+    assert {row.id for row in both} == {delivered_first.id, delivered_second.id, unrelated.id}
+
+    assert records.list_audit_events(event_types=()) == []
+    assert records.list_audit_events(event_types=("continuity_export_failed",)) == []

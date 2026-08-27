@@ -603,6 +603,32 @@ class SqliteOperationsRecords:
             )
         return [_from_row(ValueEvent, dict(row)) for row in rows]
 
+    def list_audit_events(self, *, event_types: Sequence[str]) -> Sequence[AuditEvent]:
+        """Newest first. Ids are ULID-prefixed, so `id DESC` is time order.
+
+        **An empty `event_types` returns no rows rather than every row.** The
+        SQL would be `IN ()`, which is a syntax error in SQLite and matches
+        nothing in Postgres — two different behaviours for one caller mistake.
+        Answering "none" in both is the reading that cannot surprise: a caller
+        asking for no types is asking for nothing, and the alternative reading
+        would page a tenant's whole audit trail out of an empty list.
+        """
+        if not event_types:
+            return []
+        # **`json_each` rather than a built `IN (?, ?, ?)` list**, so the SQL
+        # text is a constant whatever the caller asked for and the types cross
+        # as one bound parameter. That is the same shape the Postgres
+        # realization uses (`= ANY(%(event_types)s)`), which is worth more than
+        # the small awkwardness: two realizations of one port that build their
+        # predicates differently are two places for the membership rule to
+        # drift, and a formatted query is the construction S608 exists to flag.
+        rows = self._store.query(
+            "SELECT * FROM audit_event WHERE event_type IN (SELECT value FROM json_each(?)) "
+            "ORDER BY id DESC",
+            (_json.dumps(list(event_types)),),
+        )
+        return [_from_row(AuditEvent, dict(row)) for row in rows]
+
 
 class SqlitePackRecords:
     """The reads `adopt pack` assembles from (Build 4).

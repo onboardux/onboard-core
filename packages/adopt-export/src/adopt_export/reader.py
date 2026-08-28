@@ -195,6 +195,32 @@ def _parse_rows(table: str, payload: bytes) -> Sequence[BaseModel]:
     return models
 
 
+#: Scope levels whose rows belong to no tenant, and which "an empty store"
+#: therefore does not describe.
+#:
+#: **The emptiness check asks whether *this tenant's* canon is empty**, and until
+#: 2026-08-28 it asked whether the whole database was. On a single-tenant local
+#: store those are the same question. On `adopt-plane`'s shared Postgres they are
+#: not: a `global` table carries no generated row-level-security policy, so every
+#: tenant session sees every row in it, and one `classifier_version` row left by
+#: the first tenant refused `POST /v1/activate` for **every tenant after it**
+#: with `EXPORT_TARGET_NOT_EMPTY`. Reachable with no test involved --
+#: `ensure_classifier_version` writes that row into any field store that has run
+#: Build 6's classifier, so it travels in the first bundle activated.
+#:
+#: The rows are still imported; they are only not counted as occupancy. That
+#: matters: a tenant's `classification` rows carry an FK to the
+#: `classifier_version` id **their own** bundle was written with, so skipping the
+#: insert would leave those references dangling. Two tenants therefore contribute
+#: two rows for one label, which the manifest already permits -- `version_label`
+#: has no UNIQUE index, deliberately.
+#:
+#: `unscoped` joins `global` on the same argument rather than on precedent: both
+#: name a table with no tenant to be empty *of*. No exportable table declares it
+#: today, and naming it here is what stops the next one rediscovering this bug.
+_TENANTLESS: Final[frozenset[str]] = frozenset({"global", "unscoped"})
+
+
 def apply_bundle(
     records: ImportRecords,
     source: Path,
@@ -222,7 +248,9 @@ def apply_bundle(
 
     verified = _verify_digests(source, read, loaded)
 
-    for table_name, _ in loaded.exportable_tables():
+    for table_name, table in loaded.exportable_tables():
+        if table.scope_level in _TENANTLESS:
+            continue
         held = records.row_count(table_name)
         if held:
             raise AdoptError(

@@ -64,12 +64,18 @@ class ImportRecords(Protocol):
     """Write side. Whole rows only, inside the caller's transaction."""
 
     def row_count(self, table: str) -> int:
-        """How many rows one table already holds.
+        """How many rows of one table **this store's caller can see**.
 
-        The reader sums this across every exportable table to decide
-        `EXPORT_TARGET_NOT_EMPTY`, and names the first non-empty table in the
-        message -- "the store is not empty" sends an operator looking, and
+        The reader asks it of every exportable table that belongs to a tenant to
+        decide `EXPORT_TARGET_NOT_EMPTY`, and names the first non-empty one in
+        the message -- "the store is not empty" sends an operator looking, and
         "`firm` already holds 1 row" tells them what they are about to lose.
+
+        **`global` and `unscoped` tables are deliberately not asked** (see
+        `adopt_export.reader._TENANTLESS`). Their rows belong to no tenant, so a
+        realization whose reads are tenant-confined answers *every* row for them
+        -- which made one tenant's `classifier_version` row refuse every later
+        tenant's activation on a shared database.
         """
         ...
 

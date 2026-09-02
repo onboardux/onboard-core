@@ -166,6 +166,13 @@ class ErrorCode(StrEnum):
     PLANE_SENSE_PAYLOAD_INVALID = "PLANE_SENSE_PAYLOAD_INVALID"
     REFRESH_TARGET_IS_REPLICA = "REFRESH_TARGET_IS_REPLICA"
 
+    HANDOVER_ALREADY_OPEN = "HANDOVER_ALREADY_OPEN"
+    HANDOVER_NOT_OPEN = "HANDOVER_NOT_OPEN"
+    HANDOVER_STEP_OUT_OF_ORDER = "HANDOVER_STEP_OUT_OF_ORDER"
+    HANDOVER_CHECKLIST_INVALID = "HANDOVER_CHECKLIST_INVALID"
+    HANDOVER_UNOWNED = "HANDOVER_UNOWNED"
+    HANDOVER_TARGET_IS_REPLICA = "HANDOVER_TARGET_IS_REPLICA"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -364,6 +371,43 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # misplaced, it is lost without a trace. R9: the plane is the sole writer,
     # and `adopt ci-sense` is how an operated system gets sensed.
     ErrorCode.REFRESH_TARGET_IS_REPLICA: ErrorCategory.POLICY,
+    # The four **usage** handover codes below are all "you asked for the wrong
+    # thing next", and none of them is a rule about what may be destroyed --
+    # which is the test that separates them from the two policy codes after.
+    #
+    # `HANDOVER_ALREADY_OPEN`: this system already has an un-closed handover.
+    # Usage rather than policy because the operator almost certainly meant to
+    # continue the one that is open, and `adopt handover status` shows it.
+    ErrorCode.HANDOVER_ALREADY_OPEN: ErrorCategory.USAGE,
+    # `HANDOVER_NOT_OPEN`: a step verb ran with no open handover for the
+    # resolved system -- including the case where `--scope` named a different
+    # system than the one that was frozen. `adopt handover start` is the fix.
+    ErrorCode.HANDOVER_NOT_OPEN: ErrorCategory.USAGE,
+    # `HANDOVER_STEP_OUT_OF_ORDER`: the step's prerequisite has not been
+    # recorded. The message names the verb to run first, because a checklist
+    # that refuses without saying what comes next is a checklist people work
+    # around.
+    ErrorCode.HANDOVER_STEP_OUT_OF_ORDER: ErrorCategory.USAGE,
+    # `HANDOVER_CHECKLIST_INVALID`: the verification file is unreadable, is not
+    # YAML, or fails validation. Usage for `TIER_ANSWERS_INVALID`'s reason --
+    # the operator supplied a file and the file is wrong, which editing fixes.
+    ErrorCode.HANDOVER_CHECKLIST_INVALID: ErrorCategory.USAGE,
+    # `HANDOVER_UNOWNED` is **policy**, and it is `PLANE_ACTIVATION_UNOWNED`'s
+    # local mirror: v6.1 §6 Build 9 makes "the event cannot close with the
+    # system unowned" an honesty rule, so the refusal is a decision about what
+    # we will record rather than a complaint about the request. Supplying an
+    # owner fixes it and it is still not usage, for the reason the plane's
+    # code is not: a handover that closed leaving nobody responsible is a
+    # handover that transferred nothing, and the record would say otherwise.
+    ErrorCode.HANDOVER_UNOWNED: ErrorCategory.POLICY,
+    # `HANDOVER_TARGET_IS_REPLICA` is **policy**, beside `REFRESH_TARGET_IS_
+    # REPLICA` and for the same rule: R9 makes the plane the sole writer after
+    # activation, and every writing handover verb lands canon -- ownership
+    # assignments, escalations, gap dispositions, audit rows -- into a file the
+    # next `adopt pull` replaces wholesale. Its own code rather than a reuse of
+    # refresh's, on the `PULL_`/`REFRESH_` precedent: the recovery differs, and
+    # the hint has to be able to name it.
+    ErrorCode.HANDOVER_TARGET_IS_REPLICA: ErrorCategory.POLICY,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

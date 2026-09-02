@@ -485,6 +485,53 @@ entirely, and nothing else in `refresh` opens a socket.
 Not in this version: continuous or scheduled execution, filesystem watchers,
 webhooks, ML classification and silent repair. `refresh` runs when you run it.
 
+### `adopt handover`
+
+The Verified Handover: a bounded engagement-closure event, recorded step by
+step, resumable, and auditable a year later from either party's copy.
+
+```sh
+adopt handover start --system orders-api --receiving-owner client-platform
+adopt handover elicit --out ./handover     # open gaps -> targeted SME questions, by owner
+adopt handover pack   --out ./handover     # one pack per audience, every section stamped
+adopt handover verify --checklist ./checklist.yaml    # exit 4 if a task failed
+adopt handover snapshot --out ./handover/acceptance   # bundle + recorded digest
+adopt handover close --accepted-by "Priya Raman"      # ownership transfer
+adopt handover status                                 # every step, dated and attributed
+```
+
+Six steps in order, each re-runnable once the one before it is recorded. The
+state is the store's own audit trail, so `status` answers from the same rows the
+client's `acceptance.json` was rendered from — there is no second record to
+disagree with the first, and no new table: the handover adds nothing to the
+schema.
+
+**Failures in step 4 become questions, not verdicts.** Each failed task opens an
+escalation carrying its text, so `adopt answer` banks the answer in the room and
+the next asker gets it. Anything still open at close transfers with a named
+owner.
+
+**Two rules refuse rather than warn.** The event cannot close leaving the system
+unowned — the check runs inside the closing transaction and rolls the whole
+close back — and unresolved gaps, questions and conflicts are never marked
+resolved to make the record look finished. There is no code path that could.
+
+**The client can verify what they were handed.** The acceptance digest is
+computed over the bundle's per-table digests, so importing the bundle and
+re-exporting it reproduces the same string offline, with no access to us:
+
+```sh
+adopt import ./acceptance/bundle --into ./ours.db && adopt export ./ours --store ./ours.db
+```
+
+Exit codes: `0` clean, `4` a verification round with failures, `2` a step out of
+order or no open event, `3` an unowned event or a store that is a pulled replica.
+
+The human half — who is in the room, what happens between the verbs, and why the
+event is sold at engagement start rather than at its end — is
+[`docs/handover-playbook.md`](docs/handover-playbook.md), with a checklist
+template beside it.
+
 ## Validate a checkout
 
 ```sh

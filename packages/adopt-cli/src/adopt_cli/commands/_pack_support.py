@@ -12,18 +12,22 @@ matters: a pack with forty sections over a dozen items would otherwise resolve
 the same item's freshness repeatedly, and `resolve_freshness` reads sensors.
 """
 
+import hashlib
+from pathlib import Path
 from typing import Any
 
 from adopt_handover import PackBoundary, PackConflict, PackGap, PackIdentity, PackKnowledge
 
 __all__ = [
     "FreshnessCache",
+    "assemble_pack",
     "build_boundary",
     "build_conflicts",
     "build_drafts",
     "build_gaps",
     "build_identities",
     "build_knowledge",
+    "write_pack",
 ]
 
 
@@ -211,3 +215,103 @@ def build_conflicts(handle: Any, *, uris: dict[str, str]) -> tuple[PackConflict,
         )
         for conflict in rank_conflicts(rows, uris)
     )
+
+
+# -- the two halves `adopt pack` and `adopt handover pack` share (Build 9) ---
+#
+# Build 9's third step is *"pack emission per audience (Build 4)"* -- the same
+# packs, from the same store, by the same rules. Two callers of one function
+# rather than a second assembly path, because two paths eventually disagree
+# about what a pack contains and the disagreement would surface as a client
+# receiving a document that does not match the one the FDE reviewed. The
+# handover journey asserts byte-equality with a direct `adopt pack` for exactly
+# this reason.
+
+
+def assemble_pack(handle: Any, *, audience: str, system_id: str, environment_id: str | None) -> Any:
+    """Read the store and assemble one audience's pack.
+
+    Every read a pack needs, in the order `adopt pack` has always done them --
+    coverage first (the authority on what is covered), then the eight builders
+    above. Returns `adopt_handover.AssembledPack`, which carries no clock, so
+    rendering it is a pure function and the caller may close the store first.
+    """
+    from adopt_handover import assemble
+    from adopt_knowledge import rank_gaps
+
+    from adopt_coverage import recompute_coverage
+
+    coverage = recompute_coverage(handle.coverage_records(), system_id, environment_id)
+    covered = frozenset(row.identity_id for row in coverage.identities if row.covered)
+    ranked = rank_gaps(coverage.identities)
+    # Every identity the recompute evaluated, by URI. The conflict join needs
+    # it, and it is the same population the inventory renders -- so a conflict
+    # can never name an identity this pack does not list.
+    uris = {row.identity_id: row.uri for row in coverage.identities}
+
+    return assemble(
+        audience=audience,
+        knowledge=build_knowledge(handle, system_id=system_id, environment_id=environment_id),
+        identities=build_identities(
+            handle, system_id=system_id, environment_id=environment_id, covered=covered
+        ),
+        freshness=FreshnessCache(handle),
+        boundary=build_boundary(handle, system_id=system_id, environment_id=environment_id),
+        gaps=build_gaps(ranked, handle.governance().gap_dispositions()),
+        conflicts=build_conflicts(handle, uris=uris),
+        drafts=build_drafts(handle, system_id=system_id, environment_id=environment_id),
+    )
+
+
+def write_pack(
+    assembled: Any,
+    out: Path,
+    *,
+    audience: str,
+    selected: tuple[str, ...] | None = None,
+    converter: Any = None,
+) -> dict[str, Any]:
+    """Render `assembled` and write it under `out`. Returns what landed where.
+
+    **A scoped render never overwrites the pack**, and the separate name is the
+    whole of why. The fragment is the part of a document that changed -- no
+    title, no preamble, no gap appendix -- so writing it over `{audience}.md`
+    would replace a deliverable with a piece of one, and the loss would be
+    silent: the file would still be well-formed Markdown.
+
+    **The sidecar is the whole pack's lineage and is written only with the whole
+    pack.** A sidecar naming two sections would be read by the next scoped run as
+    the complete lineage of a pack, and every section it did not mention would
+    then look like a section no change could ever touch.
+
+    `sha256` is over the Markdown's bytes as written. `adopt pack` does not
+    report it; `adopt handover pack` records it, because the acceptance record
+    has to be able to say which document went out.
+    """
+    from adopt_handover import convert, render, render_sections, render_sidecar
+
+    document = render(assembled) if selected is None else render_sections(assembled, selected)
+    lineage = render_sidecar(assembled)
+
+    out.mkdir(parents=True, exist_ok=True)
+    markdown_path = out / (f"{audience}.md" if selected is None else f"{audience}.sections.md")
+    sidecar_path = out / f"{audience}.lineage.json"
+    # `newline="\n"` on both: a pack diffed across a Windows checkout and a Linux
+    # runner must not differ in every line, and CRLF is a recorded failure class
+    # in this repository's own release pipeline.
+    markdown_path.write_text(document, encoding="utf-8", newline="\n")
+    if selected is None:
+        sidecar_path.write_text(lineage, encoding="utf-8", newline="\n")
+
+    written: dict[str, Any] = {
+        "markdown_path": markdown_path,
+        "sidecar_path": sidecar_path if selected is None else None,
+        "sha256": hashlib.sha256(document.encode("utf-8")).hexdigest(),
+        "derived_path": None,
+        "derived_with": None,
+    }
+    if converter is not None:
+        derived_path = out / f"{audience}.{converter.format}"
+        written["derived_path"] = derived_path
+        written["derived_with"] = convert(markdown_path, derived_path, converter)
+    return written

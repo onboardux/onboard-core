@@ -28,6 +28,7 @@ from adopt_cli.commands import detect as detect_command
 from adopt_cli.commands import doctor as doctor_command
 from adopt_cli.commands import draft as draft_command
 from adopt_cli.commands import freshness as freshness_commands
+from adopt_cli.commands import handover as handover_commands
 from adopt_cli.commands import identity as identity_commands
 from adopt_cli.commands import init as init_command
 from adopt_cli.commands import interchange as interchange_commands
@@ -132,6 +133,13 @@ app.command("pull")(pull_commands.pull)
 # read it; useless without a paid tenant endpoint, so the OSS line holds. Its
 # `adopt_map` imports are inside the body for `refresh`'s reason.
 app.command("ci-sense")(ci_sense_commands.ci_sense)
+
+# Build 9. `adopt handover` is a group rather than a bare verb, because the
+# event is six recorded steps plus `status` and each is separately re-runnable
+# -- a single verb would hide which step an operator is asking for. Every
+# `adopt_handover` import happens inside a command body, so registering seven
+# typer signatures is all `adopt version` pays for (v6.1 §2.1).
+app.add_typer(handover_commands.app)
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 NetworkOption = Annotated[

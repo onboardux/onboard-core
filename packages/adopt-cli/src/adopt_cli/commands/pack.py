@@ -95,19 +95,10 @@ def pack(
     With `--draft-missing`, uncovered identities are drafted first and render
     under UNVERIFIED banners until a human confirms them.
     """
-    from adopt_handover import (
-        assemble,
-        convert,
-        converter_for,
-        render,
-        render_sections,
-        render_sidecar,
-    )
-    from adopt_knowledge import rank_gaps
+    from adopt_handover import converter_for
 
     from adopt_cli.commands import _pack_support as support
     from adopt_cli.commands._map_support import resolve_scope
-    from adopt_coverage import recompute_coverage
 
     # Resolved before the store is opened: an unknown `--format` must refuse
     # before anything is written, not after a pack is on disk.
@@ -142,66 +133,33 @@ def pack(
                 environment_id=environment_id,
             )
 
-        # Recomputed **after** drafting, deliberately. Drafts are unverified, so
-        # they change no coverage number and the gap appendix is identical
-        # either way -- and computing it afterwards is what makes that a fact
-        # the command demonstrates rather than a claim the docstring makes.
-        coverage = recompute_coverage(handle.coverage_records(), system_id, environment_id)
-        covered = frozenset(row.identity_id for row in coverage.identities if row.covered)
-        ranked = rank_gaps(coverage.identities)
-        # Every identity the recompute evaluated, by URI. The conflict join
-        # needs it, and it is the same population the inventory renders --
-        # so a conflict can never name an identity this pack does not list.
-        uris = {row.identity_id: row.uri for row in coverage.identities}
-
-        assembled = assemble(
-            audience=audience,
-            knowledge=support.build_knowledge(
-                handle, system_id=system_id, environment_id=environment_id
-            ),
-            identities=support.build_identities(
-                handle, system_id=system_id, environment_id=environment_id, covered=covered
-            ),
-            freshness=support.FreshnessCache(handle),
-            boundary=support.build_boundary(
-                handle, system_id=system_id, environment_id=environment_id
-            ),
-            gaps=support.build_gaps(ranked, handle.governance().gap_dispositions()),
-            conflicts=support.build_conflicts(handle, uris=uris),
-            drafts=support.build_drafts(handle, system_id=system_id, environment_id=environment_id),
+        # Assembled through the shared halves in `_pack_support`, which
+        # `adopt handover pack` calls too -- one assembler, two callers, so the
+        # document a client receives cannot differ from the one `adopt pack`
+        # produced. The coverage recompute happens **after** drafting inside
+        # it, deliberately: drafts are unverified, so they change no coverage
+        # number and the gap appendix is identical either way -- and computing
+        # it afterwards is what makes that a fact the command demonstrates
+        # rather than a claim the docstring makes.
+        assembled = support.assemble_pack(
+            handle, audience=audience, system_id=system_id, environment_id=environment_id
         )
         selected = _section_names(sections)
-        document = render(assembled) if selected is None else render_sections(assembled, selected)
-        lineage = render_sidecar(assembled)
     finally:
         handle.close()
 
-    out.mkdir(parents=True, exist_ok=True)
-    # **A scoped render never overwrites the pack**, and the separate name is the
-    # whole of why. The fragment is the part of a document that changed -- no
-    # title, no preamble, no gap appendix -- so writing it over `{audience}.md`
-    # would replace a deliverable with a piece of one, and the loss would be
-    # silent: the file would still be well-formed Markdown.
-    markdown_path = out / (f"{audience}.md" if selected is None else f"{audience}.sections.md")
-    sidecar_path = out / f"{audience}.lineage.json"
-    # `newline="\n"` on both: a pack diffed across a Windows checkout and a Linux
-    # runner must not differ in every line, and CRLF is a recorded failure class
-    # in this repository's own release pipeline.
-    markdown_path.write_text(document, encoding="utf-8", newline="\n")
-    # **The sidecar is the whole pack's lineage and is written only with the
-    # whole pack.** A sidecar naming two sections would be read by the next
-    # scoped run as the complete lineage of a pack, and every section it did
-    # not mention would then look like a section no change could ever touch.
-    if selected is None:
-        sidecar_path.write_text(lineage, encoding="utf-8", newline="\n")
+    written = support.write_pack(
+        assembled, out, audience=audience, selected=selected, converter=converter
+    )
+    markdown_path = written["markdown_path"]
+    sidecar_path = written["sidecar_path"]
 
-    payload = _payload(assembled, markdown_path, sidecar_path if selected is None else None)
+    payload = _payload(assembled, markdown_path, sidecar_path)
     if selected is not None:
         payload["rendered_sections"] = list(selected)
     if converter is not None:
-        derived_path = out / f"{audience}.{converter.format}"
-        payload["derived"] = str(derived_path)
-        payload["derived_with"] = convert(markdown_path, derived_path, converter)
+        payload["derived"] = str(written["derived_path"])
+        payload["derived_with"] = written["derived_with"]
 
     if drafting is not None:
         payload["drafting"] = drafting

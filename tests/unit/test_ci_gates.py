@@ -683,6 +683,16 @@ class TestWorkflowsAreRunnable:
             # the store. Only a journey that has both a move and bindings can
             # see invariant #3 fail.
             "knowledge-journey",
+            # `handover-journey` landed at Build 9 S9.1 and is that build's
+            # **Definition of Done**: the six recorded steps, the two honesty
+            # rules, and the client-side digest check. It is on this list for a
+            # reason the other journeys cannot cover -- Build 9 writes the
+            # ownership transfer and the acceptance record a client keeps, and
+            # both are irreversible in the sense that matters: a closure that
+            # transferred nothing, or a digest a client cannot reproduce, is
+            # discovered by the other party, months later, with no way left to
+            # establish what was actually handed over.
+            "handover-journey",
         }
     )
 

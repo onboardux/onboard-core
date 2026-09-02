@@ -45,7 +45,7 @@ from adopt_handover.ports import (
     KnowledgeReader,
     KnowledgeView,
 )
-from adopt_handover.render import render
+from adopt_handover.render import render, render_sections, section_blocks
 from adopt_handover.sections import (
     AUDIENCES,
     FRESH,
@@ -59,7 +59,7 @@ from adopt_handover.sections import (
     select_drafts,
     stamp_for,
 )
-from adopt_handover.sidecar import render_sidecar
+from adopt_handover.sidecar import parse_sidecar, render_sidecar, sections_affected
 from adopt_handover.views import (
     PackBoundary,
     PackConflict,
@@ -100,8 +100,12 @@ __all__ = [
     "banner_for",
     "convert",
     "converter_for",
+    "parse_sidecar",
     "render",
+    "render_sections",
     "render_sidecar",
+    "section_blocks",
+    "sections_affected",
     "select",
     "select_drafts",
     "stamp_for",

@@ -32,6 +32,7 @@ from adopt_model import (
     Classification,
     ClassifierVersion,
     Conflict,
+    Connector,
     CoverageGap,
     Engagement,
     Environment,
@@ -57,6 +58,7 @@ from adopt_model import (
     ValueEvent,
 )
 from adopt_model._enums import (
+    ConnectorStatus,
     EscalationStatus,
     FreshnessState,
     LifecycleState,
@@ -70,6 +72,7 @@ __all__ = [
     "SqliteBindingRecords",
     "SqliteBoundaryRecords",
     "SqliteChangeRecords",
+    "SqliteConnectorRecords",
     "SqliteCoverageGapRecords",
     "SqliteCoverageRecords",
     "SqliteEscalationRecords",
@@ -448,6 +451,13 @@ class SqliteReviewRecords:
     def set_item_resolution(self, review_item_id: str, resolution: ReviewResolution) -> None:
         self._store.execute(
             "UPDATE review_item SET resolution = ? WHERE id = ?", (resolution, review_item_id)
+        )
+
+    def set_item_proposal(self, review_item_id: str, proposed_revision_id: str) -> None:
+        """Attach a drafted fix to an item whose batch already exists (Build 8)."""
+        self._store.execute(
+            "UPDATE review_item SET proposed_revision_id = ? WHERE id = ?",
+            (proposed_revision_id, review_item_id),
         )
 
     def set_batch_resolution(
@@ -1164,6 +1174,52 @@ class SqliteBoundaryRecords:
             "SELECT * FROM observability_boundary WHERE system_id = ? AND environment_id = ? "
             "ORDER BY declared_at DESC, id DESC LIMIT 1",
             (system_id, environment_id),
+        )
+
+
+class SqliteConnectorRecords:
+    """The SQLite implementation of `ConnectorRecords`.
+
+    Build 8's port. The plane realizes it too and is where the sense endpoint
+    actually calls it; this half exists because `escape_coverage.declared_ports`
+    recognizes a store-records port by asking whether some `Sqlite*Records`
+    class realizes it, and a port invisible to that gate is a port whose
+    Postgres escape cases nobody demands (CR-67).
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def register_connector(self, row: Connector) -> None:
+        _insert(self._store, "connector", row)
+
+    def get_connector(self, system_id: str) -> Connector | None:
+        return _one(
+            self._store,
+            Connector,
+            "SELECT * FROM connector WHERE system_id = ? ORDER BY id",
+            (system_id,),
+        )
+
+    def touch_connector(self, connector_id: str, last_seen: _dt.datetime) -> None:
+        """Advance `last_seen`, and nothing else.
+
+        The column list is exhaustive for `touch_identity_last_seen`'s reason:
+        `status` is the operator's to move, and a reporting path that could
+        also clear its own revocation would make the revocation advisory.
+        """
+        self._store.execute(
+            "UPDATE connector SET last_seen_at = ? WHERE id = ?",
+            (format_timestamp(last_seen), connector_id),
+        )
+
+    def set_connector_status(self, connector_id: str, status: ConnectorStatus) -> None:
+        self._store.execute(
+            "UPDATE connector SET status = ? WHERE id = ?",
+            (status, connector_id),
         )
 
 

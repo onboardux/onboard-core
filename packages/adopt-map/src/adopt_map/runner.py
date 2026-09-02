@@ -25,7 +25,6 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from adopt_identity import build_uri
-from adopt_map.digest import attribute_digest
 from adopt_map.moves import (
     MoveCandidate,
     MoveOutcome,
@@ -33,7 +32,8 @@ from adopt_map.moves import (
     StoredIdentity,
     detect_moves,
 )
-from adopt_map.observation import Extractor, Observation
+from adopt_map.observation import Observation
+from adopt_map.observe import ExtractorOutcome, Pack, observe_tree
 from adopt_map.tree import SourceTree
 from adopt_model._enums import Archetype, IdentityKind
 from adopt_obs import AdoptError, ErrorCode, get_logger
@@ -92,32 +92,6 @@ class Transactional(Protocol):
     """Whatever supplies the per-pack unit of work."""
 
     def transaction(self) -> AbstractContextManager[None]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class Pack:
-    """A named group of extractors, selected by archetype."""
-
-    name: str
-    extractors: tuple[Extractor, ...]
-
-
-@dataclass(slots=True)
-class ExtractorOutcome:
-    """What one extractor did, including when it did nothing because it broke."""
-
-    extractor: str
-    version: str
-    pack: str
-    observations: int = 0
-    written: int = 0
-    status: str = "ok"
-    #: The exception *type name* when `status == "failed"`. The type is what
-    #: distinguishes a `PermissionError` from a `FileNotFoundError` in one
-    #: reading -- B-08 was undiagnosable for days because this was dropped at
-    #: emission. The message is deliberately not carried: it can contain a client
-    #: path, and this record is printed and logged.
-    detail: str | None = None
 
 
 @dataclass(slots=True)
@@ -266,73 +240,52 @@ def run_map(
     report.files_oversized = tree.oversized
     observed: list[ObservedIdentity] = []
 
-    for pack in pack_list:
+    # **Extraction first, writes after** -- and the whole of extraction lives in
+    # `adopt_map.observe` so that `adopt ci-sense`, which has no store to write
+    # to, runs the same extractors through the same code (Build 8, sprint plan
+    # D8-2). Extractors are pure and hold no store handle, so running them
+    # outside the transaction changes nothing they can observe; the transaction
+    # only ever wrapped the writes below.
+    for found in observe_tree(tree, packs=pack_list):
+        report.outcomes.extend(found.outcomes)
+        by_extractor = {outcome.extractor: outcome for outcome in found.outcomes}
         with records.transaction():
-            for extractor in pack.extractors:
-                outcome = ExtractorOutcome(
-                    extractor=extractor.name, version=extractor.version, pack=pack.name
+            for sighting in found.sightings:
+                observation = sighting.observation
+                _write_observation(
+                    observation,
+                    digest=sighting.digest,
+                    extractor=sighting.extractor,
+                    extractor_version=sighting.extractor_version,
+                    scope=scope,
+                    writer=writer,
+                    actor_id=actor_id,
                 )
-                report.outcomes.append(outcome)
-                try:
-                    observations = list(extractor.extract(tree))
-                except AdoptError as error:
-                    # A typed error from an extractor is still an extractor
-                    # failure, not a run failure: it is recorded with its code so
-                    # the report says which rule refused, and the run continues.
-                    outcome.status = "failed"
-                    outcome.detail = str(error.code)
-                    _log.error(
-                        "map.extractor_failed",
-                        extractor=extractor.name,
-                        pack=pack.name,
-                        detail=outcome.detail,
-                    )
-                    continue
-                except Exception as error:
-                    outcome.status = "failed"
-                    outcome.detail = type(error).__name__
-                    _log.error(
-                        "map.extractor_failed",
-                        extractor=extractor.name,
-                        pack=pack.name,
-                        detail=outcome.detail,
-                    )
-                    continue
-
-                outcome.observations = len(observations)
-                for observation in observations:
-                    digest = _observe(
-                        observation,
-                        extractor=extractor,
-                        scope=scope,
-                        writer=writer,
-                        actor_id=actor_id,
-                    )
-                    if stored is not None:
-                        # Addressed only when detection will use it. `build_uri`
-                        # repeats work the facade just did, and a run with no
-                        # prior state has nothing to pair -- on a first run every
-                        # identity has appeared and none has gone.
-                        observed.append(
-                            ObservedIdentity(
-                                uri=build_uri(
-                                    scope,
-                                    observation.kind,
-                                    observation.namespace,
-                                    tuple(observation.key),
-                                ),
-                                kind=observation.kind,
-                                namespace=observation.namespace,
-                                key=tuple(observation.key),
-                                digest=digest,
-                                extractor=extractor.name,
-                                extractor_version=extractor.version,
-                                source_path=observation.span.path,
-                            )
+                if stored is not None:
+                    # Addressed only when detection will use it. `build_uri`
+                    # repeats work the facade just did, and a run with no
+                    # prior state has nothing to pair -- on a first run every
+                    # identity has appeared and none has gone.
+                    observed.append(
+                        ObservedIdentity(
+                            uri=build_uri(
+                                scope,
+                                observation.kind,
+                                observation.namespace,
+                                tuple(observation.key),
+                            ),
+                            kind=observation.kind,
+                            namespace=observation.namespace,
+                            key=tuple(observation.key),
+                            digest=sighting.digest,
+                            extractor=sighting.extractor,
+                            extractor_version=sighting.extractor_version,
+                            source_path=observation.span.path,
                         )
-                    outcome.written += 1
-                    report.identities_seen += 1
-                    report.files_with_observations.add(observation.span.path)
+                    )
+                by_extractor[sighting.extractor].written += 1
+                report.identities_seen += 1
+                report.files_with_observations.add(observation.span.path)
 
     if stored is not None:
         report.observed = tuple(observed)
@@ -353,28 +306,35 @@ def run_map(
     return report
 
 
-def _observe(
+def _write_observation(
     observation: Observation,
     *,
-    extractor: Extractor,
+    digest: str,
+    extractor: str,
+    extractor_version: str,
     scope: Scope,
     writer: IdentityWriter,
     actor_id: str | None,
-) -> str:
-    """Observe one referent, and return the digest that was recorded for it."""
-    digest = attribute_digest(observation.attributes, extractor_version=extractor.version)
+) -> None:
+    """Record one already-observed referent.
+
+    The digest arrives computed (`adopt_map.observe`) rather than being derived
+    here, so that the value this store keeps and the value `adopt ci-sense`
+    posts to the plane come from one expression. Two computations of one digest
+    is how the same referent acquires two different ones, which reads
+    downstream as a semantic change nobody made.
+    """
     writer.observe(
         scope=scope,
         kind=observation.kind,
         namespace=observation.namespace,
         key=tuple(observation.key),
-        extractor=extractor.name,
-        extractor_version=extractor.version,
+        extractor=extractor,
+        extractor_version=extractor_version,
         source_version=digest,
         source_ref=observation.span.render(),
         actor_id=actor_id,
     )
-    return digest
 
 
 def _record_moves(

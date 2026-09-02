@@ -44,6 +44,7 @@ __all__ = [
     "PLANE_URL_KEY",
     "Remote",
     "fetch_bytes",
+    "get_json",
     "post_json",
     "resolve_remote",
 ]
@@ -119,8 +120,22 @@ def resolve_remote(config: dict[str, str | None], token: str | None) -> Remote:
     return Remote(url=url, system_id=system_id, token=token or "")
 
 
-def post_json(remote: Remote, path: str, body: dict[str, Any]) -> dict[str, Any]:
+def post_json(
+    remote: Remote,
+    path: str,
+    body: dict[str, Any],
+    *,
+    timeout: int = REMOTE_CHANNEL_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
     """POST `body` to `path` and return the decoded response.
+
+    Args:
+        timeout: Seconds to wait. Defaults to the interactive budget, which is
+            right for the channel verbs an FDE waits at a terminal for.
+            `adopt ci-sense` passes `CI_SENSE_TIMEOUT_SECONDS` instead: it posts
+            every identity in a repository against a server budget of
+            `INGEST_P95_SECONDS`, and a client that gave up first would report a
+            failure for work the plane then completed anyway.
 
     Raises:
         AdoptError: The plane's own typed error, rebuilt from the contracts §13
@@ -141,9 +156,7 @@ def post_json(remote: Remote, path: str, body: dict[str, Any]) -> dict[str, Any]
         method="POST",
     )
     try:
-        with urllib.request.urlopen(  # noqa: S310 -- as above
-            request, timeout=REMOTE_CHANNEL_TIMEOUT_SECONDS
-        ) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 -- as above
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as failure:
         raise _from_response(failure.read(), failure.code) from failure
@@ -158,6 +171,52 @@ def post_json(remote: Remote, path: str, body: dict[str, Any]) -> dict[str, Any]
             hint="Check the URL and that the plane is running. Reading still works: "
             "`adopt ask` answers from the local replica, which is what a replica "
             "is for. Only capture-class writes need the plane.",
+        ) from failure
+    if not isinstance(payload, dict):
+        raise AdoptError(
+            ErrorCode.MANIFEST_INVALID,
+            message=f"the control plane at {remote.url} returned a non-object response",
+            hint="Every plane endpoint answers with a JSON object. A body of another "
+            "shape means something other than the plane answered -- a proxy, a "
+            "captive portal, or the wrong URL.",
+        )
+    return payload
+
+
+def get_json(
+    remote: Remote, path: str, *, timeout: int = REMOTE_CHANNEL_TIMEOUT_SECONDS
+) -> dict[str, Any]:
+    """GET `path` and return the decoded response. `post_json`'s read sibling.
+
+    Separate from `fetch_bytes` rather than a flag on it, because the two differ
+    in what they return and why: that one hands back bytes and headers for a
+    bundle a caller writes to disk, and this one hands back the object a listing
+    renders. A single function returning both would make every caller unpack a
+    tuple it does not want.
+
+    Raises:
+        AdoptError: The plane's own typed error, rebuilt from the contracts 13
+            envelope, exactly as `post_json` does -- so a refusal reads the same
+            whichever verb met it. A transport failure becomes
+            ``ADOPT_OFFLINE_DENIED`` naming the URL and never the token.
+    """
+    request = urllib.request.Request(  # noqa: S310 -- the URL is the operator's own configuration
+        remote.endpoint(path),
+        headers={"Authorization": f"Bearer {remote.token}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 -- as above
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as failure:
+        raise _from_response(failure.read(), failure.code) from failure
+    except (urllib.error.URLError, TimeoutError, OSError) as failure:
+        _log.warn("remote_unreachable", url=remote.url)
+        raise AdoptError(
+            ErrorCode.ADOPT_OFFLINE_DENIED,
+            message=f"the control plane at {remote.url} could not be reached: {failure}",
+            hint="Check the URL and that the plane is running. The replica beside you "
+            "still answers `adopt ask` -- only the operated queue lives on the plane.",
         ) from failure
     if not isinstance(payload, dict):
         raise AdoptError(

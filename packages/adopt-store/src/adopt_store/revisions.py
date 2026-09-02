@@ -56,9 +56,11 @@ from adopt_store.facades.records import KnowledgeRecords, RevisionRecords
 
 __all__ = [
     "FAMILIES",
+    "HUMAN_VERIFICATION",
     "INITIAL_BINDING_FRESHNESS",
     "INITIAL_ITEM_FRESHNESS",
     "RETIRED_ITEM_FRESHNESS",
+    "VERIFIED_ITEM_FRESHNESS",
     "BindingRevisionDraft",
     "Family",
     "IdentityRevisionDraft",
@@ -156,6 +158,41 @@ FAMILIES: Final[dict[str, Family]] = {
 #: rather than at the CHECK constraint.
 INITIAL_ITEM_FRESHNESS: Final[FreshnessState] = "unverified"
 RETIRED_ITEM_FRESHNESS: Final[FreshnessState] = "retired"
+
+#: What a **human affirmation** moves an item to, and the third of the three
+#: states this writer owns. Added 2026-09-02 (Build 8 S8.3, owner ruling).
+#:
+#: **Before this, nothing in either repository ever wrote `fresh`**, and the
+#: consequence was invisible: `resolve_freshness`' system-level sensor override
+#: is gated on `item.freshness_state == 'fresh'`, so a sensor going quiet could
+#: never degrade anything a customer was actually served. Build 0's CUJ5 reached
+#: that rule only through a test fixture that wrote the column directly, which is
+#: why the rule looked exercised for eight builds. The `fresh` value existed in
+#: the manifest, the rule existed in the resolver, and the arrow between them did
+#: not exist at all.
+#:
+#: **The trigger is `verification == 'verified'`, which is exactly "a human
+#: vouched for this text".** Three paths write it and no others: `adopt_ask`'s
+#: capture (an owner answered an escalation), `adopt_knowledge.review`'s
+#: confirm / edit / confirm-current (a reviewer worked the queue), and
+#: `adopt_knowledge.ingest` (somebody authored a document). Drafting and harvest
+#: write `unverified` and are correctly excluded -- a model's proposal is not an
+#: affirmation, and `fresh` written from one would be the silent canonisation
+#: invariant #7 exists to forbid.
+#:
+#: **Why here rather than in each confirming path.** `append_revision` is the one
+#: mutation path (contracts §5), so the rule lands once and every confirmation in
+#: both repositories inherits it -- the hosted confirm, the operated queue and the
+#: local CLI alike -- without any of them knowing the rule exists. Three call
+#: sites would have been three places for it to drift, and the drift would show
+#: as one confirmation route degrading honestly while another never did.
+VERIFIED_ITEM_FRESHNESS: Final[FreshnessState] = "fresh"
+
+#: The verification class that means a person affirmed the revision's content.
+#: Spelled here because this module is where it decides something; `adopt_ask`
+#: and `adopt_knowledge` each name it for their own writes, and all three are the
+#: one manifest enum value.
+HUMAN_VERIFICATION: Final[Verification] = "verified"
 
 #: `binding.freshness_state` is per-binding, not only per-item (PRD F8.2), so it
 #: has its own name even though it starts at the same value -- S4's propagation
@@ -321,7 +358,17 @@ class RevisionWriter:
                     kind=kind,
                     title=title,
                     current_revision_id=None,
-                    freshness_state=INITIAL_ITEM_FRESHNESS,
+                    # **The affirmation rule applies to a first revision too.**
+                    # `create_item` writes the parent and the revision directly
+                    # rather than through `append_revision`, so a rule that lived
+                    # only there would miss every item whose *first* revision is
+                    # a human's -- which is exactly what `adopt ingest` and a
+                    # bundle import produce. One predicate, both write paths.
+                    freshness_state=(
+                        VERIFIED_ITEM_FRESHNESS
+                        if self._affirms(FAMILIES["ki"], revision)
+                        else INITIAL_ITEM_FRESHNESS
+                    ),
                     created_at=created,
                     updated_at=created,
                 )
@@ -392,8 +439,33 @@ class RevisionWriter:
             )
             if family.has_head_pointer:
                 self._revisions.advance_head(family.parent_table, parent_id, revision_id)
+            if self._affirms(family, draft):
+                # **Inside the transaction, with the revision it follows from.**
+                # An item marked `fresh` while the revision that justified it
+                # rolled back would be a claim that a human affirmed something
+                # they never saw -- and it is the claim the whole freshness
+                # service is read through, so it is the one that must not be
+                # able to survive alone.
+                self._knowledge.set_item_freshness(parent_id, VERIFIED_ITEM_FRESHNESS, created)
 
         return revision_id
+
+    @staticmethod
+    def _affirms(family: Family, draft: RevisionDraft) -> bool:
+        """Whether this revision is a person saying "this is current".
+
+        Narrow on purpose. Only the knowledge family has an item-level freshness
+        column, and only a `verified` revision is an affirmation: a draft, a
+        harvested candidate and a conflicted revision are all revisions somebody
+        has yet to agree with, and moving an item to `fresh` for any of them
+        would let a model's proposal quietly become the thing the product serves
+        as current.
+        """
+        return (
+            family.name == "knowledge"
+            and isinstance(draft, KnowledgeRevisionDraft)
+            and draft.verification == HUMAN_VERIFICATION
+        )
 
     # -- retirement -------------------------------------------------------
 

@@ -206,6 +206,34 @@ REMOTE_CHANNEL_TIMEOUT_SECONDS: Final[int] = 60
 #: replica it was refreshing is left exactly as stale as before with nobody told.
 PULL_TIMEOUT_SECONDS: Final[int] = 300
 
+#: How long `adopt ci-sense` waits for the plane to accept an observation payload.
+#:
+#: **Three minutes against the plane's own `INGEST_P95_SECONDS = 120`**, and the
+#: relationship is the point: the server's budget for classifying a payload is
+#: two minutes, so a client timeout at the channel verbs' sixty seconds would
+#: abandon requests the plane was still correctly serving -- and the CI step
+#: would report a failure for work that then landed anyway, which is the worst
+#: of both readings. The margin over 120 covers the transfer of a payload that
+#: carries every identity in a repository, which is larger than anything else
+#: this CLI sends.
+#:
+#: Bounded rather than absent for `PULL_TIMEOUT_SECONDS`' reason: an unbounded
+#: read wedges a deploy pipeline with no message naming what it waited for.
+CI_SENSE_TIMEOUT_SECONDS: Final[int] = 180
+
+#: The cadence `adopt ci-sense` declares for its sensor when nobody says otherwise.
+#:
+#: A day, because the sensor this registers is a **CI step**: it reports when the
+#: pipeline runs, and a daily deploy is the ordinary rhythm this is sized for.
+#: The number's whole job is to feed `sensor_effective_health`, which stales a
+#: scope once silence exceeds the cadence times `SENSOR_MISSED_CADENCE_MULTIPLIER`
+#: -- so it is the difference between "this pipeline stopped reporting" being
+#: noticed and being invisible. Set it per project with `--cadence-hours`; a
+#: repository that deploys weekly wants a week, and one that deploys hourly
+#: wants an hour, and the default must not silently make either of them wrong
+#: without the operator having said anything.
+CI_SENSE_DEFAULT_CADENCE_HOURS: Final[int] = 24
+
 #: `Budget` defaults for the agent seam.
 AGENT_DEFAULT_MAX_USD: Final[float] = 0.50
 AGENT_DEFAULT_MAX_WALL_SECONDS: Final[int] = 120

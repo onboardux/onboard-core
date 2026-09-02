@@ -71,6 +71,7 @@ from adopt_store.sqlite.records import (
     SqliteBindingRecords,
     SqliteBoundaryRecords,
     SqliteChangeRecords,
+    SqliteConnectorRecords,
     SqliteCoverageGapRecords,
     SqliteCoverageRecords,
     SqliteEscalationRecords,
@@ -294,6 +295,10 @@ class SqliteStoreHandle:
     def sensor_records(self) -> SqliteSensorRecords:
         """The sensor port, for `doctor`'s NULL-cadence finding."""
         return self._cached("sensor_records", lambda: SqliteSensorRecords(self.backend))
+
+    def connector_records(self) -> SqliteConnectorRecords:
+        """The connector port (Build 8): which relay reports for a system."""
+        return self._cached("connector_records", lambda: SqliteConnectorRecords(self.backend))
 
     def pack_records(self) -> SqlitePackRecords:
         """The read port `adopt pack` assembles from (Build 4)."""

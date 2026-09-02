@@ -72,10 +72,12 @@ from adopt_model._enums import AuthorityClass, ReviewResolution, SourceType, Ver
 from adopt_obs import get_logger
 
 __all__ = [
+    "CHANGE_POPULATIONS",
     "SOURCE_DRAFT",
     "SOURCE_HARVEST",
     "SOURCE_INGEST",
     "SOURCE_REFRESH",
+    "SOURCE_SENSE",
     "ChangeCause",
     "ChangedItem",
     "Outcome",
@@ -109,6 +111,12 @@ SOURCE_DRAFT: Final[str] = "draft"
 #: note still right?"), and what confirming does is different too: the three
 #: actions land in Build 6's second sprint. Until then the population lists.
 SOURCE_REFRESH: Final[str] = "refresh"
+#: Build 8's managed batches -- the same population as `refresh`, produced by the
+#: plane's sense ingestion instead of by a local `adopt refresh`. Duplicated from
+#: `plane_freshness.SENSE_BATCH_PREFIX`'s family rather than imported, for
+#: `SOURCE_DRAFT`'s reason twice over: the string is this queue's vocabulary, and
+#: the producer is in another repository entirely.
+SOURCE_SENSE: Final[str] = "sense"
 
 #: Populations whose confirmation **appends a verified revision** rather than
 #: creating bindings. Membership, not a branch: a draft and a harvest candidate
@@ -116,6 +124,18 @@ SOURCE_REFRESH: Final[str] = "refresh"
 #: is about -- so they take one code path, and the next population that fits
 #: joins by being added here.
 _APPENDS_REVISION: Final[frozenset[str]] = frozenset({SOURCE_HARVEST, SOURCE_DRAFT})
+
+#: Populations whose subject is **a change to the system** rather than a proposal
+#: about knowledge, and which therefore take the three change actions in
+#: `adopt_knowledge.changes` (`retire | rebind | confirm-current`).
+#:
+#: Membership rather than a branch, for `_APPENDS_REVISION`'s reason and with a
+#: sharper cost: Build 8 stamps `sense:` on the batches its ingestion opens, and
+#: with `refresh` hard-coded as the only member every one of those batches was a
+#: queue a reviewer could read and could not resolve. The three actions raised
+#: `REVIEW_ITEM_NOT_FOUND` naming the population -- a perfectly accurate refusal
+#: for the one question the operated queue exists to answer.
+CHANGE_POPULATIONS: Final[frozenset[str]] = frozenset({SOURCE_REFRESH, SOURCE_SENSE})
 
 #: A human looked at it and said yes, or wrote it themselves. Either way the
 #: authority is theirs and the provenance is `human` -- **never**
@@ -237,10 +257,24 @@ class PendingItem:
     #: it comes from `provenance` rather than from the body, which is why the
     #: body could stay the author's own words.
     evidence: tuple[tuple[str, str], ...] = ()
+    #: `review_item.proposed_revision_id` -- Build 8's pre-drafted fix, when this
+    #: entry carries one. **Set makes the entry a drafted fix whatever population
+    #: its batch belongs to**, which is why it widens the predicate below rather
+    #: than adding a fifth prefix: one sense batch holds both kinds at once, so
+    #: the question "what does confirming this do?" is per *item* here and was
+    #: per batch for every population before it. `body_md` carries the proposal's
+    #: text in that case, so the confirm that appends it is the same append every
+    #: other revision-appending population makes.
+    proposed_revision_id: str | None = None
 
     @property
     def source(self) -> str:
         return source_of(self.batch_key)
+
+    @property
+    def has_proposal(self) -> bool:
+        """Whether a drafting run attached a fix to this entry."""
+        return self.proposed_revision_id is not None
 
     @property
     def is_candidate(self) -> bool:
@@ -248,8 +282,17 @@ class PendingItem:
 
         The name is `02`'s and predates the draft population; what it means is
         the predicate below, and the predicate is what `confirm` branches on.
+
+        **A proposal makes it true on its own.** A drafted fix in a `sense:`
+        batch is a candidate's shape exactly -- unverified text already bound to
+        what it is about -- so it takes the candidate path unchanged rather than
+        earning a branch. Without the second clause it would take the
+        *suggestion* path: confirming would create bindings from an empty
+        suggestion tuple, report success, and leave the drafted fix unverified
+        forever. That failure writes nothing and raises nothing, which is the
+        only kind this queue cannot see.
         """
-        return self.source in _APPENDS_REVISION
+        return self.has_proposal or self.source in _APPENDS_REVISION
 
 
 @dataclass(frozen=True, slots=True)

@@ -33,6 +33,7 @@ there.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
 from adopt_knowledge.review import SOURCE_REFRESH, ChangeCause, ChangedItem, coalesce_changes
@@ -48,7 +49,7 @@ from adopt_map.diff import compute as compute_diff
 from adopt_map.filestate import FileState, changed_paths, hash_file
 
 from adopt_model import Identity
-from adopt_obs import get_logger, new_id
+from adopt_obs import AdoptError, ErrorCode, get_logger, new_id
 from adopt_scope import Scope
 
 __all__ = [
@@ -59,9 +60,56 @@ __all__ = [
     "probe_delta",
     "record_refresh",
     "refresh_batch_key",
+    "refuse_if_replica",
 ]
 
 _log = get_logger("adopt_cli")
+
+
+def refuse_if_replica(store_override: Path | None) -> None:
+    """Refuse to refresh a store that `adopt pull` maintains.
+
+    **The mirror of `pull`'s `check_target`.** That refuses to overwrite canon
+    with a replica; this refuses to write canon *into* one. Both are rules about
+    what a command may destroy, and this direction is the quieter of the two:
+    every write below -- retirement revisions, digest re-records, the change
+    event, staled bindings, the review batch -- is canon, and it lands in a file
+    the next `adopt pull` replaces wholesale. The reviewer's work is not merely
+    misplaced, it is gone with no trace that it ever existed, which is why this
+    is a refusal and not a warning.
+
+    R9 is the rule underneath: after activation the plane is the sole writer of
+    an operated system's canon. `adopt ci-sense` is how such a system gets
+    sensed -- it extracts locally and posts observations for the plane to
+    classify -- so the hint names it rather than leaving the operator to find
+    out that the local verb they know is the wrong one.
+
+    Raises:
+        AdoptError: ``REFRESH_TARGET_IS_REPLICA`` when a replica marker sits
+            beside the resolved store.
+    """
+    from adopt_cli.replica import read_marker
+    from adopt_cli.store_option import configured_store_path
+
+    store = configured_store_path(store_override)
+    marker = read_marker(store)
+    if marker is None:
+        return
+    raise AdoptError(
+        ErrorCode.REFRESH_TARGET_IS_REPLICA,
+        message=(
+            f"{store} is a read replica of system {marker.system_id}, pulled from "
+            f"{marker.plane_url}. `adopt refresh` writes canon -- retirements, change "
+            "events, staled bindings and a review batch -- and the next `adopt pull` "
+            "replaces this file wholesale, so that work would be lost with no trace."
+        ),
+        hint=(
+            "Run `adopt ci-sense` instead: it extracts here and posts the observations "
+            "to the plane, which classifies them against the canon it owns. To refresh "
+            "a field store rather than a replica, point --store at one."
+        ),
+    )
+
 
 #: The classes whose subject is a referent a human may have written about, and
 #: therefore the ones that can put an item in the queue. RENDER-ONLY is excluded

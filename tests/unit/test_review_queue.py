@@ -6,6 +6,7 @@ and once*. Each test names the defect it catches.
 
 import pytest
 from adopt_knowledge import ChangeCause, Gap, coalesce_changes, rank_gaps
+from adopt_knowledge.review import PendingItem
 
 from adopt_obs import AdoptError, ErrorCode
 from adopt_scope import Scope
@@ -241,3 +242,69 @@ class TestBuild6Coalescing:
         assert [cause.identity_uri for cause in first[0].causes] == [
             cause.identity_uri for cause in second[0].causes
         ]
+
+
+# ---------------------------------------------------------------------------
+# Build 8: the operated population, and the per-entry proposal
+# ---------------------------------------------------------------------------
+
+
+def test_a_sense_batch_is_a_change_population_and_takes_the_three_change_actions() -> None:
+    """*Fails when* `refresh:` is hard-coded as the only change population.
+
+    *Matters because* Build 8's plane stamps `sense:` on every batch its
+    ingestion opens, and with `refresh` as the sole member every one of those
+    was a queue a reviewer could read and could not resolve -- the three actions
+    raised `REVIEW_ITEM_NOT_FOUND` naming the population, which is a perfectly
+    accurate refusal for the one question the operated queue exists to answer.
+
+    *No other instrument catches it because* the refusal is correct behaviour
+    for every population the local CLI produces, so every Build 6 test stays
+    green while the paid product cannot resolve a single entry.
+    """
+    from adopt_knowledge.review import CHANGE_POPULATIONS, SOURCE_REFRESH, SOURCE_SENSE
+
+    assert {SOURCE_REFRESH, SOURCE_SENSE} == CHANGE_POPULATIONS
+
+    sensed = PendingItem(
+        review_item_id="ri_1",
+        review_batch_id="rb_1",
+        batch_key="sense:run_deploy",
+        item_id="ki_1",
+        title="Refund approvals",
+        suggestions=(),
+    )
+    assert sensed.source in CHANGE_POPULATIONS
+    assert not sensed.is_candidate, (
+        "an entry with no proposal asks what the change means, so confirming it "
+        "must not take the revision-appending path"
+    )
+
+
+def test_an_attached_proposal_makes_an_entry_a_candidate_whatever_its_batch() -> None:
+    """*Fails when* a drafted fix in a `sense:` batch takes the suggestion path.
+
+    *Matters because* that path creates bindings from the entry's suggestion
+    tuple -- which is empty for a change entry -- so confirming would report
+    success, write nothing, and leave the drafted fix `unverified` forever. The
+    reviewer would have confirmed it and the pack would still print the banner.
+
+    *No other instrument catches it because* the confirmation raises nothing and
+    stamps the queue correctly: the only visible difference is a revision that
+    was never appended.
+    """
+    drafted = PendingItem(
+        review_item_id="ri_2",
+        review_batch_id="rb_1",
+        batch_key="sense:run_deploy",
+        item_id="ki_1",
+        title="Refund approvals",
+        suggestions=(),
+        body_md="the drafted rewrite",
+        proposed_revision_id="krev_draft",
+    )
+    assert drafted.has_proposal
+    assert drafted.is_candidate, (
+        "a drafted fix is a candidate's shape exactly -- unverified text already "
+        "bound to what it is about -- so it takes the candidate path unchanged"
+    )

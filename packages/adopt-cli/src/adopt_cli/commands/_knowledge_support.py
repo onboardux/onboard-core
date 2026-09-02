@@ -23,7 +23,7 @@ from adopt_knowledge import (
     StoredDocument,
     derive_suggestions,
 )
-from adopt_knowledge.review import SOURCE_INGEST, SOURCE_REFRESH, source_of
+from adopt_knowledge.review import CHANGE_POPULATIONS, SOURCE_INGEST, source_of
 from pydantic import BaseModel
 
 from adopt_model import (
@@ -407,7 +407,7 @@ def refresh_population(
     open_batches = {
         item.review_batch_id: item.batch_key
         for item in pending
-        if source_of(item.batch_key) == SOURCE_REFRESH
+        if source_of(item.batch_key) in CHANGE_POPULATIONS
     }
     batch_keys = set(open_batches.values()) | _unresolved_refresh_batch_keys(handle, scope)
     if not batch_keys:
@@ -474,7 +474,7 @@ def _unresolved_refresh_batch_keys(handle: KnowledgeStoreView, scope: Scope) -> 
         for row in _rows(handle, "change_event", ChangeEvent)
         if row.batch_key
         and row.system_id == system_id
-        and source_of(str(row.batch_key)) == SOURCE_REFRESH
+        and source_of(str(row.batch_key)) in CHANGE_POPULATIONS
         and str(row.batch_key) not in resolved
     }
 
@@ -548,7 +548,7 @@ def changed_bindings(handle: KnowledgeStoreView, item: PendingItem) -> tuple[Cha
     Ordered by binding id so two invocations agree, for the reason every listing
     in this file is ordered.
     """
-    if source_of(item.batch_key) != SOURCE_REFRESH:
+    if source_of(item.batch_key) not in CHANGE_POPULATIONS:
         return ()
 
     uris = {row.id: row.uri for row in _rows(handle, "identity", Identity)}

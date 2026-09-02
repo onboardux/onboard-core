@@ -30,6 +30,7 @@ from adopt_model import (
     BindingRevision,
     ChangeEvent,
     Classification,
+    Connector,
     CoverageGap,
     Escalation,
     Identity,
@@ -47,11 +48,18 @@ from adopt_model import (
     SensorHeartbeat,
     ValueEvent,
 )
-from adopt_model._enums import EscalationStatus, FreshnessState, ReviewResolution, SensorHealth
+from adopt_model._enums import (
+    ConnectorStatus,
+    EscalationStatus,
+    FreshnessState,
+    ReviewResolution,
+    SensorHealth,
+)
 
 __all__ = [
     "BindingRecords",
     "ChangeRecords",
+    "ConnectorRecords",
     "CoverageGapRecords",
     "EscalationRecords",
     "IdentityRecords",
@@ -145,12 +153,25 @@ class ReviewRecords(Protocol):
     managed batches. One surface, one habit, one implementation: a second queue
     would be a second place a reviewer has to remember to look.
 
-    **`resolution` is the only mutable column on either table**, and it moves
-    once, from `NULL` to a terminal value. Neither table is a revision family,
+    **Two mutable columns on `review_item`, and both move once from `NULL`.**
+    `resolution` is the reviewer's disposition; `proposed_revision_id` is the
+    fix a drafting run attached (Build 8). Neither table is a revision family,
     so `no-revision-update` does not reach them -- which is exactly why the
-    narrowness is stated here rather than assumed. A queue row records a human's
-    disposition; it never holds knowledge, and nothing here can rewrite what the
-    reviewer was shown.
+    narrowness is stated here rather than assumed.
+
+    **A proposal is attached rather than inserted with the item, and that is
+    forced by when the two happen.** Build 8's ingestion opens the batch inside
+    the sense transaction, because the batch has to commit with the retirements
+    and the staled bindings it explains; drafting is a later tick, so that a
+    crash between the two degrades to "drafts arrive next tick" instead of
+    losing the batch. The item therefore exists before its proposal does, and a
+    port that could only carry a proposal at insert time would force the batch
+    to wait for a model call -- which is the one thing R3 says the queue must
+    never depend on.
+
+    **What still cannot be rewritten is what the reviewer was shown**: the batch
+    an item belongs to, and the knowledge item it is about. A queue row records
+    a disposition and a proposal; it never holds knowledge.
     """
 
     def transaction(self) -> AbstractContextManager[None]: ...
@@ -162,6 +183,21 @@ class ReviewRecords(Protocol):
 
     def set_item_resolution(self, review_item_id: str, resolution: ReviewResolution) -> None:
         """Stamp one item's disposition. Never un-stamps: the caller checks."""
+        ...
+
+    def set_item_proposal(self, review_item_id: str, proposed_revision_id: str) -> None:
+        """Attach the drafted fix a later sweep produced (Build 8).
+
+        Takes a revision id it did not mint, on `answer_escalation`'s precedent
+        and for its reason: the revision is written by whoever ran the drafting
+        pass, through `KnowledgeFacade`, so the queue records *which* draft was
+        attached and can never be the thing that created one.
+
+        **The caller checks that no proposal is already attached.** Overwriting
+        one would silently discard a draft a reviewer may already be looking at,
+        and would make a re-tick that re-billed a model call indistinguishable
+        from an idempotent one.
+        """
         ...
 
     def set_batch_resolution(
@@ -338,6 +374,73 @@ class ChangeRecords(Protocol):
 
     def change_events_for_batch(self, batch_key: str) -> Sequence[ChangeEvent]:
         """The events of one refresh run, in id order."""
+        ...
+
+
+class ConnectorRecords(Protocol):
+    """`connector` -- which sensing relay reports for a system, and whether it may.
+
+    Introduced by Build 8, the first code that writes the table (v6.1 §6 Build
+    8). The row is the plane's answer to *is this caller still allowed to post
+    observations for this system*, and it is a canonical `scope_level: system`
+    table rather than plane-local routing state because the customer's export
+    should carry the record of what was watching their system and when it last
+    reported.
+
+    **The lookup is by system, not by connector id**, because that is the only
+    question a caller ever has: the sense endpoint holds a token that resolves
+    to a scope, not to a connector, and it needs to know whether *this system's*
+    relay is revoked before it accepts a payload. A by-id read would force the
+    caller to already know the answer it came to ask. v1 registers exactly one
+    connector per system -- the CI relay -- so the singular read is unambiguous;
+    a second mode arriving for one system is a decision (which relay is
+    authoritative?) and not something this port should quietly average over.
+
+    **Why this is its own port rather than four methods on `SensorRecords`.**
+    That port is realized as `PostgresSensorRecords` and fully escape-covered;
+    extending it here would make it *partially* realized the moment this build
+    added a method the plane had not implemented yet -- the case
+    `escape_coverage.py` calls the harder one to see. Build 5 separated
+    `ProbeRunRecords` from `ProbeRecords` for exactly this reason, and B7's D-5
+    separated `OperationsRecords`; this is that precedent applied a third time.
+
+    **The SQLite realization is not speculative.** `escape_coverage.declared_
+    ports` decides what a store-records port *is* by asking whether some
+    `Sqlite*Records` class realizes it (CR-67's lesson), so a port with no
+    SQLite half is invisible to the gate that would otherwise demand its
+    Postgres escape cases. Build 10's console also reads connector health per
+    system, and Build 9's handover records what was watching a system at
+    transfer -- both are forward consumers named here so no later
+    "simplification" deletes the half that makes the gate work.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+
+    def register_connector(self, row: Connector) -> None:
+        """Record a relay's first contact for a system.
+
+        Insert-only. Re-registration is not an update path: a connector whose
+        status an operator revoked must not be able to un-revoke itself by
+        reconnecting, which is exactly what an upsert here would allow.
+        """
+        ...
+
+    def get_connector(self, system_id: str) -> Connector | None:
+        """The connector registered for this system, or `None` on first contact."""
+        ...
+
+    def touch_connector(self, connector_id: str, last_seen: _dt.datetime) -> None:
+        """Advance `last_seen` and nothing else.
+
+        Deliberately cannot reach `status`: liveness is an observation, and a
+        reporting path that could also clear its own revocation would make the
+        revocation advisory. `SensorRecords.touch`-shaped for the same reason
+        `touch_identity_last_seen` is.
+        """
+        ...
+
+    def set_connector_status(self, connector_id: str, status: ConnectorStatus) -> None:
+        """The operator's path: activate, degrade or revoke a relay."""
         ...
 
 

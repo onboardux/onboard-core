@@ -162,6 +162,10 @@ class ErrorCode(StrEnum):
     PLANE_REMOTE_NOT_CONFIGURED = "PLANE_REMOTE_NOT_CONFIGURED"
     PULL_TARGET_NOT_REPLICA = "PULL_TARGET_NOT_REPLICA"
 
+    PLANE_CONNECTOR_REVOKED = "PLANE_CONNECTOR_REVOKED"
+    PLANE_SENSE_PAYLOAD_INVALID = "PLANE_SENSE_PAYLOAD_INVALID"
+    REFRESH_TARGET_IS_REPLICA = "REFRESH_TARGET_IS_REPLICA"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -338,6 +342,28 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # request. `--init-replica` is the operator saying they know, which is why
     # the fix is a flag rather than configuration and why this is not usage.
     ErrorCode.PULL_TARGET_NOT_REPLICA: ErrorCategory.POLICY,
+    # `PLANE_CONNECTOR_REVOKED` is **policy** for `PULL_TARGET_NOT_REPLICA`'s
+    # reason: the payload is well-formed and the token authenticated, and the
+    # plane is refusing on a rule an operator set. A revoked relay that kept
+    # posting would otherwise read as a transport fault to whoever is watching
+    # the CI log, and the fix -- ask the operator why the relay was revoked --
+    # is nothing like the fix for a malformed body.
+    ErrorCode.PLANE_CONNECTOR_REVOKED: ErrorCategory.POLICY,
+    # `PLANE_SENSE_PAYLOAD_INVALID` is **usage**: the caller sent something this
+    # endpoint cannot read -- an unknown payload version, or a body missing a
+    # field the cascade needs. Distinct from the code above precisely because
+    # the two have opposite fixes, and a CI step that cannot tell them apart
+    # retries the one that will never succeed.
+    ErrorCode.PLANE_SENSE_PAYLOAD_INVALID: ErrorCategory.USAGE,
+    # `REFRESH_TARGET_IS_REPLICA` is **policy**, and it is `PULL_TARGET_NOT_
+    # REPLICA`'s mirror: that one refuses to overwrite canon with a replica,
+    # this one refuses to write canon *into* a replica. Both are rules about
+    # what a command may destroy rather than complaints about the request --
+    # a refresh against a replica would write change events and staled bindings
+    # that the next `adopt pull` silently discards, so the work is not merely
+    # misplaced, it is lost without a trace. R9: the plane is the sole writer,
+    # and `adopt ci-sense` is how an operated system gets sensed.
+    ErrorCode.REFRESH_TARGET_IS_REPLICA: ErrorCategory.POLICY,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

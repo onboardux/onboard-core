@@ -22,6 +22,7 @@ from adopt_cli.commands import agent as agent_commands
 from adopt_cli.commands import answer as answer_commands
 from adopt_cli.commands import ask as ask_commands
 from adopt_cli.commands import boundary as boundary_command
+from adopt_cli.commands import ci_sense as ci_sense_commands
 from adopt_cli.commands import coverage as coverage_commands
 from adopt_cli.commands import detect as detect_command
 from adopt_cli.commands import doctor as doctor_command
@@ -124,6 +125,13 @@ app.command("refresh")(refresh_commands.refresh)
 # and `import` are: it is one verb an FDE types, and the direction it moves canon
 # is the whole of what it does.
 app.command("pull")(pull_commands.pull)
+
+# Build 8. `ci-sense` is the customer's CI reporting what it sees to the plane
+# that owns the canon (v6.1 §6 Build 8 F4/D10). Apache-2.0 and in this CLI
+# because it runs on the customer's machine and the free layer must be able to
+# read it; useless without a paid tenant endpoint, so the OSS line holds. Its
+# `adopt_map` imports are inside the body for `refresh`'s reason.
+app.command("ci-sense")(ci_sense_commands.ci_sense)
 
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 NetworkOption = Annotated[

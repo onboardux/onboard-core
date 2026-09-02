@@ -650,10 +650,35 @@ def review(
         refresh_population,
     )
     from adopt_cli.commands._map_support import resolve_scope
+    from adopt_cli.commands._remote_support import configured_remote
 
     _check_resolve_flags(resolve_item, action, to_uri)
     writing = bool(confirm_item or reject_item or edit_item or confirm_batch or resolve_item)
     body_md = _edit_body(edit_item, file)
+
+    # **The remote check happens before the store is opened**, and that ordering
+    # is the point: an operated store is a read replica, so opening it writable
+    # to resolve an item would be the local write R9 forbids -- and the write
+    # would succeed, then vanish at the next `adopt pull`.
+    remote = configured_remote()
+    if remote is not None:
+        emit(
+            _remote_review(
+                remote,
+                confirm_item=confirm_item,
+                reject_item=reject_item,
+                edit_item=edit_item,
+                confirm_batch=confirm_batch,
+                resolve_item=resolve_item,
+                action=action,
+                to_uri=to_uri,
+                body_md=body_md,
+                actor=actor,
+            ),
+            as_json=json_output,
+            title="adopt review",
+        )
+        return
     handle = open_configured_store(store, read_only=not writing)
     try:
         resolved = resolve_scope(handle, scope)
@@ -718,6 +743,91 @@ def review(
         handle.close()
 
     emit(payload, as_json=json_output, title="adopt review")
+
+
+def _remote_review(
+    remote: Any,
+    *,
+    confirm_item: str | None,
+    reject_item: str | None,
+    edit_item: str | None,
+    confirm_batch: str | None,
+    resolve_item: str | None,
+    action: str | None,
+    to_uri: str | None,
+    body_md: str,
+    actor: str | None,
+) -> dict[str, Any]:
+    """List or resolve against the plane. One entry per invocation.
+
+    **`--confirm-batch` is refused rather than looped**, and refusing is the
+    honest answer rather than a gap. Locally it is one transaction over one
+    document's suggestions; over HTTP it would be N requests, and a failure at
+    request four leaves four entries resolved and the rest not -- a partial
+    batch confirm with no record of where it stopped. The plane offers no batch
+    endpoint, so the CLI does not invent one out of a loop.
+    """
+    from adopt_cli.commands._review_remote import remote_queue, resolve_remote_item
+    from adopt_obs import AdoptError, ErrorCode
+
+    if confirm_batch:
+        raise AdoptError(
+            ErrorCode.REVIEW_ITEM_NOT_FOUND,
+            message="--confirm-batch has no operated equivalent",
+            hint="Resolve the batch's entries one at a time. A batch confirm over the "
+            "network is N requests, and a failure part way through leaves half the "
+            "batch decided with nothing recording where it stopped.",
+        )
+
+    targets = {
+        "confirm": confirm_item,
+        "reject": reject_item,
+        "edit": edit_item,
+    }
+    named = [(name, value) for name, value in targets.items() if value]
+    if not named and not resolve_item:
+        return {"remote": remote.url, **remote_queue(remote)}
+
+    if len(named) + (1 if resolve_item else 0) > 1:
+        raise AdoptError(
+            ErrorCode.REVIEW_ITEM_NOT_FOUND,
+            message="one resolution per invocation against an operated plane",
+            hint="Each resolution is its own transaction on the plane. Sending two in "
+            "one command would make a partial failure unreportable.",
+        )
+
+    if not actor:
+        raise AdoptError(
+            ErrorCode.REVIEW_ITEM_NOT_FOUND,
+            message="--actor names the person resolving this, and is required by the plane",
+            hint="A review disposition is the record that a human looked. The token "
+            "names the integration, not the reviewer, so the plane will not accept a "
+            "resolution that names nobody.",
+        )
+
+    if resolve_item:
+        return {
+            "remote": remote.url,
+            **resolve_remote_item(
+                remote,
+                review_item_id=resolve_item,
+                action=action or "",
+                actor=actor,
+                to_uri=to_uri,
+            ),
+        }
+
+    verb, item_id = named[0]
+    return {
+        "remote": remote.url,
+        **resolve_remote_item(
+            remote,
+            review_item_id=item_id or "",
+            action=verb,
+            actor=actor,
+            body_md=body_md if verb == "edit" else None,
+        ),
+    }
 
 
 def _check_resolve_flags(resolve_item: str | None, action: str | None, to_uri: str | None) -> None:

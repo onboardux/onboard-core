@@ -55,6 +55,15 @@ DraftMissingOption = Annotated[
         "UNVERIFIED and must be confirmed in `adopt review` before they count.",
     ),
 ]
+SectionsOption = Annotated[
+    str | None,
+    typer.Option(
+        "--sections",
+        help="Re-render only these sections, comma-separated -- the section-scoped "
+        "regeneration Build 8's review queue feeds. Names come from the pack's "
+        "lineage sidecar via `adopt_handover.sections_affected`.",
+    ),
+]
 ScopeOption = Annotated[
     str | None,
     typer.Option("--scope", help="firm/engagement/system/environment. Defaults to the store's."),
@@ -68,6 +77,7 @@ def pack(
     out: OutOption = Path("./handover"),
     format_name: FormatOption = "md",
     draft_missing: DraftMissingOption = False,
+    sections: SectionsOption = None,
     scope: ScopeOption = None,
     store: StoreOption = None,
     json_output: JsonOption = False,
@@ -85,7 +95,14 @@ def pack(
     With `--draft-missing`, uncovered identities are drafted first and render
     under UNVERIFIED banners until a human confirms them.
     """
-    from adopt_handover import assemble, convert, converter_for, render, render_sidecar
+    from adopt_handover import (
+        assemble,
+        convert,
+        converter_for,
+        render,
+        render_sections,
+        render_sidecar,
+    )
     from adopt_knowledge import rank_gaps
 
     from adopt_cli.commands import _pack_support as support
@@ -153,21 +170,34 @@ def pack(
             conflicts=support.build_conflicts(handle, uris=uris),
             drafts=support.build_drafts(handle, system_id=system_id, environment_id=environment_id),
         )
-        document = render(assembled)
+        selected = _section_names(sections)
+        document = render(assembled) if selected is None else render_sections(assembled, selected)
         lineage = render_sidecar(assembled)
     finally:
         handle.close()
 
     out.mkdir(parents=True, exist_ok=True)
-    markdown_path = out / f"{audience}.md"
+    # **A scoped render never overwrites the pack**, and the separate name is the
+    # whole of why. The fragment is the part of a document that changed -- no
+    # title, no preamble, no gap appendix -- so writing it over `{audience}.md`
+    # would replace a deliverable with a piece of one, and the loss would be
+    # silent: the file would still be well-formed Markdown.
+    markdown_path = out / (f"{audience}.md" if selected is None else f"{audience}.sections.md")
     sidecar_path = out / f"{audience}.lineage.json"
     # `newline="\n"` on both: a pack diffed across a Windows checkout and a Linux
     # runner must not differ in every line, and CRLF is a recorded failure class
     # in this repository's own release pipeline.
     markdown_path.write_text(document, encoding="utf-8", newline="\n")
-    sidecar_path.write_text(lineage, encoding="utf-8", newline="\n")
+    # **The sidecar is the whole pack's lineage and is written only with the
+    # whole pack.** A sidecar naming two sections would be read by the next
+    # scoped run as the complete lineage of a pack, and every section it did
+    # not mention would then look like a section no change could ever touch.
+    if selected is None:
+        sidecar_path.write_text(lineage, encoding="utf-8", newline="\n")
 
-    payload = _payload(assembled, markdown_path, sidecar_path)
+    payload = _payload(assembled, markdown_path, sidecar_path if selected is None else None)
+    if selected is not None:
+        payload["rendered_sections"] = list(selected)
     if converter is not None:
         derived_path = out / f"{audience}.{converter.format}"
         payload["derived"] = str(derived_path)
@@ -179,11 +209,31 @@ def pack(
     emit(payload, as_json=json_output, title="adopt pack")
 
 
-def _payload(assembled: Any, markdown_path: Path, sidecar_path: Path) -> dict[str, Any]:
+def _section_names(raw: str | None) -> tuple[str, ...] | None:
+    """`--sections` as names, or `None` for the whole pack.
+
+    **An empty or all-blank value is a refusal rather than "everything".** A
+    scoped run is asked for by a caller that computed a selection, and a
+    selection that came back empty means the change touched nothing in this
+    pack -- rendering the whole pack instead would be the opposite of what was
+    asked, and it would look like it worked.
+    """
+    if raw is None:
+        return None
+    names = tuple(name.strip() for name in raw.split(",") if name.strip())
+    if not names:
+        raise typer.BadParameter(
+            "--sections was given no section names. A change that affected no section "
+            "needs no re-render; omit the flag to render the whole pack."
+        )
+    return names
+
+
+def _payload(assembled: Any, markdown_path: Path, sidecar_path: Path | None) -> dict[str, Any]:
     return {
         "audience": assembled.audience,
         "markdown": str(markdown_path),
-        "sidecar": str(sidecar_path),
+        "sidecar": None if sidecar_path is None else str(sidecar_path),
         "identities": len(assembled.identities),
         "gaps": len(assembled.gaps),
         "conflicts": len(assembled.conflicts),

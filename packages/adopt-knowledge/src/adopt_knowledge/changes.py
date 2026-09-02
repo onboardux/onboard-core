@@ -49,9 +49,9 @@ from adopt_knowledge.ports import (
     ReviewWriter,
 )
 from adopt_knowledge.review import (
+    CHANGE_POPULATIONS,
     CONFIRMED,
     CORRECTED,
-    SOURCE_REFRESH,
     PendingItem,
     _append_human_revision,
 )
@@ -339,7 +339,7 @@ def _require_change_item(item: PendingItem, action: str) -> None:
             queue entry an invocation cannot act on. Build 6 adds no error code
             (plan decision D14).
     """
-    if item.source != SOURCE_REFRESH:
+    if item.source not in CHANGE_POPULATIONS:
         raise AdoptError(
             ErrorCode.REVIEW_ITEM_NOT_FOUND,
             message=f"review item {item.review_item_id} belongs to the {item.source!r} "

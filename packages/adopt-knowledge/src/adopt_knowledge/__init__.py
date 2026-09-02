@@ -127,10 +127,12 @@ from adopt_knowledge.ports import (
     ReviewWriter,
 )
 from adopt_knowledge.review import (
+    CHANGE_POPULATIONS,
     SOURCE_DRAFT,
     SOURCE_HARVEST,
     SOURCE_INGEST,
     SOURCE_REFRESH,
+    SOURCE_SENSE,
     ChangeCause,
     ChangedItem,
     Outcome,
@@ -149,6 +151,7 @@ __all__ = [
     "ACTION_REBIND",
     "ACTION_RETIRE",
     "AUDIENCES",
+    "CHANGE_POPULATIONS",
     "CREATED",
     "DEFAULT_AUDIENCE",
     "DEFAULT_KIND",
@@ -170,6 +173,7 @@ __all__ = [
     "SOURCE_INGEST",
     "SOURCE_REFRESH",
     "SOURCE_RULED_CLASSES",
+    "SOURCE_SENSE",
     "STRUCTURAL_TIERS",
     "UNCHANGED",
     "UPDATED",

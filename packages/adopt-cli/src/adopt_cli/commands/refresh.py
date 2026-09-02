@@ -91,8 +91,14 @@ def refresh(
         probe_delta,
         record_refresh,
         refresh_batch_key,
+        refuse_if_replica,
     )
     from adopt_cli.store_option import configured_file_state
+
+    # **Before the tree walk and before the store opens.** A refusal that fired
+    # after a minute of extraction would still be correct and would still teach
+    # the operator to stop reading it.
+    refuse_if_replica(store)
 
     tree = SourceTree.scan(path)
     batch_key = refresh_batch_key()

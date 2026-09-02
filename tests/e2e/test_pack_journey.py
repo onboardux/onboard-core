@@ -246,6 +246,72 @@ def test_the_sidecar_names_the_revisions_each_section_came_from(
     assert DOCKERFILE_URI in runbook["identity_uris"]
 
 
+def test_a_scoped_re_render_matches_the_full_pack_and_writes_beside_it(
+    journey: dict[str, Any],
+) -> None:
+    """Build 8's demo line, through the CLI: *sections regenerate scoped*.
+
+    *Fails when* `--sections` renders bytes a full pack does not contain, or
+    when it overwrites the pack it was meant to patch. *Matters because* an FDE
+    resolving a review item re-renders one section and hands the result to a
+    client beside the pack it came from -- two documents that disagree about the
+    same knowledge is the failure the byte contract exists to prevent, and
+    losing the full pack to a fragment is the failure the separate filename
+    exists to prevent. *No other instrument catches it because* the unit test
+    proves the library contract over a constructed pack, and only this one
+    proves the command wires the flag to it and puts the file somewhere safe.
+    """
+    from adopt_handover import parse_sidecar, sections_affected
+
+    _pack(journey)
+    full = (journey["out"] / f"{AUDIENCE}.md").read_text(encoding="utf-8")
+    sidecar = parse_sidecar(
+        (journey["out"] / f"{AUDIENCE}.lineage.json").read_text(encoding="utf-8")
+    )
+
+    selected = sections_affected(sidecar, [], [DOCKERFILE_URI])
+    assert selected == ("runbook",), f"the sidecar selected {selected!r}"
+
+    payload = _pack(journey, "--sections", ",".join(selected))
+    assert payload["rendered_sections"] == ["runbook"]
+    assert payload["sidecar"] is None, "a fragment must not claim to be a pack's lineage"
+
+    fragment_path = journey["out"] / f"{AUDIENCE}.sections.md"
+    fragment = fragment_path.read_text(encoding="utf-8")
+    assert fragment.rstrip("\n") in full, "the scoped bytes are not the full pack bytes"
+    assert b"\r\n" not in fragment_path.read_bytes()
+
+    # The pack itself is untouched, and the fragment is genuinely smaller.
+    assert (journey["out"] / f"{AUDIENCE}.md").read_text(encoding="utf-8") == full
+    assert "Coverage gaps" not in fragment
+    assert len(fragment) < len(full)
+
+
+def test_sections_with_no_names_is_refused_rather_than_rendering_everything(
+    journey: dict[str, Any],
+) -> None:
+    """An empty selection must not silently mean the whole pack.
+
+    *Fails when* `--sections ,,` falls back to a full render. *Matters because*
+    that is exactly how scoped regeneration becomes whole-pack regeneration
+    while every output stays correct and nobody notices the feature is gone.
+    """
+    completed = _run(
+        "pack",
+        "--audience",
+        AUDIENCE,
+        "--out",
+        str(journey["out"]),
+        "--store",
+        str(journey["store"]),
+        "--sections",
+        " , ",
+        cwd=journey["checkout"],
+    )
+    assert completed.returncode != ExitCode.SUCCESS
+    assert not (journey["out"] / f"{AUDIENCE}.sections.md").exists()
+
+
 def test_the_pack_needs_no_model_and_calls_none(journey: dict[str, Any]) -> None:
     """R3: the no-model mode is the default and complete.
 

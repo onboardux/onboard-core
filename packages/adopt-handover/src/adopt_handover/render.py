@@ -23,11 +23,13 @@ get wrong was decided in `sections.py` and `assemble.py`, where it is testable
 without parsing Markdown.
 """
 
+from collections.abc import Sequence
+
 from adopt_handover.assemble import AssembledPack, AssembledSection
 from adopt_handover.ports import BoundaryView, ConflictView, GapView
 from adopt_obs import format_timestamp
 
-__all__ = ["render"]
+__all__ = ["render", "render_sections", "section_blocks"]
 
 _RULE = ""
 
@@ -204,6 +206,66 @@ def _knowledge_section(assembled: AssembledSection) -> list[str]:
     return lines[:-1] if lines and lines[-1] == "" else lines
 
 
+def _section_lines(pack: AssembledPack, assembled: AssembledSection) -> list[str]:
+    """One section's lines: its heading, a blank, and whatever fills it.
+
+    Extracted so `render` and `render_sections` cannot produce different bytes
+    for the same section. **That is Build 8's scoped-regeneration correctness
+    contract, made structural rather than asserted**: a scoped re-render that
+    built its blocks by a second route would agree with a full render on the day
+    it was written and drift the first time either changed -- and the drift
+    would be invisible, because both documents would still be well-formed
+    Markdown that nothing but a byte comparison could separate.
+    """
+    lines = [_heading(2, assembled.section.heading), ""]
+    if assembled.key == "overview":
+        return lines + _overview(pack)
+    if assembled.key == "gaps":
+        return lines + _gaps(pack.gaps) + _conflicts(pack.conflicts)
+    if assembled.key == "boundary":
+        return lines + _boundary(pack.boundary)
+    return lines + _knowledge_section(assembled)
+
+
+def section_blocks(pack: AssembledPack) -> tuple[tuple[str, str], ...]:
+    """`(section key, the exact text that section contributes)`, in render order.
+
+    The blocks are what a full document is made of: `render` puts the pack's
+    title and preamble above them and joins them with one blank line between. A
+    caller regenerating a subset joins the same values the same way, which is
+    why the two agree byte-for-byte by construction rather than by test.
+    """
+    return tuple(
+        (assembled.key, "\n".join(_section_lines(pack, assembled))) for assembled in pack.sections
+    )
+
+
+def render_sections(pack: AssembledPack, keys: Sequence[str]) -> str:
+    """Only the named sections, byte-identical to their place in a full render.
+
+    v6.1 section 6 Build 8: *pack sections regenerate scoped, not whole-pack.*
+    The fragment carries no title and no preamble -- it is the part of a
+    document that changed, not a smaller document -- and the sections appear in
+    `SECTIONS` order whatever order they were asked for, because the pack's
+    order is the reader's and a caller's argument order is an accident of how
+    the names were collected.
+
+    **A name that is not in the pack is ignored rather than refused.** The names
+    come from a sidecar an earlier `adopt pack` wrote, and one section since
+    removed from `SECTIONS` would otherwise make that sidecar unusable for every
+    section that does still exist.
+
+    Returns:
+        The selected blocks joined exactly as `render` joins them, ending in one
+        newline. An empty selection returns one newline -- the honest rendering
+        of "nothing this change touched is in this pack", and not an error: a
+        change that affected no section is a normal outcome of scoping.
+    """
+    wanted = frozenset(keys)
+    chosen = [block for key, block in section_blocks(pack) if key in wanted]
+    return "\n\n".join(chosen).rstrip("\n") + "\n"
+
+
 def render(pack: AssembledPack) -> str:
     """The canonical Markdown. A pure function of `pack`; no clock, no I/O.
 
@@ -219,15 +281,5 @@ def render(pack: AssembledPack) -> str:
         "here is asserted beyond what the store holds.",
     ]
 
-    for assembled in pack.sections:
-        lines += ["", _heading(2, assembled.section.heading), ""]
-        if assembled.key == "overview":
-            lines += _overview(pack)
-        elif assembled.key == "gaps":
-            lines += _gaps(pack.gaps) + _conflicts(pack.conflicts)
-        elif assembled.key == "boundary":
-            lines += _boundary(pack.boundary)
-        else:
-            lines += _knowledge_section(assembled)
-
-    return "\n".join(lines).rstrip("\n") + "\n"
+    body = "\n\n".join(block for _key, block in section_blocks(pack))
+    return ("\n".join(lines) + "\n\n" + body).rstrip("\n") + "\n"

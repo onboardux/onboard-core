@@ -173,6 +173,11 @@ class ErrorCode(StrEnum):
     HANDOVER_UNOWNED = "HANDOVER_UNOWNED"
     HANDOVER_TARGET_IS_REPLICA = "HANDOVER_TARGET_IS_REPLICA"
 
+    CONSOLE_SSO_NOT_CONFIGURED = "CONSOLE_SSO_NOT_CONFIGURED"
+    CONSOLE_AUTH_INVALID = "CONSOLE_AUTH_INVALID"
+    CONSOLE_FIRM_UNMAPPED = "CONSOLE_FIRM_UNMAPPED"
+    CONSOLE_DIGEST_DELIVERY_FAILED = "CONSOLE_DIGEST_DELIVERY_FAILED"
+
 
 #: Code -> category, verbatim from the contracts §13 table.
 ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
@@ -408,6 +413,44 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # refresh's, on the `PULL_`/`REFRESH_` precedent: the recovery differs, and
     # the hint has to be able to name it.
     ErrorCode.HANDOVER_TARGET_IS_REPLICA: ErrorCategory.POLICY,
+    # Build 10's four. The console is the first **browser** surface in the
+    # product, which is why three of these have no earlier analogue: every
+    # prior caller authenticated by bearer token or by a channel signature.
+    #
+    # `CONSOLE_SSO_NOT_CONFIGURED` is **usage**, and it is a start-up refusal
+    # rather than a request-time one: a console process was started with no
+    # identity provider configured. Nothing is broken and nothing refused a
+    # request -- an operator console with no way to log in is a deployment
+    # somebody has not finished, and the fix is configuration the hint names.
+    # `PLANE_REMOTE_NOT_CONFIGURED`'s category, for its reason.
+    ErrorCode.CONSOLE_SSO_NOT_CONFIGURED: ErrorCategory.USAGE,
+    # `CONSOLE_AUTH_INVALID` is **policy**, and it is `PLANE_AUTH_INVALID`'s
+    # browser mirror in both category and breadth: **one** code for every way
+    # an operator's credential can fail -- an absent, tampered, expired or
+    # foreign-signed session cookie; a `state` that does not match; a login
+    # cookie past its TTL; an assertion whose signature, issuer, audience,
+    # expiry or nonce does not verify. Distinguishing them in the response
+    # would hand an unauthenticated stranger an oracle over which sessions and
+    # which providers exist, and the reason is logged for the one reader
+    # entitled to it. The whole of the console's authentication surface
+    # answers with this and nothing narrower.
+    ErrorCode.CONSOLE_AUTH_INVALID: ErrorCategory.POLICY,
+    # `CONSOLE_FIRM_UNMAPPED` is **policy** and is deliberately *not* folded
+    # into the code above, because the two have different readers and opposite
+    # fixes. This one is reached only **after** the identity verified: the
+    # person is who they say they are, and no firm in this deployment's
+    # configuration claims them. So it is no longer an oracle -- an
+    # authenticated human is entitled to know why their own console is empty --
+    # and the fix is the deployment's claim-to-firm mapping rather than
+    # anything the operator can do at the browser.
+    ErrorCode.CONSOLE_FIRM_UNMAPPED: ErrorCategory.POLICY,
+    # `CONSOLE_DIGEST_DELIVERY_FAILED` is **integrity**, unlike the three
+    # above, and the category is the point: nobody asked for anything and no
+    # rule refused -- a scheduled digest could not be handed to the relay it
+    # was configured to use. The operator did nothing wrong, no flag fixes it,
+    # and what failed is the delivery of a record somebody is relying on
+    # arriving. `CONTINUITY_DELIVERY_FAILED`'s reasoning, one surface over.
+    ErrorCode.CONSOLE_DIGEST_DELIVERY_FAILED: ErrorCategory.INTEGRITY,
 }
 
 #: Codes that are **never raised** (contracts §13). Constructing one as an

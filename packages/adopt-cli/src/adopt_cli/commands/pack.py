@@ -25,6 +25,7 @@ import typer
 
 from adopt_cli.json_out import emit
 from adopt_cli.store_option import open_configured_store
+from adopt_obs import AdoptError, ErrorCode
 
 __all__ = ["pack"]
 
@@ -104,7 +105,11 @@ def pack(
     # before anything is written, not after a pack is on disk.
     converter = converter_for(format_name)
     if converter is not None and not out:  # pragma: no cover -- `--out` has a default
-        raise typer.BadParameter("--format needs --out: a derived file has to go somewhere.")
+        raise AdoptError(
+            ErrorCode.PACK_RENDERER_MISSING,
+            message=f"--format {format_name} was asked for with no --out to write it to.",
+            hint="Pass --out DIR, or drop --format to keep the canonical Markdown.",
+        )
 
     # Drafting writes; assembling does not. The store is opened writable only
     # when the flag asked for it, so an ordinary `adopt pack` cannot modify a
@@ -113,9 +118,14 @@ def pack(
     try:
         resolved = resolve_scope(handle, scope)
         if resolved.system is None:
-            raise typer.BadParameter(
-                "a pack is assembled for one system, and this store has no system in scope. "
-                "Pass --scope firm/engagement/system/environment, or run `adopt init` first."
+            raise AdoptError(
+                ErrorCode.SCOPE_VIOLATION,
+                message=(
+                    "a pack is assembled for one system, and this store has no system in scope."
+                ),
+                hint=(
+                    "Pass --scope firm/engagement/system/environment, or run `adopt init` first."
+                ),
             )
 
         system_id = str(resolved.system.id)
@@ -180,9 +190,13 @@ def _section_names(raw: str | None) -> tuple[str, ...] | None:
         return None
     names = tuple(name.strip() for name in raw.split(",") if name.strip())
     if not names:
-        raise typer.BadParameter(
-            "--sections was given no section names. A change that affected no section "
-            "needs no re-render; omit the flag to render the whole pack."
+        raise AdoptError(
+            ErrorCode.PACK_SECTIONS_EMPTY,
+            message="--sections was given no section names.",
+            hint=(
+                "A change that affected no section needs no re-render; "
+                "omit the flag to render the whole pack."
+            ),
         )
     return names
 

@@ -152,6 +152,7 @@ class ErrorCode(StrEnum):
     GAP_NOT_FOUND = "GAP_NOT_FOUND"
     GAP_WAIVER_NEEDS_UNTIL = "GAP_WAIVER_NEEDS_UNTIL"
     PACK_RENDERER_MISSING = "PACK_RENDERER_MISSING"
+    PACK_SECTIONS_EMPTY = "PACK_SECTIONS_EMPTY"
 
     PROBE_HOST_UNDECLARED = "PROBE_HOST_UNDECLARED"
     PROBE_BUDGET_EXCEEDED = "PROBE_BUDGET_EXCEEDED"
@@ -305,6 +306,12 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # either way, so a derived format that silently did not appear would leave
     # somebody looking for a file nobody said was missing.
     ErrorCode.PACK_RENDERER_MISSING: ErrorCategory.USAGE,
+    # Usage, beside the renderer code and for the same reason: `--sections` was
+    # given no names, and the operator fixes it by omitting the flag. Its own
+    # code rather than a reuse of `PACK_RENDERER_MISSING` on CR-38's precedent --
+    # "the converter is not installed" and "your selection was empty" are two
+    # different fixes, and only one of them is about a derived format at all.
+    ErrorCode.PACK_SECTIONS_EMPTY: ErrorCategory.USAGE,
     # Policy, both of them, and for the same reason `ENVELOPE_*` are: the request
     # was well-formed and the store is intact -- a declaration the operator wrote
     # is what refused it. `PROBE_HOST_UNDECLARED` is the allow-list saying a

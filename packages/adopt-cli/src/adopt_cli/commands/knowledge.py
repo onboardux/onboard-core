@@ -841,6 +841,13 @@ def _check_resolve_flags(resolve_item: str | None, action: str | None, to_uri: s
     renders a rich panel where a `--json` caller was promised the one error
     envelope. Verified in this tree, not assumed.
 
+    **This is now a rule rather than a habit** (CR-79):
+    `tests/unit/test_cli_usage_errors.py` refuses any click or typer parser
+    exception raised anywhere under `packages/adopt-cli/src`, and
+    `scripts/plant_violation.py --kind bad-parameter` watches it failing. The
+    note below was written here and read by nobody -- `commands/pack.py`, one
+    directory away, acquired a third such raise afterwards.
+
     The code is `REVIEW_ITEM_NOT_FOUND` for all three refusals, on `_edit_body`'s
     precedent in this same file: reuse the registered code whose subject matches
     -- here, a `--resolve` invocation that cannot be carried out -- and let the

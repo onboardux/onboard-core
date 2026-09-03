@@ -136,6 +136,13 @@ PROBE_MANIFEST: Final[Path] = (
     REPO_ROOT / "packages" / "adopt-probe" / "src" / "adopt_probe" / "manifest.py"
 )
 
+#: Where `--kind bad-parameter` plants. A **submodule** under `commands/`,
+#: never the package root, for the reason `plant_probe_io` gives: a plant placed
+#: where discovery is easiest proves nothing about a discovery bug.
+PACK_COMMAND: Final[Path] = (
+    REPO_ROOT / "packages" / "adopt-cli" / "src" / "adopt_cli" / "commands" / "pack.py"
+)
+
 #: The provider module named in the planted import. One of the six
 #: `no-provider-sdk` forbids, and deliberately the one PRD F13.2 names first --
 #: so the proof is against a module the pack actually expects someone to reach
@@ -233,7 +240,40 @@ def plant_probe_io() -> str:
     return f"added `import urllib.request` to {PROBE_MANIFEST.name}"
 
 
+def plant_bad_parameter() -> str:
+    """Refuse with a `typer.BadParameter` inside a command module -- T1.1's gate.
+
+    **This class has already returned once.** The installed typer vendors its own
+    click under `typer._click`, so a `typer.BadParameter` raised in a command
+    body is not a `click.ClickException`: it escapes `adopt_cli.main` unhandled,
+    exits `1` where contracts §13 says `2` or `3`, prints a rich traceback, and
+    leaves the stdout a `--json` caller was promised completely empty. Three such
+    raises were live in `pack.py` when this gate was written, one of them added
+    by a later build after the first two had already been diagnosed elsewhere in
+    the same package (CR-79).
+
+    The plant goes into **`commands/pack.py`, a submodule** rather than the
+    package root, for CR-67's reason: a self-test that plants where discovery is
+    easiest proves nothing about the discovery bug it exists to catch. `pack.py`
+    is also the honest victim -- it is the module where the class actually
+    returned, and where the next contributor reaching for a one-line refusal
+    would put it.
+    """
+    if not PACK_COMMAND.exists():  # pragma: no cover -- layout change
+        raise SystemExit(
+            f"{PACK_COMMAND.relative_to(REPO_ROOT)} does not exist, so nothing was "
+            "planted. Update this script rather than leaving the gate unproven."
+        )
+    _backup(PACK_COMMAND)
+    with PACK_COMMAND.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            '\n\ndef _planted_violation() -> None:\n    raise typer.BadParameter("planted")\n'
+        )
+    return f"added a `typer.BadParameter` refusal to {PACK_COMMAND.name}"
+
+
 KINDS: Final[dict[str, Callable[[], str]]] = {
+    "bad-parameter": plant_bad_parameter,
     "covered-cache-write": plant_covered_cache_write,
     "drop-column": plant_drop_column,
     "probe-io": plant_probe_io,

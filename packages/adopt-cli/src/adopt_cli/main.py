@@ -13,7 +13,7 @@ Three postures are set here and inherited by every command added later:
 """
 
 import sys
-from typing import Annotated
+from typing import Annotated, Any, Final, cast
 
 import click
 import typer
@@ -181,13 +181,64 @@ def _wants_json(argv: list[str] | None) -> bool:
     return "--json" in (argv if argv is not None else sys.argv[1:])
 
 
-def _exit_code_of(error: click.ClickException | click.exceptions.Exit) -> int:
-    if isinstance(error, click.exceptions.Exit):
-        return int(error.exit_code)
-    if isinstance(error, click.UsageError):
-        error.show()
+def _typer_exception_base(name: str, fallback: type[BaseException]) -> type[BaseException]:
+    """The class typer's **vendored** click raises, found through typer's public surface.
+
+    The installed typer ships its own copy of click under `typer._click`, so
+    `typer.BadParameter` is not a `click.ClickException` and `typer.Exit` is not
+    a `click.exceptions.Exit`. Catching only the standalone click's classes let
+    every parser-level usage error -- an unknown option, a missing argument, a
+    bad parameter -- escape `main()` unhandled: exit `1`, a rich traceback on
+    stderr, and nothing at all on the stdout a `--json` caller was promised.
+
+    The bases are read off `typer.BadParameter.__mro__` rather than imported
+    from a `typer._click...` path, so no private module is named here and the
+    same walk keeps working if typer ever un-vendors click again. The fallback
+    preserves today's behaviour if a future typer restructures the hierarchy
+    entirely, and `tests/unit/test_cli_usage_errors.py` pins the resolution so
+    that fallback can never quietly become the normal case.
+    """
+    for base in typer.BadParameter.__mro__:
+        if base.__name__ == name:
+            return base
+    return fallback
+
+
+#: "The caller asked for something the parser could not accept" -- contracts
+#: §13 `usage`, exit `2` -- in both copies of click.
+_USAGE_ERROR_CLASSES: Final[tuple[type[BaseException], ...]] = (
+    click.UsageError,
+    _typer_exception_base("UsageError", click.UsageError),
+)
+#: Click's reportable-exception root in both copies. One that is not a
+#: `UsageError` stays an operational failure, exactly as before.
+_CLICK_EXCEPTION_CLASSES: Final[tuple[type[BaseException], ...]] = (
+    click.ClickException,
+    _typer_exception_base("ClickException", click.ClickException),
+)
+#: `Exit` carries its own code; `Abort` is an interrupted run.
+_EXIT_CLASSES: Final[tuple[type[BaseException], ...]] = (click.exceptions.Exit, typer.Exit)
+_ABORT_CLASSES: Final[tuple[type[BaseException], ...]] = (click.exceptions.Abort, typer.Abort)
+_HANDLED_CLICK_CLASSES: Final[tuple[type[BaseException], ...]] = (
+    _CLICK_EXCEPTION_CLASSES + _EXIT_CLASSES
+)
+
+
+def _exit_code_of(error: BaseException) -> int:
+    """Contracts §13's mapping for click's own control-flow exceptions.
+
+    A parser-level usage error is deliberately **not** given a §13 JSON
+    envelope: §14's envelope is a command's output, and here no command ran --
+    the parser refused the invocation before one could. Click's usage message on
+    stderr and exit `2` is the contract, and it is what the operator reading a
+    shell needs.
+    """
+    reported = cast(Any, error)
+    if isinstance(error, _EXIT_CLASSES):
+        return int(reported.exit_code)
+    reported.show()
+    if isinstance(error, _USAGE_ERROR_CLASSES):
         return ExitCode.USAGE_ERROR
-    error.show()
     return ExitCode.OPERATIONAL_FAILURE
 
 
@@ -214,10 +265,10 @@ def main(argv: list[str] | None = None) -> int:
         emit_error(error.to_envelope(), as_json=_wants_json(argv))
         log.error("cli.failed", code=str(error.code), category=str(error.category))
         return error.exit_code
-    except click.exceptions.Abort:
+    except _ABORT_CLASSES:
         log.warn("cli.aborted")
         return ExitCode.OPERATIONAL_FAILURE
-    except (click.ClickException, click.exceptions.Exit) as error:
+    except _HANDLED_CLICK_CLASSES as error:
         return _exit_code_of(error)
     # A command returning an `int` returned it through `typer.Exit`; commands
     # return `None` otherwise, so there is no value here to confuse with a code.

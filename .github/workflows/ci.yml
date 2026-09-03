@@ -896,6 +896,30 @@ jobs:
           fi
           uv run python scripts/plant_violation.py --revert
           echo "planted probe I/O detected -- gate is live"
+      # T1.1's gate, and the class it guards has already returned once: two
+      # `typer.BadParameter` refusals in `commands/pack.py` were diagnosed, and
+      # a third was then added by a later build to the same file while
+      # `commands/knowledge.py` -- one directory away -- carried a docstring
+      # explaining why it must not be. The installed typer vendors its own click
+      # under `typer._click`, so such a raise is not a `click.ClickException`:
+      # it escapes `main()` as exit 1 with a rich traceback and an empty stdout,
+      # where contracts 13 says 2 or 3 with an envelope.
+      #
+      # A unit test rather than a fourteenth import contract, because the rule
+      # is about a *raise* and not about a dependency, and `03` 5.1's frozen set
+      # is extended only for a new irreversible risk class (v6.1 R6). The plant
+      # goes into a `commands/` submodule for CR-67's reason.
+      - name: Prove the gate still rejects a planted typer.BadParameter refusal
+        run: |
+          set -euo pipefail
+          uv run python scripts/plant_violation.py --kind bad-parameter
+          if uv run pytest tests/unit/test_cli_usage_errors.py -q -k parser_exception; then
+            echo "::error::a planted typer.BadParameter refusal in a command module was NOT detected"
+            uv run python scripts/plant_violation.py --revert
+            exit 1
+          fi
+          uv run python scripts/plant_violation.py --revert
+          echo "planted typer.BadParameter refusal detected -- gate is live"
       - name: The tree is exactly as it was found
         run: git diff --exit-code
       # The sprint plan's Final Output Validation greps both repositories.

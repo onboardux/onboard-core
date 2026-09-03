@@ -163,6 +163,39 @@ def _latest_statuses(handle: KnowledgeStoreView, wanted: set[str]) -> dict[str, 
     return {identity_id: stamp[2] for identity_id, stamp in newest.items()}
 
 
+def in_scope(item: KnowledgeItem, scope: Scope) -> bool:
+    """Whether `item` belongs to the scope Build 2's reads were asked about.
+
+    **The system alone was the filter until T1.3, and that was wrong in the one
+    way that corrupts canon rather than merely hiding it.** `stored_documents`,
+    `harvested_commits` and `pending_items` all matched on `system_id` only, so
+    an ingest run under `.../orders-api/staging` recognised the **prod** item at
+    the same relative path as "already stored" and appended its revision to that
+    item's chain. No staging item was ever created, and the prod item's current
+    body became the staging document's text -- silently, exiting `0`, with the
+    revision chain reading as an ordinary edit.
+
+    The rule is `identity_views`' rule, with one addition the schema forces:
+
+    * The environment must match exactly, as it does for an identity.
+    * `knowledge_item.environment_id` is **nullable** (`schema/canonical.yaml`:
+      *"an item may span environments"*) while `identity.environment_id` is
+      `NOT NULL`, so `identity_views` never had to answer this question. An
+      item with no environment spans all of them and is therefore in scope for
+      every environment of its system -- excluding it instead would make a
+      re-ingest create a duplicate of it on every run, which is the idempotence
+      these three readers exist to provide.
+    * A scope that resolves no environment falls back to the system, because
+      there is no environment to be wrong about. That is today's behaviour for
+      exactly the case where today's behaviour was right.
+    """
+    if str(item.system_id) != str(scope.system.id if scope.system is not None else ""):
+        return False
+    if scope.environment is None or item.environment_id is None:
+        return True
+    return str(item.environment_id) == str(scope.environment.id)
+
+
 def stored_documents(handle: KnowledgeStoreView, scope: Scope) -> dict[str, StoredDocument]:
     """`path -> StoredDocument` for everything ingest has already written.
 
@@ -174,11 +207,10 @@ def stored_documents(handle: KnowledgeStoreView, scope: Scope) -> dict[str, Stor
     """
     if scope.system is None:
         return {}
-    system_id = str(scope.system.id)
     items = {
         row.id: row
         for row in _rows(handle, "knowledge_item", KnowledgeItem)
-        if row.system_id == system_id
+        if in_scope(row, scope)
     }
     revisions = {
         row.id: row
@@ -218,11 +250,8 @@ def harvested_commits(handle: KnowledgeStoreView, scope: Scope) -> dict[str, str
     """
     if scope.system is None:
         return {}
-    system_id = str(scope.system.id)
     items = {
-        row.id
-        for row in _rows(handle, "knowledge_item", KnowledgeItem)
-        if row.system_id == system_id
+        row.id for row in _rows(handle, "knowledge_item", KnowledgeItem) if in_scope(row, scope)
     }
     revisions = {
         row.id: row.item_id
@@ -340,7 +369,14 @@ def pending_items(
         for row in _rows(handle, "review_batch", ReviewBatch)
         if row.system_id == system_id
     }
-    items = {row.id: row for row in _rows(handle, "knowledge_item", KnowledgeItem)}
+    # Scope-filtered, not read whole: a batch is found by `system_id` and its
+    # items were not filtered at all, so a staging reviewer saw prod's queue
+    # entries and could confirm a binding into the wrong environment.
+    items = {
+        row.id: row
+        for row in _rows(handle, "knowledge_item", KnowledgeItem)
+        if in_scope(row, scope)
+    }
     revisions = {row.id: row for row in _rows(handle, "knowledge_revision", KnowledgeRevision)}
     already_bound = bound_pairs(handle)
     evidence = _evidence_by_revision(handle)

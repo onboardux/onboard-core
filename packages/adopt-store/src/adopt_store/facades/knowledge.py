@@ -47,6 +47,7 @@ from adopt_store.facades.records import (
     BindingRecords,
     CoverageGapRecords,
     EscalationRecords,
+    IdentityRecords,
     KnowledgeRecords,
     ProbeRecords,
     ReviewRecords,
@@ -578,14 +579,73 @@ class BindingFacade:
         records: BindingRecords,
         writer: RevisionWriter,
         *,
+        items: KnowledgeRecords,
+        identities: IdentityRecords,
         clock: Clock | None = None,
     ) -> None:
         self._records = records
         self._writer = writer
+        self._items = items
+        self._identities = identities
         self._clock: Clock = clock if clock is not None else SystemClock()
 
     def _now(self) -> _dt.datetime:
         return truncate_to_millisecond(self._clock.now())
+
+    def _refuse_across_scopes(self, item_id: str, identity_id: str) -> None:
+        """Refuse a binding whose two ends live in different systems.
+
+        **`adopt bind` accepted any two ids and exited `0`.** A knowledge item
+        under one firm could be bound to an identity under another, producing a
+        `binding` row whose `item_id` and `identity_id` resolve to different
+        tenants -- uninterpretable canon in the field store, and, for any caller
+        that has learned a foreign URI, a way to attach one client's prose to
+        another client's referent.
+
+        The check lives here rather than in the CLI because this is the one
+        place a binding is created: ingest's URI tier, harvest's, `adopt bind`,
+        a review confirmation and Build 6's rebind all arrive through `create`.
+        A check in `commands/knowledge.py` would guard exactly one of them.
+
+        **The environment is deliberately not compared.** `binding` derives its
+        row scope `via: [item_id]` and `knowledge_item.environment_id` is
+        nullable because an item may span environments, so an item legitimately
+        describes identities in more than one environment of its system. Firm,
+        engagement and system are the boundary that cannot be crossed.
+
+        Raises:
+            AdoptError: ``SCOPE_VIOLATION`` -- policy, exit `3`, and a security
+                event, exactly as §13 says of every cross-scope access.
+        """
+        item = self._items.get_item(item_id)
+        identity = self._identities.get_identity(identity_id)
+        if item is None or identity is None:
+            # Absence is somebody else's error to raise: `adopt bind` reports it
+            # as `BIND_TARGET_NOT_FOUND`, and inventing a scope refusal here
+            # would tell an operator who mistyped an id that they had crossed a
+            # tenant boundary.
+            return
+        mismatched = [
+            field
+            for field in ("firm_id", "engagement_id", "system_id")
+            if str(getattr(item, field)) != str(getattr(identity, field))
+        ]
+        if not mismatched:
+            return
+        raise AdoptError(
+            ErrorCode.SCOPE_VIOLATION,
+            message=(
+                f"knowledge item {item_id} and identity {identity_id} are in different "
+                f"scopes ({', '.join(mismatched)}); a binding joins one item to one "
+                "referent of the same system"
+            ),
+            hint=(
+                "Check --scope and the URI. A binding across systems -- and above all "
+                "across firms -- produces a row nothing can interpret, because the "
+                "binding's own scope is derived from the item while the coverage it "
+                "creates is read against the identity."
+            ),
+        )
 
     def create(
         self,
@@ -614,6 +674,8 @@ class BindingFacade:
                 `idx_binding_pair` is `UNIQUE`, and a second binding for one pair
                 would give the item two chains describing one relationship.
         """
+        self._refuse_across_scopes(item_id, identity_id)
+
         existing = self._records.find_binding(item_id, identity_id)
         if existing is not None:
             raise AdoptError(

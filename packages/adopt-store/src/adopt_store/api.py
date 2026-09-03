@@ -244,7 +244,17 @@ class SqliteStoreHandle:
         return self._cached(
             "bindings",
             lambda: BindingFacade(
-                SqliteBindingRecords(self.backend), self.revisions(), clock=self.clock
+                SqliteBindingRecords(self.backend),
+                self.revisions(),
+                # Both readers, so the facade can refuse a binding whose ends are
+                # in different scopes (T1.3). The alternative -- widening
+                # `BindingRecords` with `get_item`/`get_identity` -- would add two
+                # query paths to every realization and to the plane's escape
+                # suite, for a check that reads rows two existing ports already
+                # answer.
+                items=SqliteKnowledgeRecords(self.backend),
+                identities=SqliteIdentityRecords(self.backend),
+                clock=self.clock,
             ),
         )
 

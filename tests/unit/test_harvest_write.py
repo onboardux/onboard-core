@@ -13,6 +13,7 @@ from adopt_knowledge import IdentityView, PendingItem, confirm, edit, reject, ru
 from adopt_knowledge.gitlog import Commit
 from adopt_knowledge.harvest import HARVEST_EXTRACTOR, batch_key, mine
 
+from adopt_cli.commands._knowledge_support import StoreUnitOfWork
 from adopt_scope import Scope
 from adopt_store.api import SqliteStoreHandle
 
@@ -75,6 +76,7 @@ def _harvest(
         knowledge=store.items(),
         bindings=store.bindings(),
         reviews=store.governance(),
+        unit=StoreUnitOfWork(store),
         key=KEY,
         bound_pairs=bound,
         actor_id=actor,
@@ -230,6 +232,7 @@ def test_confirming_a_candidate_appends_a_verified_revision_and_keeps_the_mined_
     outcome = confirm(
         item,
         reviews=s4_store.governance(),
+        unit=StoreUnitOfWork(s4_store),
         bindings=s4_store.bindings(),
         knowledge=s4_store.items(),
         actor_id="alice",
@@ -270,6 +273,7 @@ def test_nothing_a_human_writes_can_claim_artifact_observed(
     edit(
         item,
         reviews=s4_store.governance(),
+        unit=StoreUnitOfWork(s4_store),
         knowledge=s4_store.items(),
         body_md="Refunds are held because the provider settles T+2.",
         source_ref="corrections/refund.md",

@@ -36,7 +36,35 @@ __all__ = [
     "ItemRetirer",
     "KnowledgeWriter",
     "ReviewWriter",
+    "UnitOfWork",
 ]
+
+
+class UnitOfWork(Protocol):
+    """One store transaction, handed in structurally like every writer here.
+
+    **`DraftStore` had this and nothing else did, and the reasoning that
+    justified the difference was wrong.** Its docstring said harvest and ingest
+    do not need a transaction because *"a partially written harvest is a
+    candidate a re-harvest recreates"* -- but a re-harvest recognises the
+    candidate by its `commit` provenance row, and a re-ingest by its `ingest`
+    provenance row, so a run that wrote the item and its provenance and then
+    failed before the audience tag leaves a document the retry reports as
+    `unchanged` and never completes. The audience is gone permanently, which
+    means the pack that selects by audience silently omits it. Reproduced by
+    planting a failure in `tag_audience` (B2-02).
+
+    The unit is **one document, one candidate, one review action, one change
+    resolution** -- never a whole run. A transaction spanning forty documents
+    holds a write lock for the length of an ingest, and rolling back
+    thirty-nine sound documents because the fortieth was unreadable is not
+    atomicity anybody asked for.
+
+    `SqliteStoreHandle.transaction` joins when nested, so an outer `with` here
+    encloses the facade calls' own transactions without a savepoint.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
 
 
 class KnowledgeWriter(Protocol):
@@ -156,7 +184,7 @@ class BindingFreshener(Protocol):
     def freshen_bindings(self, binding_ids: Sequence[str]) -> tuple[str, ...]: ...
 
 
-class DraftStore(KnowledgeWriter, BindingWriter, ReviewWriter, Protocol):
+class DraftStore(KnowledgeWriter, BindingWriter, ReviewWriter, UnitOfWork, Protocol):
     """The three writers **plus the unit of work**, for `drafting` alone.
 
     One protocol rather than three arguments, for the reason `adopt_ask.capture`
@@ -169,9 +197,8 @@ class DraftStore(KnowledgeWriter, BindingWriter, ReviewWriter, Protocol):
     a section about an identity it cannot name.
 
     `transaction` is therefore on the protocol rather than an implementation
-    detail of whoever calls it. Harvest and ingest do not need this -- a
-    partially written harvest is a candidate a re-harvest recreates -- which is
-    why the transactional slice arrives here rather than under every writer.
+    detail of whoever calls it. It is inherited from `UnitOfWork` now that ingest,
+    harvest and the review actions take one too -- the claim this docstring used
+    to make, that a partially written harvest is a candidate a re-harvest
+    recreates, was **false** and is corrected on `UnitOfWork`.
     """
-
-    def transaction(self) -> AbstractContextManager[None]: ...

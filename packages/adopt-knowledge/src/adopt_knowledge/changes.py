@@ -47,6 +47,7 @@ from adopt_knowledge.ports import (
     ItemRetirer,
     KnowledgeWriter,
     ReviewWriter,
+    UnitOfWork,
 )
 from adopt_knowledge.review import (
     CHANGE_POPULATIONS,
@@ -161,6 +162,7 @@ def retire_item(
     *,
     reviews: ReviewWriter,
     knowledge: ItemRetirer,
+    unit: UnitOfWork,
     reason: str = DEFAULT_RETIRE_REASON,
     actor_id: str | None = None,
 ) -> ChangeOutcome:
@@ -175,10 +177,18 @@ def retire_item(
     ever had and stays readable: coverage provenance depends on it (PRD F6.7),
     and `resolve_freshness` reports `retired` -- which is what lets `adopt ask`
     answer "that was withdrawn" instead of falling silent.
+
+    **One transaction, added by T1.3/T1.4** (B2-03). The ordering below is
+    unchanged and still deliberate; what was missing was the boundary. A
+    resolution that committed and a write that then failed left the queue
+    entry stamped and the work undone, and `_resolve` refuses the retry -- so
+    the store recorded a human decision that never took effect and nothing
+    could correct it.
     """
     _require_change_item(item, ACTION_RETIRE)
-    _resolve(reviews, item, CORRECTED)
-    revision_id = knowledge.retire(item_id=item.item_id, reason=reason, actor_id=actor_id)
+    with unit.transaction():
+        _resolve(reviews, item, CORRECTED)
+        revision_id = knowledge.retire(item_id=item.item_id, reason=reason, actor_id=actor_id)
     _log.info(
         "change.resolved",
         action=ACTION_RETIRE,
@@ -194,6 +204,7 @@ def rebind_item(
     *,
     reviews: ReviewWriter,
     bindings: BindingSuperseder,
+    unit: UnitOfWork,
     affected: Sequence[ChangedBinding],
     target_identity_id: str,
     target_uri: str,
@@ -233,21 +244,22 @@ def rebind_item(
             "binding alone would leave it bound to both referents.",
         )
 
-    _resolve(reviews, item, CORRECTED)
-
     superseded: list[str] = []
-    for link in sorted(superseded_links, key=lambda row: row.binding_id):
-        bindings.supersede(binding_id=link.binding_id, actor_id=actor_id)
-        superseded.append(link.binding_id)
+    with unit.transaction():
+        _resolve(reviews, item, CORRECTED)
 
-    new_binding_id, _ = bindings.bind(
-        item_id=item.item_id,
-        identity_id=target_identity_id,
-        is_load_bearing=True,
-        extractor=EXTRACTOR_NAME_CONFIRMED,
-        extractor_version=INGEST_EXTRACTOR_VERSION,
-        actor_id=actor_id,
-    )
+        for link in sorted(superseded_links, key=lambda row: row.binding_id):
+            bindings.supersede(binding_id=link.binding_id, actor_id=actor_id)
+            superseded.append(link.binding_id)
+
+        new_binding_id, _ = bindings.bind(
+            item_id=item.item_id,
+            identity_id=target_identity_id,
+            is_load_bearing=True,
+            extractor=EXTRACTOR_NAME_CONFIRMED,
+            extractor_version=INGEST_EXTRACTOR_VERSION,
+            actor_id=actor_id,
+        )
 
     _log.info(
         "change.resolved",
@@ -270,6 +282,7 @@ def confirm_current_item(
     reviews: ReviewWriter,
     knowledge: KnowledgeWriter,
     freshener: BindingFreshener,
+    unit: UnitOfWork,
     affected: Sequence[ChangedBinding],
     actor_id: str | None = None,
 ) -> ChangeOutcome:
@@ -289,22 +302,25 @@ def confirm_current_item(
     `retire` and `rebind`.
     """
     _require_change_item(item, ACTION_CONFIRM_CURRENT)
-    _resolve(reviews, item, CONFIRMED)
+    with unit.transaction():
+        _resolve(reviews, item, CONFIRMED)
 
-    revision_id, provenance_ids = _append_human_revision(
-        item,
-        knowledge=knowledge,
-        body_md=item.body_md,
-        source_ref=item.review_item_id,
-        actor_id=actor_id,
-    )
+        revision_id, provenance_ids = _append_human_revision(
+            item,
+            knowledge=knowledge,
+            body_md=item.body_md,
+            source_ref=item.review_item_id,
+            actor_id=actor_id,
+        )
 
-    reaffirmed = [
-        link.binding_id
-        for link in affected
-        if link.item_id == item.item_id and link.is_load_bearing and link.impact_class == _SEMANTICS
-    ]
-    freshened = freshener.freshen_bindings(reaffirmed)
+        reaffirmed = [
+            link.binding_id
+            for link in affected
+            if link.item_id == item.item_id
+            and link.is_load_bearing
+            and link.impact_class == _SEMANTICS
+        ]
+        freshened = freshener.freshen_bindings(reaffirmed)
 
     _log.info(
         "change.resolved",

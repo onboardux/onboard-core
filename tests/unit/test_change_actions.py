@@ -25,6 +25,7 @@ from adopt_knowledge import (
     still_stale_after_confirm,
 )
 
+from adopt_cli.commands._knowledge_support import StoreUnitOfWork
 from adopt_freshness import RULE_BINDING_STALE, RULE_SOURCE_IDENTITY_DEAD, resolve_freshness
 from adopt_model import BindingRevision, KnowledgeRevision
 from adopt_obs import AdoptError, ErrorCode, ManualClock
@@ -104,7 +105,12 @@ class TestRetire:
         exists to delete, now with an audit trail claiming it was handled."""
         pending, _, _ = _queued(s4_store, s4_scope)
 
-        outcome = retire_item(pending, reviews=s4_store.governance(), knowledge=s4_store.items())
+        outcome = retire_item(
+            pending,
+            reviews=s4_store.governance(),
+            knowledge=s4_store.items(),
+            unit=StoreUnitOfWork(s4_store),
+        )
 
         assert outcome.resolution == "corrected"
         item = s4_store.items().get(pending.item_id)
@@ -147,6 +153,7 @@ class TestRebind:
         outcome = rebind_item(
             pending,
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
             bindings=s4_store.bindings(),
             affected=[link],
             target_identity_id=successor.id,
@@ -186,6 +193,7 @@ class TestRebind:
             rebind_item(
                 pending,
                 reviews=s4_store.governance(),
+                unit=StoreUnitOfWork(s4_store),
                 bindings=s4_store.bindings(),
                 affected=[],
                 target_identity_id=successor.id,
@@ -221,6 +229,7 @@ class TestConfirmCurrent:
         outcome = confirm_current_item(
             pending,
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
             knowledge=s4_store.items(),
             freshener=s4_store.changes(),
             affected=[link],
@@ -269,6 +278,7 @@ class TestConfirmCurrent:
         outcome = confirm_current_item(
             pending,
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
             knowledge=s4_store.items(),
             freshener=s4_store.changes(),
             affected=[dead_link],
@@ -296,10 +306,20 @@ class TestTheGuards:
         rebind ends an item somebody just re-pointed -- and the queue would show
         one disposition for two decisions."""
         pending, _, _ = _queued(s4_store, s4_scope)
-        retire_item(pending, reviews=s4_store.governance(), knowledge=s4_store.items())
+        retire_item(
+            pending,
+            reviews=s4_store.governance(),
+            knowledge=s4_store.items(),
+            unit=StoreUnitOfWork(s4_store),
+        )
 
         with pytest.raises(AdoptError) as raised:
-            retire_item(pending, reviews=s4_store.governance(), knowledge=s4_store.items())
+            retire_item(
+                pending,
+                reviews=s4_store.governance(),
+                knowledge=s4_store.items(),
+                unit=StoreUnitOfWork(s4_store),
+            )
 
         assert raised.value.code is ErrorCode.REVIEW_ITEM_RESOLVED
 
@@ -315,7 +335,12 @@ class TestTheGuards:
         pending, _, _ = _queued(s4_store, s4_scope, batch_key="ingest:doc-1")
 
         with pytest.raises(AdoptError) as raised:
-            retire_item(pending, reviews=s4_store.governance(), knowledge=s4_store.items())
+            retire_item(
+                pending,
+                reviews=s4_store.governance(),
+                knowledge=s4_store.items(),
+                unit=StoreUnitOfWork(s4_store),
+            )
 
         assert raised.value.code is ErrorCode.REVIEW_ITEM_NOT_FOUND
         # Named, not reported absent: the id was right (CR-38's rule).

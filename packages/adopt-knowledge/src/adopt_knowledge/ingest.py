@@ -32,7 +32,7 @@ from typing import Final
 
 from adopt_knowledge.documents import Document, unknown_audiences
 from adopt_knowledge.matchers import IdentityView, Match, match_document
-from adopt_knowledge.ports import BindingWriter, KnowledgeWriter, ReviewWriter
+from adopt_knowledge.ports import BindingWriter, KnowledgeWriter, ReviewWriter, UnitOfWork
 from adopt_model._enums import AuthorityClass, SourceType, Verification
 from adopt_obs import get_logger
 from adopt_scope import Scope
@@ -141,6 +141,7 @@ def run_ingest(
     knowledge: KnowledgeWriter,
     bindings: BindingWriter,
     reviews: ReviewWriter,
+    unit: UnitOfWork,
     bound_pairs: frozenset[tuple[str, str]] = frozenset(),
     presented_revisions: frozenset[str] = frozenset(),
     actor_id: str | None = None,
@@ -160,6 +161,15 @@ def run_ingest(
         presented_revisions: Revision ids already carried by a `review_item`.
             **This is what makes the queue idempotent**, and it is not the same
             question as whether the knowledge changed -- see below.
+        unit: The transaction boundary. **One document is one unit**, not one
+            run: an ingest that wrote a document's item, revision and provenance
+            and then failed before its audience tag left a document a retry
+            reports as `unchanged` -- so the audience was gone permanently and
+            the pack that selects by audience silently omitted it (B2-02). Per
+            document rather than per run because a transaction spanning forty
+            files holds a write lock for the length of the ingest, and rolling
+            back thirty-nine sound documents because the fortieth was unreadable
+            is not atomicity anybody asked for.
         actor_id: Recorded on every revision this run writes.
 
     Returns:
@@ -171,16 +181,17 @@ def run_ingest(
     pending_review: list[tuple[str, str | None]] = []
 
     for document in documents:
-        outcome = _ingest_one(
-            document,
-            scope=scope,
-            identities=identities,
-            stored=stored.get(document.path),
-            knowledge=knowledge,
-            bindings=bindings,
-            bound_pairs=bound_pairs,
-            actor_id=actor_id,
-        )
+        with unit.transaction():
+            outcome = _ingest_one(
+                document,
+                scope=scope,
+                identities=identities,
+                stored=stored.get(document.path),
+                knowledge=knowledge,
+                bindings=bindings,
+                bound_pairs=bound_pairs,
+                actor_id=actor_id,
+            )
         report.outcomes.append(outcome)
         # Queue a document's suggestions once per *revision*. Idempotence of the
         # write path is not enough here and the difference is worth stating: a
@@ -194,12 +205,16 @@ def run_ingest(
             pending_review.append((outcome.item_id, outcome.revision_id))
 
     if pending_review:
-        batch_id, item_ids = reviews.open_batch(
-            system_id=str(scope.system.id) if scope.system is not None else "",
-            batch_key=_batch_key(report),
-            items=pending_review,
-            owner_actor_id=actor_id,
-        )
+        # Its own unit: the batch coalesces the whole run (v6.1 B6), so it
+        # cannot sit inside any one document's transaction -- and a batch that
+        # opened without its items would be a queue entry pointing at nothing.
+        with unit.transaction():
+            batch_id, item_ids = reviews.open_batch(
+                system_id=str(scope.system.id) if scope.system is not None else "",
+                batch_key=_batch_key(report),
+                items=pending_review,
+                owner_actor_id=actor_id,
+            )
         report.review_batch_id = batch_id
         report.review_item_ids = item_ids
 

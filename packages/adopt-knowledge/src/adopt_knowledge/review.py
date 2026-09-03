@@ -67,7 +67,7 @@ from typing import Final
 
 from adopt_knowledge.ingest import EXTRACTOR_NAME_CONFIRMED, INGEST_EXTRACTOR_VERSION
 from adopt_knowledge.matchers import IdentityView, Match, name_matches
-from adopt_knowledge.ports import BindingWriter, KnowledgeWriter, ReviewWriter
+from adopt_knowledge.ports import BindingWriter, KnowledgeWriter, ReviewWriter, UnitOfWork
 from adopt_model._enums import AuthorityClass, ReviewResolution, SourceType, Verification
 from adopt_obs import get_logger
 
@@ -330,17 +330,27 @@ def confirm(
     *,
     reviews: ReviewWriter,
     bindings: BindingWriter,
+    unit: UnitOfWork,
     knowledge: KnowledgeWriter | None = None,
     bound_pairs: frozenset[tuple[str, str]] = frozenset(),
     actor_id: str | None = None,
 ) -> Outcome:
-    """Record the confirmation, then act on what it confirmed.
+    """Record the confirmation, then act on what it confirmed -- in one transaction.
 
     **The disposition is recorded first, deliberately.** `resolve` refuses an
     item that is already resolved, so it is the guard that makes double
     confirmation impossible; acting first and stamping second would create the
     bindings -- or append the revision -- and *then* discover the item had
     already been confirmed once.
+
+    **The ordering is kept and the boundary is added** (B2-03). Recording first
+    and acting second is right; recording first and *committing* first is not.
+    Without one transaction, a binding write that failed left the item stamped
+    `confirmed` with no binding to show for it, and `resolve` then refused the
+    retry -- so the store said a human had confirmed an action that never
+    occurred, and no second attempt could ever correct it. Inside one unit the
+    guard still fires first and the whole thing rolls back together, which
+    leaves the entry open and re-confirmable.
 
     Args:
         knowledge: Required for any population that **appends a revision** --
@@ -354,6 +364,27 @@ def confirm(
         `REVISION_CHAIN_FORK` on a UNIQUE index. For a candidate, the id of the
         verified revision the confirmation appended.
     """
+    with unit.transaction():
+        return _confirm_within_unit(
+            item,
+            reviews=reviews,
+            bindings=bindings,
+            knowledge=knowledge,
+            bound_pairs=bound_pairs,
+            actor_id=actor_id,
+        )
+
+
+def _confirm_within_unit(
+    item: PendingItem,
+    *,
+    reviews: ReviewWriter,
+    bindings: BindingWriter,
+    knowledge: KnowledgeWriter | None,
+    bound_pairs: frozenset[tuple[str, str]],
+    actor_id: str | None,
+) -> Outcome:
+    """`confirm`'s body, so the transaction is one line rather than an indent."""
     reviews.resolve(review_item_id=item.review_item_id, resolution=CONFIRMED)
 
     if item.is_candidate:
@@ -409,6 +440,7 @@ def edit(
     *,
     reviews: ReviewWriter,
     knowledge: KnowledgeWriter,
+    unit: UnitOfWork,
     body_md: str,
     source_ref: str,
     actor_id: str | None = None,
@@ -427,15 +459,19 @@ def edit(
     authored text cannot claim to have been observed in an artifact, and the
     superseded revision keeps its own class and citation because provenance
     belongs to a revision rather than to an item.
+
+    One transaction, for `confirm`'s reason: an item stamped `corrected` whose
+    revision never landed is an item `resolve` will refuse to correct again.
     """
-    reviews.resolve(review_item_id=item.review_item_id, resolution=CORRECTED)
-    revision_id, provenance_ids = _append_human_revision(
-        item,
-        knowledge=knowledge,
-        body_md=body_md,
-        source_ref=source_ref,
-        actor_id=actor_id,
-    )
+    with unit.transaction():
+        reviews.resolve(review_item_id=item.review_item_id, resolution=CORRECTED)
+        revision_id, provenance_ids = _append_human_revision(
+            item,
+            knowledge=knowledge,
+            body_md=body_md,
+            source_ref=source_ref,
+            actor_id=actor_id,
+        )
     _log.info(
         "review.corrected",
         review_item=item.review_item_id,

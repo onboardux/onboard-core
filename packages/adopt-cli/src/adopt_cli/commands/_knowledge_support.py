@@ -14,7 +14,8 @@ which is where the invariants live.
 """
 
 from collections.abc import Sequence
-from typing import Any, Protocol
+from contextlib import AbstractContextManager
+from typing import Any, Protocol, cast
 
 from adopt_knowledge import (
     ChangedBinding,
@@ -161,6 +162,26 @@ def _latest_statuses(handle: KnowledgeStoreView, wanted: set[str]) -> dict[str, 
         if current is None or stamp[:2] > current[:2]:
             newest[revision.identity_id] = stamp
     return {identity_id: stamp[2] for identity_id, stamp in newest.items()}
+
+
+class StoreUnitOfWork:
+    """Realizes `adopt_knowledge.UnitOfWork` over one open store handle.
+
+    `_draft_support.DraftStoreAdapter`'s pattern and its reason (CR-36): the CLI
+    is the composition root, `adopt_knowledge` never imports `adopt_store`, and
+    the cast is where the handle's loosely-typed boundary meets the protocol.
+
+    Every facade the callers pass comes from this same handle, which caches them
+    over one connection -- so the transaction really does enclose the item, the
+    revision, the provenance rows, the audience tags and the bindings. Five
+    independent connections would make the boundary decorative.
+    """
+
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return cast("AbstractContextManager[None]", self._handle.backend.transaction())
 
 
 def in_scope(item: KnowledgeItem, scope: Scope) -> bool:
@@ -400,8 +421,22 @@ def pending_items(
                 batch_key=batch.batch_key,
                 item_id=item.id,
                 title=item.title,
+                # **Derived from the head, never from the reviewed body** --
+                # critical invariant #2 (B2-04). A queue entry keys on
+                # `(item_id, revision_id)`, so an entry opened for revision 1
+                # stays open when a re-ingest appends revision 2. Deriving from
+                # revision 1 offered a `refund` suggestion the *current*
+                # document no longer contains, and confirming it wrote a binding
+                # nothing justified -- a coverage row for a claim the item does
+                # not make, and a stale alarm on every later change to that
+                # endpoint.
+                #
+                # `body_md` below still carries what the reviewer was shown, so
+                # the *subject* of the review is unmoved (`_revision_of`'s rule
+                # stands). Only the proposals track the head, which is the one
+                # thing a confirmation turns into a row.
                 suggestions=derive_suggestions(
-                    body,
+                    (head.body_md if head is not None else None) or body,
                     identities,
                     already_bound=frozenset(
                         identity_id
@@ -557,6 +592,13 @@ def _revision_of(
     records **what the reviewer was shown**. If the document changed after the
     batch opened, re-deriving from the new text would silently move the subject
     of the review.
+
+    **This governs the body, and deliberately not the suggestions** (B2-04).
+    What a reviewer reads must not change under them; what a confirmation
+    *writes* must be justified by the document as it stands, because the binding
+    outlives the review and the coverage row it creates is read against the head.
+    `pending_items` therefore derives suggestions from the head and takes the
+    body from here.
     """
     candidate = revisions.get(review_item.proposed_revision_id or "")
     if candidate is None:

@@ -40,6 +40,7 @@ from adopt_knowledge.drafting import build_inputs, idempotency_key_for, title_fo
 from adopt_agent import Runner
 from adopt_agent.annex import AnnexRecords
 from adopt_cli.commands._draft_support import DraftStoreAdapter, already_drafted
+from adopt_cli.commands._knowledge_support import StoreUnitOfWork
 from adopt_obs import ManualClock
 from adopt_store import open_store
 from adopt_store.annex import open_annex
@@ -595,6 +596,7 @@ class TestDraftsJoinTheOneQueue:
             reviews=store.governance(),
             bindings=store.bindings(),
             knowledge=store.items(),
+            unit=StoreUnitOfWork(store),
         )
 
         assert outcome.revision_id is not None
@@ -642,6 +644,7 @@ class TestDraftsJoinTheOneQueue:
             reviews=store.governance(),
             bindings=store.bindings(),
             knowledge=store.items(),
+            unit=StoreUnitOfWork(store),
         )
 
         after = build_drafts(store, system_id=system_id, environment_id=environment_id)

@@ -31,6 +31,7 @@ import pytest
 from adopt_knowledge import IdentityView, StoredDocument, match_document, run_ingest
 from adopt_knowledge.documents import Document, body_digest
 
+from adopt_cli.commands._knowledge_support import StoreUnitOfWork
 from adopt_scope import Scope
 from adopt_store.api import SqliteStoreHandle
 
@@ -72,6 +73,23 @@ def _document(body: str, path: str = "docs/notes.md") -> Document:
     )
 
 
+#: Revision 1 names the referent; revision 2 does not. The pair is the whole of
+#: B2-04: a queue entry keys on `(item_id, revision_id)`, so the entry opened for
+#: revision 1 is still open when revision 2 lands, and its suggestions were
+#: derived from text the document no longer contains.
+NAMES_REFUND = """
+# Operating notes
+
+The refund step needs a human decision before any money moves back.
+"""
+
+DOES_NOT_NAME_REFUND = """
+# Operating notes
+
+Chargebacks are handled by the acquirer under the standing agreement.
+"""
+
+
 @pytest.fixture
 def noisy_registry(s4_store: SqliteStoreHandle, s4_scope: Scope) -> list[IdentityView]:
     """Identities whose keys are also ordinary English words."""
@@ -105,6 +123,7 @@ class TestBindingHonesty:
             knowledge=s4_store.items(),
             bindings=s4_store.bindings(),
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
         )
 
         assert _binding_rows(s4_store) == []
@@ -156,6 +175,7 @@ class TestBindingHonesty:
             knowledge=s4_store.items(),
             bindings=s4_store.bindings(),
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
         )
         review_item = s4_store.backend.query("SELECT id, item_id FROM review_item")[0]
         suggestions = derive_suggestions(NOISY_PROSE, noisy_registry)
@@ -170,6 +190,7 @@ class TestBindingHonesty:
                 suggestions=suggestions,
             ),
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
             bindings=s4_store.bindings(),
             actor_id="alice",
         )
@@ -190,6 +211,107 @@ class TestBindingHonesty:
         assert [str(row["extractor"]) for row in extractors] == ["ingest-name-confirmed"]
         assert [str(row["created_by_actor_id"]) for row in extractors] == ["alice"]
 
+    def test_a_stale_entry_cannot_bind_what_the_current_document_no_longer_says(
+        self,
+        s4_store: SqliteStoreHandle,
+        s4_scope: Scope,
+    ) -> None:
+        """**Invariant #2 against a queue entry that outlived its revision** (B2-04).
+
+        *Fails when* a queue entry's suggestions are derived from the revision the
+        reviewer was shown rather than from the item's head. *Matters because* the
+        entry survives the edit that invalidates it: an ingest queues revision 1,
+        a re-ingest appends revision 2 that no longer mentions the referent, and
+        the old entry is still open offering a suggestion nothing justifies.
+        Confirming it wrote a binding the current document does not support --
+        which makes `recompute_coverage` report the endpoint covered, so
+        `adopt gaps` stops asking for the knowledge that is genuinely missing.
+        *No other instrument catches it because* the row is perfectly well formed
+        and the coverage numbers get **better**.
+        """
+        from adopt_knowledge import PendingItem, confirm
+
+        from adopt_cli.commands._knowledge_support import (
+            identity_views,
+            pending_items,
+            stored_documents,
+        )
+
+        refund = _identity_view(s4_store, s4_scope, "refund", "endpoint")
+        first = run_ingest(
+            [_document(NAMES_REFUND)],
+            scope=s4_scope,
+            identities=[refund],
+            stored={},
+            knowledge=s4_store.items(),
+            bindings=s4_store.bindings(),
+            reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
+        )
+        assert first.suggestions == 1, "the fixture must actually queue the suggestion"
+
+        run_ingest(
+            [_document(DOES_NOT_NAME_REFUND)],
+            scope=s4_scope,
+            identities=[refund],
+            stored=stored_documents(s4_store, s4_scope),
+            knowledge=s4_store.items(),
+            bindings=s4_store.bindings(),
+            reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
+        )
+
+        stale = pending_items(s4_store, s4_scope, identity_views(s4_store, s4_scope))[0]
+        assert stale.suggestions == (), (
+            "the entry still offers a suggestion the current head does not justify"
+        )
+
+        outcome = confirm(
+            PendingItem(
+                review_item_id=stale.review_item_id,
+                review_batch_id=stale.review_batch_id,
+                batch_key=stale.batch_key,
+                item_id=stale.item_id,
+                title=stale.title,
+                suggestions=stale.suggestions,
+            ),
+            reviews=s4_store.governance(),
+            bindings=s4_store.bindings(),
+            unit=StoreUnitOfWork(s4_store),
+        )
+
+        assert outcome.bindings == ()
+        assert _binding_rows(s4_store) == []
+
+    def test_a_still_justified_suggestion_is_still_offered(
+        self,
+        s4_store: SqliteStoreHandle,
+        s4_scope: Scope,
+    ) -> None:
+        """The control. Deriving from the head must not mean deriving nothing.
+
+        Without this, a `pending_items` that returned an empty suggestion tuple
+        for every entry would satisfy the row above perfectly and delete the
+        product.
+        """
+        from adopt_cli.commands._knowledge_support import identity_views, pending_items
+
+        refund = _identity_view(s4_store, s4_scope, "refund", "endpoint")
+        run_ingest(
+            [_document(NAMES_REFUND)],
+            scope=s4_scope,
+            identities=[refund],
+            stored={},
+            knowledge=s4_store.items(),
+            bindings=s4_store.bindings(),
+            reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
+        )
+
+        entry = pending_items(s4_store, s4_scope, identity_views(s4_store, s4_scope))[0]
+
+        assert [match.uri.rsplit("/", 1)[-1] for match in entry.suggestions] == ["refund"]
+
     def test_rejecting_writes_nothing_but_the_disposition(
         self,
         s4_store: SqliteStoreHandle,
@@ -207,6 +329,7 @@ class TestBindingHonesty:
             knowledge=s4_store.items(),
             bindings=s4_store.bindings(),
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
         )
         review_item = s4_store.backend.query("SELECT id, item_id FROM review_item")[0]
 
@@ -294,6 +417,7 @@ class TestIngestIdempotence:
             knowledge=s4_store.items(),
             bindings=s4_store.bindings(),
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
         )
         outcome = first.outcomes[0]
         stored = {
@@ -314,6 +438,7 @@ class TestIngestIdempotence:
             knowledge=s4_store.items(),
             bindings=s4_store.bindings(),
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
             presented_revisions=frozenset({outcome.revision_id or ""}),
         )
 
@@ -352,6 +477,7 @@ class TestIngestIdempotence:
             knowledge=s4_store.items(),
             bindings=s4_store.bindings(),
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
         )
         outcome = first.outcomes[0]
         stored = {
@@ -371,6 +497,7 @@ class TestIngestIdempotence:
             knowledge=s4_store.items(),
             bindings=s4_store.bindings(),
             reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
             presented_revisions=frozenset({outcome.revision_id or ""}),
         )
 

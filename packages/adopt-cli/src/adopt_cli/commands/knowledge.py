@@ -61,6 +61,7 @@ def ingest(
     from adopt_knowledge import discover, run_ingest
 
     from adopt_cli.commands._knowledge_support import (
+        StoreUnitOfWork,
         bound_pairs,
         identity_views,
         presented_revisions,
@@ -80,6 +81,7 @@ def ingest(
             knowledge=handle.items(),
             bindings=handle.bindings(),
             reviews=handle.governance(),
+            unit=StoreUnitOfWork(handle),
             bound_pairs=bound_pairs(handle),
             presented_revisions=presented_revisions(handle),
             actor_id=actor,
@@ -161,6 +163,7 @@ def harvest(
     from adopt_knowledge.harvest import batch_key, decision_record_titles, mine, run_harvest
 
     from adopt_cli.commands._knowledge_support import (
+        StoreUnitOfWork,
         bound_pairs,
         harvested_commits,
         identity_views,
@@ -190,6 +193,7 @@ def harvest(
             knowledge=handle.items(),
             bindings=handle.bindings(),
             reviews=handle.governance(),
+            unit=StoreUnitOfWork(handle),
             key=batch_key(since, head),
             bound_pairs=bound_pairs(handle),
             actor_id=actor,
@@ -643,6 +647,7 @@ def review(
     from adopt_knowledge import reject as reject_pending
 
     from adopt_cli.commands._knowledge_support import (
+        StoreUnitOfWork,
         bound_pairs,
         identity_views,
         known_review_items,
@@ -716,6 +721,7 @@ def review(
                         item,
                         reviews=handle.governance(),
                         knowledge=handle.items(),
+                        unit=StoreUnitOfWork(handle),
                         body_md=body_md,
                         source_ref=str(file),
                         actor_id=actor,
@@ -725,6 +731,7 @@ def review(
                         item,
                         reviews=handle.governance(),
                         bindings=handle.bindings(),
+                        unit=StoreUnitOfWork(handle),
                         knowledge=handle.items(),
                         bound_pairs=bound_pairs(handle),
                         actor_id=actor,
@@ -913,14 +920,22 @@ def _resolve_change(
         retire_item,
     )
 
-    from adopt_cli.commands._knowledge_support import changed_bindings, rebind_target
+    from adopt_cli.commands._knowledge_support import (
+        StoreUnitOfWork,
+        changed_bindings,
+        rebind_target,
+    )
 
     item = _change_target(pending, known, review_item_id)
     affected = changed_bindings(handle, item)
 
     if action == ACTION_RETIRE:
         outcome = retire_item(
-            item, reviews=handle.governance(), knowledge=handle.items(), actor_id=actor
+            item,
+            reviews=handle.governance(),
+            knowledge=handle.items(),
+            unit=StoreUnitOfWork(handle),
+            actor_id=actor,
         )
         target_uri = None
     elif action == ACTION_REBIND:
@@ -929,6 +944,7 @@ def _resolve_change(
             item,
             reviews=handle.governance(),
             bindings=handle.bindings(),
+            unit=StoreUnitOfWork(handle),
             affected=affected,
             target_identity_id=target_id,
             target_uri=target_uri,
@@ -940,6 +956,7 @@ def _resolve_change(
             reviews=handle.governance(),
             knowledge=handle.items(),
             freshener=handle.changes(),
+            unit=StoreUnitOfWork(handle),
             affected=affected,
             actor_id=actor,
         )

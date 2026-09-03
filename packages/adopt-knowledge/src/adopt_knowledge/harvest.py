@@ -48,7 +48,7 @@ from typing import Final
 from adopt_knowledge.documents import DEFAULT_AUDIENCE
 from adopt_knowledge.gitlog import Commit
 from adopt_knowledge.matchers import IdentityView, Match, path_matches
-from adopt_knowledge.ports import BindingWriter, KnowledgeWriter, ReviewWriter
+from adopt_knowledge.ports import BindingWriter, KnowledgeWriter, ReviewWriter, UnitOfWork
 from adopt_model._enums import AuthorityClass, ItemKind, SourceType, Verification
 from adopt_obs import get_logger
 from adopt_scope import Scope
@@ -343,6 +343,7 @@ def run_harvest(
     knowledge: KnowledgeWriter,
     bindings: BindingWriter,
     reviews: ReviewWriter,
+    unit: UnitOfWork,
     key: str,
     bound_pairs: frozenset[tuple[str, str]] = frozenset(),
     actor_id: str | None = None,
@@ -358,6 +359,10 @@ def run_harvest(
             `idx_binding_pair` is UNIQUE and a second create raises
             `REVISION_CHAIN_FORK`, so a re-harvest would otherwise fail rather
             than do nothing.
+        unit: The transaction boundary, **one candidate per unit**. Idempotence
+            keys on the `commit` provenance row, so a candidate whose item and
+            provenance committed and whose audience tag or binding did not is a
+            candidate a re-harvest reports as known and never completes (B2-02).
 
     Returns:
         A `HarvestReport`. **One batch per run**, as ingest does it and for the
@@ -375,63 +380,67 @@ def run_harvest(
     ambiguous: set[str] = set()
 
     for candidate in candidates:
-        existing = known.get(candidate.sha)
-        if existing is None:
-            item_id, revision_id = knowledge.record(
-                scope=scope,
-                kind=CANDIDATE_KIND,
-                title=candidate.title,
-                body_md=candidate.body_md,
-                authority_class=_CANDIDATE_AUTHORITY,
-                verification=_CANDIDATE_VERIFICATION,
-                source_version=candidate.sha,
-                actor_id=actor_id,
-            )
-            knowledge.record_provenance(
-                revision_id=revision_id,
-                source_type=_COMMIT_SOURCE,
-                source_ref=candidate.sha,
-            )
-            for path in candidate.decision_records:
+        # One candidate is one unit. The batch below is its own, because it
+        # coalesces the whole run and cannot belong to any single candidate.
+        with unit.transaction():
+            existing = known.get(candidate.sha)
+            if existing is None:
+                item_id, revision_id = knowledge.record(
+                    scope=scope,
+                    kind=CANDIDATE_KIND,
+                    title=candidate.title,
+                    body_md=candidate.body_md,
+                    authority_class=_CANDIDATE_AUTHORITY,
+                    verification=_CANDIDATE_VERIFICATION,
+                    source_version=candidate.sha,
+                    actor_id=actor_id,
+                )
                 knowledge.record_provenance(
                     revision_id=revision_id,
-                    source_type=_ADR_SOURCE,
-                    source_ref=path,
+                    source_type=_COMMIT_SOURCE,
+                    source_ref=candidate.sha,
                 )
-            knowledge.tag_audience(item_id=item_id, audience=CANDIDATE_AUDIENCE)
-            report.created.append(item_id)
-            pending.append((item_id, revision_id))
-        else:
-            item_id = existing
-            report.known.append(item_id)
+                for path in candidate.decision_records:
+                    knowledge.record_provenance(
+                        revision_id=revision_id,
+                        source_type=_ADR_SOURCE,
+                        source_ref=path,
+                    )
+                knowledge.tag_audience(item_id=item_id, audience=CANDIDATE_AUDIENCE)
+                report.created.append(item_id)
+                pending.append((item_id, revision_id))
+            else:
+                item_id = existing
+                report.known.append(item_id)
 
-        matched, unresolved = path_matches(candidate.files, identities)
-        ambiguous.update(unresolved)
-        for match in matched:
-            if (item_id, match.identity_id) in bound_pairs:
-                continue
-            bindings.bind(
-                item_id=item_id,
-                identity_id=match.identity_id,
-                # Load-bearing, like every structural binding: when the
-                # identity this decision is about changes, the decision is what
-                # should be re-read.
-                is_load_bearing=True,
-                extractor=HARVEST_EXTRACTOR,
-                extractor_version=HARVEST_EXTRACTOR_VERSION,
-                actor_id=actor_id,
-            )
-            report.bound.append(match)
+            matched, unresolved = path_matches(candidate.files, identities)
+            ambiguous.update(unresolved)
+            for match in matched:
+                if (item_id, match.identity_id) in bound_pairs:
+                    continue
+                bindings.bind(
+                    item_id=item_id,
+                    identity_id=match.identity_id,
+                    # Load-bearing, like every structural binding: when the
+                    # identity this decision is about changes, the decision is what
+                    # should be re-read.
+                    is_load_bearing=True,
+                    extractor=HARVEST_EXTRACTOR,
+                    extractor_version=HARVEST_EXTRACTOR_VERSION,
+                    actor_id=actor_id,
+                )
+                report.bound.append(match)
 
     report.ambiguous_paths = tuple(sorted(ambiguous))
 
     if pending:
-        batch_id, item_ids = reviews.open_batch(
-            system_id=str(scope.system.id) if scope.system is not None else "",
-            batch_key=key,
-            items=pending,
-            owner_actor_id=actor_id,
-        )
+        with unit.transaction():
+            batch_id, item_ids = reviews.open_batch(
+                system_id=str(scope.system.id) if scope.system is not None else "",
+                batch_key=key,
+                items=pending,
+                owner_actor_id=actor_id,
+            )
         report.review_batch_id = batch_id
         report.review_item_ids = item_ids
 

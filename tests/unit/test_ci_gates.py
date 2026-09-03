@@ -693,6 +693,19 @@ class TestWorkflowsAreRunnable:
             # discovered by the other party, months later, with no way left to
             # establish what was actually handed over.
             "handover-journey",
+            # **The other four journeys, added by T1.9 -- and their absence was
+            # the reason `refresh-journey` did not exist.** `ask-journey`,
+            # `pack-journey` and `probe-journey` were live in `ci.yml` and named
+            # by no structure test, so any of them could have been deleted
+            # without a single instrument noticing; `refresh-journey` was never
+            # written at all, and nothing said so. Build 6's demo therefore ran
+            # in **no** job from S6.1 until the production-readiness sweep found
+            # it. A list that names some journeys and not others is worse than
+            # none: it reads as complete.
+            "ask-journey",
+            "pack-journey",
+            "probe-journey",
+            "refresh-journey",
         }
     )
 
@@ -808,6 +821,16 @@ class TestWorkflowsAreRunnable:
             assert "github.event.pull_request.head.repo.full_name == github.repository" in condition
             assert "dependabot[bot]" in condition
             assert "github.event_name == 'push'" in condition
+            # **A manual dispatch must reach these three** (T1.10). The guard is
+            # about *fork code*, and a dispatch can only be started by a
+            # collaborator with write access -- so excluding it protected
+            # nothing and cost everything: `workflow_dispatch` exists in this
+            # workflow to re-read four Q4 constants, one of which is the
+            # conformance matrix's elapsed time, and the job that measures it
+            # skipped on every dispatch. Asserted beside the fork clauses rather
+            # than in a test of its own, because the two are one condition and a
+            # future edit that drops this will be an edit to this line.
+            assert "github.event_name == 'workflow_dispatch'" in condition
 
         for job_name in ("constants-sync", "error-registry-sync"):
             condition = str(jobs[job_name]["if"])

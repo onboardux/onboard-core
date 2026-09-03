@@ -15,6 +15,16 @@ on:
   # changes it silently. Without this trigger the only way to re-read those four
   # is to push a commit, which makes the measurement a side effect of an
   # unrelated change. A ratification gate needs to be re-runnable on demand.
+  #
+  # **Three jobs skipped on this trigger for the whole of its life** (T1.10).
+  # `constants-sync`, `error-registry-sync` and `conformance-matrix` guard
+  # themselves against fork and Dependabot pull requests, and their event
+  # disjunction admitted only `push` and `pull_request` -- so a dispatch, which
+  # exists precisely to re-read the conformance matrix's elapsed time, skipped
+  # the job that measures it. Run 33657338875 on the build branch: 26 success,
+  # 3 skipped. A dispatch can only be started by a collaborator with write
+  # access, so it never runs fork code and the fork/Dependabot protections below
+  # are unchanged.
   workflow_dispatch:
 
 permissions:
@@ -71,6 +81,7 @@ jobs:
         vars.ADOPT_PACK_REPOSITORY != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository &&
@@ -108,6 +119,7 @@ jobs:
         vars.ADOPT_PACK_REPOSITORY != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository &&
@@ -369,6 +381,7 @@ jobs:
         vars.ADOPT_CONFORMANCE_ADAPTERS != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository &&
@@ -756,6 +769,40 @@ jobs:
       # draft could raise a conflict -- would be a demo of the wrong thing.
       - name: The revision guard and Bet 4's honesty rule, by name
         run: uv run pytest tests/unit/test_probe_baseline_diff.py tests/unit/test_probe_conflict.py -v
+
+  refresh-journey:
+    name: refresh-journey (the v6.1 Build 6 demo, verbatim)
+    runs-on: ubuntu-24.04
+    # **Build 6's Definition of Done, executed** -- and until T1.9 it ran in no
+    # job at all. `tests/e2e/test_refresh_journey.py` had existed since S6.1
+    # with fifteen cases, `grep -rn refresh .github/` returned nothing, and no
+    # job runs `-m e2e`: v6.1 R1 makes every build end in a verb an FDE runs on
+    # a real engagement, and the one instrument that proves Build 6's is that
+    # verb had never executed on a runner.
+    #
+    # A job of its own, for the reason the other six journeys have one. No
+    # `-m e2e` catch-all: a named job per journey is what makes a *missing*
+    # journey visible in the job list, and a catch-all would have hidden this
+    # one for another four builds.
+    #
+    # It needs nothing the others do: no clone, no pandoc, no git identity, no
+    # network. The probe half runs against a loopback HTTP server the test
+    # starts itself, and the artifact half re-maps a tree it built.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: The v6.1 6 Build 6 demo, run literally
+        run: uv run pytest tests/e2e/test_refresh_journey.py -v
+      # Build 6's two invariants, named separately. They are in the unit suite
+      # the `unit` job already runs, and they are named again here because a job
+      # called "the Build 6 demo" that could go green while propagation staled
+      # the wrong bindings -- or while the classification cascade returned the
+      # wrong class -- would be a demo of the wrong thing.
+      - name: Propagation and the classification matrix, by name
+        run: uv run pytest tests/unit/test_change_records.py tests/unit/test_map_diff.py -v
 
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)

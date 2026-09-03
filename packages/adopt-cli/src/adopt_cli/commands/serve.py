@@ -57,7 +57,16 @@ def serve(
     bind_port = port if port is not None else ASK_SERVE_PORT
 
     def ask_once(question: str, escalate: bool) -> dict[str, Any]:
-        handle = open_configured_store(store, read_only=False)
+        handle = open_configured_store(
+            store,
+            read_only=False,
+            verb="serve",
+            # `adopt ask`'s reason, for the same code path: answering rebuilds
+            # the annex index and writes no canon. An `escalate` field in a
+            # request reaches the same capture branch `--escalate` does, and is
+            # refused there.
+            non_canon_reason="answering rebuilds the annex index; it writes no canon",
+        )
         try:
             return answer_question(
                 handle,

@@ -181,15 +181,17 @@ def refuse_if_replica(store_override: Path | None) -> None:
     Raises:
         AdoptError: ``HANDOVER_TARGET_IS_REPLICA``.
     """
-    from adopt_cli.replica import read_marker
+    from adopt_cli.replica import read_marker, refuse_write_to_replica
     from adopt_cli.store_option import configured_store_path
 
     store = configured_store_path(store_override)
     marker = read_marker(store)
     if marker is None:
         return
-    raise AdoptError(
-        ErrorCode.HANDOVER_TARGET_IS_REPLICA,
+    refuse_write_to_replica(
+        store,
+        verb="handover",
+        code=ErrorCode.HANDOVER_TARGET_IS_REPLICA,
         message=f"{store} is a replica of {marker.system_id} on {marker.plane_url}",
         hint="R9 makes the plane the sole writer of an operated system's canon, "
         "and a handover writes canon: ownership, escalations, gap dispositions "

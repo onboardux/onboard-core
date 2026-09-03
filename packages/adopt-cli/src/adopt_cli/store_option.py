@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from adopt_cli.config import resolve_all
+from adopt_cli.replica import refuse_write_to_replica
 from adopt_obs import AdoptError, Clock, ErrorCode
 from adopt_store import open_store
 from adopt_store.annex import SqliteAnnexRecords, annex_path, open_annex
@@ -71,10 +72,38 @@ def configured_store_path(override: Path | None = None) -> Path:
 
 
 def open_configured_store(
-    override: Path | None = None, *, read_only: bool = True
+    override: Path | None = None,
+    *,
+    read_only: bool = True,
+    verb: str = "this command",
+    non_canon_reason: str | None = None,
 ) -> SqliteStoreHandle:
-    """Open the configured store. The caller closes it."""
-    return open_store(configured_store_path(override), read_only=read_only)
+    """Open the configured store. The caller closes it.
+
+    **A writable open is refused on a replica** (`replica.refuse_write_to_replica`,
+    contracts §13 `STORE_TARGET_IS_REPLICA`), and it is refused *here* because
+    here is the one door every writing verb already comes through. `refresh` and
+    `handover` each carried their own copy of the check and remembered; eleven
+    other canon-writing verbs did not, and every one of them could write into a
+    file the next `adopt pull` replaces wholesale.
+
+    Args:
+        override: `--store`, or `None` for the resolution order.
+        read_only: `False` opens for writing, which is what arms the guard.
+        verb: What the operator ran, so the refusal names the command and not
+            only the file. Unused when `read_only` is `True`.
+        non_canon_reason: The opt-out, and the reason **is** the parameter --
+            there is no way to skip the guard without writing down why. Only
+            three verbs pass it: `ask` and `serve` rebuild the retrieval index
+            in the annex while answering, which is not canon and is the one
+            thing a replica exists to do, and `coverage recompute --rebuild`
+            writes only the cache `recompute_coverage()` derives. Their
+            **capture** paths are refused separately, where they write canon.
+    """
+    path = configured_store_path(override)
+    if not read_only and non_canon_reason is None:
+        refuse_write_to_replica(path, verb=verb)
+    return open_store(path, read_only=read_only)
 
 
 def open_or_create_store(override: Path | None = None) -> SqliteStoreHandle:
@@ -87,6 +116,7 @@ def open_or_create_store(override: Path | None = None) -> SqliteStoreHandle:
     rather than one it should quietly fix.
     """
     target = configured_store_path(override)
+    refuse_write_to_replica(target, verb="init")
     target.parent.mkdir(parents=True, exist_ok=True)
     return open_store(target, migrate=True)
 
@@ -97,6 +127,11 @@ def open_for_migration(override: Path | None = None) -> SqliteStoreHandle:
     `adopt store migrate`'s door. Forward-only, always: implementation spec §7.4
     states the schema has no rollback and recovery is older code against a newer
     store.
+
+    **Not guarded against a replica**, deliberately: a pulled replica is already
+    at the plane's schema version, so migrating it is a no-op, and the schema is
+    not canon -- nothing an operator would lose to the next `adopt pull` is
+    written here.
     """
     return open_store(configured_store_path(override), migrate=True)
 

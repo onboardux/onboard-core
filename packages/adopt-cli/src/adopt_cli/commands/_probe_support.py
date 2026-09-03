@@ -392,7 +392,7 @@ def run_targets(
         payload["stored"] = False
         return payload
 
-    handle = open_configured_store(store_override, read_only=False)
+    handle = open_configured_store(store_override, read_only=False, verb="probe run")
     try:
         scope = resolve_scope(handle, scope_text)
         definitions = probes_in_scope(handle, scope)

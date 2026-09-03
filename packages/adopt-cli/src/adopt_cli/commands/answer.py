@@ -143,7 +143,7 @@ def answer(
     from adopt_cli.commands._map_support import resolve_scope
     from adopt_obs import AdoptError, ErrorCode
 
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(store, read_only=False, verb="answer")
     try:
         resolved_scope = resolve_scope(handle, scope)
         existing = handle.governance().get_escalation(escalation_id)

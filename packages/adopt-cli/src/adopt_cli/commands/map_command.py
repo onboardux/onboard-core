@@ -92,7 +92,7 @@ def map_command(
     # Writable, and deliberately **not** migrating: `init` creates the store, and
     # a `map` that silently migrated would upgrade a client's database as a side
     # effect of being asked to read their repository.
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(store, read_only=False, verb="map")
     try:
         resolved = resolve_scope(handle, scope)
         selected = select_packs(

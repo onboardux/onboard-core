@@ -59,7 +59,7 @@ def draft(
     from adopt_cli.commands._map_support import resolve_scope
     from adopt_obs import AdoptError, ErrorCode
 
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(store, read_only=False, verb="draft")
     try:
         resolved = resolve_scope(handle, scope)
         identity = resolve_identity(handle, uri)

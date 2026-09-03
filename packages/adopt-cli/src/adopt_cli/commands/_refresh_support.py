@@ -49,7 +49,7 @@ from adopt_map.diff import compute as compute_diff
 from adopt_map.filestate import FileState, changed_paths, hash_file
 
 from adopt_model import Identity
-from adopt_obs import AdoptError, ErrorCode, get_logger, new_id
+from adopt_obs import ErrorCode, get_logger, new_id
 from adopt_scope import Scope
 
 __all__ = [
@@ -88,15 +88,17 @@ def refuse_if_replica(store_override: Path | None) -> None:
         AdoptError: ``REFRESH_TARGET_IS_REPLICA`` when a replica marker sits
             beside the resolved store.
     """
-    from adopt_cli.replica import read_marker
+    from adopt_cli.replica import read_marker, refuse_write_to_replica
     from adopt_cli.store_option import configured_store_path
 
     store = configured_store_path(store_override)
     marker = read_marker(store)
     if marker is None:
         return
-    raise AdoptError(
-        ErrorCode.REFRESH_TARGET_IS_REPLICA,
+    refuse_write_to_replica(
+        store,
+        verb="refresh",
+        code=ErrorCode.REFRESH_TARGET_IS_REPLICA,
         message=(
             f"{store} is a read replica of system {marker.system_id}, pulled from "
             f"{marker.plane_url}. `adopt refresh` writes canon -- retirements, change "

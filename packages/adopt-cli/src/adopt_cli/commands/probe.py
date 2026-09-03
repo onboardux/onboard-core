@@ -94,7 +94,7 @@ def add(
     from adopt_cli.commands._probe_support import add_probe
 
     spec = parse_probe(_read(file))
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(store, read_only=False, verb="probe add")
     try:
         resolved = resolve_scope(handle, scope)
         outcome, probe_id, revision_id = add_probe(
@@ -199,7 +199,7 @@ def baseline(
             "build, so a bare `baseline` would do nothing and say it worked.",
         )
 
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(store, read_only=False, verb="probe baseline")
     try:
         payload = set_baselines(handle, resolve_scope(handle, scope))
     finally:

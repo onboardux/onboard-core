@@ -192,6 +192,18 @@ def answer_question(
 
         remote = configured_remote(config)
         if remote is None:
+            # **The one capture this module performs, and the one write here that
+            # is canon.** `ask` and `serve` open the store writable with the
+            # guard opted out, because answering rebuilds the retrieval index in
+            # the annex and a replica exists to be asked questions. An
+            # escalation is different: it lands an `escalation` row that the
+            # next `adopt pull` replaces wholesale, so the question a human
+            # recorded would be gone with no trace. The check is here rather
+            # than at the open because which branch is taken is decided here --
+            # a configured remote routes to the plane and writes nothing local.
+            from adopt_cli.replica import refuse_write_to_replica
+
+            refuse_write_to_replica(handle.backend.path, verb="ask --escalate")
             escalation_id = escalate(handle.governance(), answer, system_id=system.id)
         else:
             escalation_id = _escalate_remotely(remote, question)

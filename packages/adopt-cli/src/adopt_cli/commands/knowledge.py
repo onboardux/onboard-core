@@ -68,7 +68,7 @@ def ingest(
     )
     from adopt_cli.commands._map_support import resolve_scope
 
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(store, read_only=False, verb="ingest")
     try:
         resolved = resolve_scope(handle, scope)
         documents = discover(paths, root=Path.cwd(), audience=audience)
@@ -179,7 +179,7 @@ def harvest(
         ),
     )
 
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(store, read_only=False, verb="harvest")
     try:
         resolved = resolve_scope(handle, scope)
         report = run_harvest(
@@ -285,7 +285,7 @@ def bind(
     from adopt_cli.commands._knowledge_support import resolve_identity
     from adopt_obs import AdoptError, ErrorCode
 
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(store, read_only=False, verb="bind")
     try:
         item = handle.items().get(knowledge_id)
         if item is None:
@@ -405,7 +405,7 @@ def gaps(
     # `adopt review`'s pattern. Listing gaps must never need write access: an
     # FDE reading the queue against a store they hold read-only is the normal
     # case, not an error.
-    handle = open_configured_store(store, read_only=not chosen)
+    handle = open_configured_store(store, read_only=not chosen, verb="gaps")
     try:
         resolved = resolve_scope(handle, scope)
         if resolved.system is None:
@@ -679,7 +679,7 @@ def review(
             title="adopt review",
         )
         return
-    handle = open_configured_store(store, read_only=not writing)
+    handle = open_configured_store(store, read_only=not writing, verb="review")
     try:
         resolved = resolve_scope(handle, scope)
         identities = identity_views(handle, resolved)

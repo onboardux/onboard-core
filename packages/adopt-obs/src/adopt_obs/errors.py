@@ -174,6 +174,8 @@ class ErrorCode(StrEnum):
     HANDOVER_UNOWNED = "HANDOVER_UNOWNED"
     HANDOVER_TARGET_IS_REPLICA = "HANDOVER_TARGET_IS_REPLICA"
 
+    STORE_TARGET_IS_REPLICA = "STORE_TARGET_IS_REPLICA"
+
     CONSOLE_SSO_NOT_CONFIGURED = "CONSOLE_SSO_NOT_CONFIGURED"
     CONSOLE_AUTH_INVALID = "CONSOLE_AUTH_INVALID"
     CONSOLE_FIRM_UNMAPPED = "CONSOLE_FIRM_UNMAPPED"
@@ -420,6 +422,17 @@ ERROR_CATEGORIES: Final[dict[ErrorCode, ErrorCategory]] = {
     # refresh's, on the `PULL_`/`REFRESH_` precedent: the recovery differs, and
     # the hint has to be able to name it.
     ErrorCode.HANDOVER_TARGET_IS_REPLICA: ErrorCategory.POLICY,
+    # `STORE_TARGET_IS_REPLICA` is **policy**, and it is the general rule the
+    # three codes above are special cases of: after activation the plane is the
+    # sole writer of an operated system's canon (R9), so no local verb may write
+    # into a store `adopt pull` replaces wholesale. It is raised by the one door
+    # every writing verb already goes through -- `store_option.open_configured_
+    # store(read_only=False)` -- rather than by each verb remembering, because
+    # `refresh` and `handover` were the only two that remembered and the other
+    # eleven writing verbs did not. The three specific codes stay: their hints
+    # name recoveries this one cannot, and an operator who has met one of them
+    # should not meet a different code for the same store tomorrow.
+    ErrorCode.STORE_TARGET_IS_REPLICA: ErrorCategory.POLICY,
     # Build 10's four. The console is the first **browser** surface in the
     # product, which is why three of these have no earlier analogue: every
     # prior caller authenticated by bearer token or by a channel signature.

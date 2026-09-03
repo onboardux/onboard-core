@@ -22,6 +22,30 @@ follow from that placement and each is load-bearing:
   come from and when", which is the first question anybody asks of a replica
   that is answering oddly.
 
+**The verb policy, in one place.** `refuse_write_to_replica` is called from
+`store_option.open_configured_store` whenever a store is opened writable, so the
+policy below is a consequence of how each verb opens rather than a list any verb
+consults. `tests/unit/test_replica_write_guard.py` parametrizes over exactly
+this table.
+
+* **Refused** (they write canon): `init`, `map`, `ingest`, `harvest`, `bind`,
+  `gaps --ack/--resolve/--waive`, `review` (local mode; a configured remote
+  routes and never opens), `answer` (local mode, same), `ask --escalate`'s
+  capture, `draft`, `pack --draft-missing`, `probe add`, `probe run` (stored),
+  `probe baseline --set`, `boundary --scope`, `refresh`, and every writing
+  `handover` step.
+* **Allowed, with the reason stated at the call site**: `ask` and `serve`
+  answering -- they open writable to rebuild the retrieval index in the annex,
+  which is not canon, and refusing them would make a replica unable to do the
+  one thing it exists for; `coverage recompute --rebuild`, which writes only the
+  cache `recompute_coverage()` derives.
+* **Allowed, no write to guard**: `export`, `import --into` (a named target),
+  `pull` (it replaces the replica by design), `ci-sense`, `identity`,
+  `freshness`, `store info|doctor`, `probe run FILE`, `probe diff`, `detect`,
+  `doctor`, `version`, `agent`, `envelope`, `policy`, and `handover status`.
+  `store migrate` is allowed too: a pulled replica is already at the plane's
+  version, and the schema is not canon.
+
 **Absence means "not a replica", never "unknown".** `adopt pull` refuses a store
 with no marker unless `--init-replica`, because the two states it cannot tell
 apart -- a fresh empty file and a field store holding a week of unexported work
@@ -36,7 +60,14 @@ from typing import Any, Final
 
 from adopt_obs import AdoptError, ErrorCode, format_timestamp
 
-__all__ = ["MARKER_SUFFIX", "ReplicaMarker", "marker_path", "read_marker", "write_marker"]
+__all__ = [
+    "MARKER_SUFFIX",
+    "ReplicaMarker",
+    "marker_path",
+    "read_marker",
+    "refuse_write_to_replica",
+    "write_marker",
+]
 
 #: Appended to the store's own filename rather than replacing its suffix, so
 #: `store.db` and `store.db.replica.json` sort together and neither can be
@@ -139,3 +170,71 @@ def write_marker(store: Path, marker: ReplicaMarker, *, target: Path | None = No
     body = json.dumps(marker.payload(), sort_keys=True, indent=2) + "\n"
     path.write_text(body, encoding=_ENCODING)
     return path
+
+
+def refuse_write_to_replica(
+    store: Path,
+    *,
+    verb: str,
+    code: ErrorCode = ErrorCode.STORE_TARGET_IS_REPLICA,
+    message: str | None = None,
+    hint: str | None = None,
+) -> None:
+    """Refuse a canon write against a store `adopt pull` maintains.
+
+    **One guard, called from the one door every writing verb already goes
+    through** (`store_option.open_configured_store(read_only=False)`), because
+    the alternative was tried and failed: `refresh` and `handover` each carried
+    their own copy and remembered, and `init`, `map`, `ingest`, `harvest`,
+    `bind`, `gaps`, `review`, `answer`, `draft`, `pack --draft-missing`, `probe
+    add/run/baseline` and `boundary --scope` did not. Eleven verbs could write
+    canon into a file the next `adopt pull` replaces wholesale, and the work
+    would be gone with no trace it had existed.
+
+    R9 is the rule underneath: after activation the plane is the sole writer of
+    an operated system's canon.
+
+    Args:
+        store: The **resolved** store path -- resolved by the caller, because
+            this module must not import `store_option` (which imports this one).
+        verb: What the operator ran, named in the message so the refusal says
+            which command was refused rather than only which file.
+        code: Overridden by the two verbs that already have their own registered
+            code and their own hint (`refresh`, `handover`). Their recoveries
+            differ from the general one, and an operator who has met one of them
+            should not meet a different code for the same store tomorrow.
+        message: Overrides the default, for those same two verbs.
+        hint: Likewise.
+
+    Raises:
+        AdoptError: ``STORE_TARGET_IS_REPLICA`` (or `code`) when a replica
+            marker sits beside `store`. Returns silently when there is none --
+            absence of a marker is "not a replica", never "unknown"
+            (`read_marker`).
+    """
+    marker = read_marker(store)
+    if marker is None:
+        return
+    raise AdoptError(
+        code,
+        message=(
+            message
+            if message is not None
+            else (
+                f"{store} is a read replica of system {marker.system_id}, pulled from "
+                f"{marker.plane_url}, and `adopt {verb}` writes canon. The next `adopt pull` "
+                "replaces this file wholesale, so the write would be lost with no trace."
+            )
+        ),
+        hint=(
+            hint
+            if hint is not None
+            else (
+                "R9 makes the plane the sole writer of an operated system's canon. To read "
+                "the plane's current canon run `adopt pull`; to record a confirmation or an "
+                "answer use the plane's own endpoints; to sense a change from CI run "
+                "`adopt ci-sense`. To write canon rather than a replica, point --store at a "
+                "field store."
+            )
+        ),
+    )

@@ -75,7 +75,16 @@ def ask(
     """Answer from the store: KNOWN with citations, STALE with the cause, or UNKNOWN."""
     from adopt_cli.commands._ask_support import answer_question
 
-    handle = open_configured_store(store, read_only=False)
+    handle = open_configured_store(
+        store,
+        read_only=False,
+        verb="ask",
+        # Answering rebuilds the retrieval index in the annex, which is not canon
+        # -- and a replica exists precisely so somebody can ask it questions. The
+        # capture that `--escalate` performs is canon and is refused separately,
+        # in `_ask_support`, where the local branch is chosen.
+        non_canon_reason="answering rebuilds the annex index; it writes no canon",
+    )
     try:
         outcome = answer_question(
             handle,

@@ -114,7 +114,7 @@ def pack(
     # Drafting writes; assembling does not. The store is opened writable only
     # when the flag asked for it, so an ordinary `adopt pack` cannot modify a
     # store even if something below it tried to.
-    handle = open_configured_store(store, read_only=not draft_missing)
+    handle = open_configured_store(store, read_only=not draft_missing, verb="pack --draft-missing")
     try:
         resolved = resolve_scope(handle, scope)
         if resolved.system is None:

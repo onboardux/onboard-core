@@ -7,6 +7,87 @@ machine the twelve NFR constants mean, and only the machine can answer.
 
 ---
 
+# THE BUILDS 1–10 TREE — RE-MEASURED, 2026-09-03
+
+**Not a re-ratification.** `RUNNER.md` rule 3 invalidates a capture when the
+*machine* changes, and it has not: this is the same public `ubuntu-24.04`
+standard class the section below ratified on 2026-08-12. What changed is the
+**tree** — `main` now carries Builds 1–10 (`665b978`) rather than Build 0
+— so production-readiness T2.2 re-reads every value against it before the
+`0.4.0` release. **No threshold breached, so nothing is retuned and rule 2 never
+engages.**
+
+## The runs
+
+| Reading | Run | Ref | Note |
+|---|---|---|---|
+| The seven harnesses | `33781889941` (`bench.yml`) | `main` @ `665b978` | dispatched, not nightly |
+| Binary sizes, distribution count, completeness | `33781859910` (`release.yml`, `publish=false`) | `main` @ `665b978` | strict dry run, every job success |
+| `unit` and PR duration ratchets | `33778906920` (`ci.yml`, post-merge `push`) | `main` @ `665b978` | 28/28, 0 skipped |
+| Coverage floor | same `ci.yml` run | `main` @ `665b978` | its own job |
+| Hosted adapter time | same `ci.yml` run | `main` @ `665b978` | `conformance-matrix` |
+
+Runner: `ubuntu-24.04`, GitHub-hosted, public standard class, image
+`20260823.283.1`, Azure `eastus`.
+
+## The seven harnesses
+
+| # | Harness | Reading | Budget | |
+|---|---|---|---|---|
+| N1 | `schema_bench` | **BREACHED — and it had measured nothing** | `SCHEMA_CREATE_P95_SECONDS` 10 s | see below |
+| N3 | `store_bench` | 2.0 ms p95, 40 opens at 50,000 rows | 200 ms | OK |
+| N4 | `export_bench` | 3.68 s p95, 7 exports at 50,000 items | 30 s | OK |
+| N5 | `uri_bench` | 101,786/s (slowest shape: multi-byte symbol path) | 50,000/s | OK |
+| N6 | `coverage_bench` | 1.33 s p95, 7 runs at 50,000 identities | 20 s | OK |
+| N7 | `freshness_bench` | 0.34 ms p95, 200 items | 25 ms | OK |
+| CLI | `cli_bench` | **365 ms p95** over 20 cold starts; our imports 348 ms of it; empty-interpreter floor 16 ms | `CLI_COLD_START_MS` 400 | OK |
+
+**`CLI_COLD_START_MS` is the one the plan named as the likeliest breach**, and it
+holds with 35 ms to spare on a tree that added nine verbs. The branch's lazy
+registration is what pays for that. Worth carrying into the next measurement:
+the Sprint 1 record observed that `adopt_knowledge` is imported at CLI import
+time rather than lazily, and it predates that sprint — 348 ms of the 365 is
+our own imports, so that is where any future headroom comes from.
+
+**N1's report was not a measurement.** `schema_bench` applied
+`0001__init_v3.sql` alone and then compared the created store's `user_version`
+against `SCHEMA_VERSION`, so on a schema-4 tree it read 3, expected 4 and exited
+before timing anything — `bench.all` printed `N1 BREACHED 0.1s`, which is
+the elapsed time of a failure. **A budget was never breached and no constant is
+in question.** CR-89 has the analysis and the fix; the reading below is from the
+same code on a developer machine, and **the reference-runner reading is
+outstanding** until that fix is on `main` and the nightly runs.
+
+| N1 after CR-89 | sqlite p95 **0.103 s** | budget 10 s | developer machine — **diagnostic only** (`RUNNER.md` rules 1 and 5) |
+|---|---|---|---|
+
+## The release-owned values
+
+| Value | Reading | Ceiling | |
+|---|---|---|---|
+| `adopt-linux-x86_64` | 23,165,144 bytes (22.09 MiB) | `BINARY_MAX_MB` 120 MiB | PASS |
+| `adopt-windows-x86_64.exe` | 21,142,016 bytes (20.16 MiB) | 120 MiB | PASS |
+| `adopt-macos-arm64` | 19,739,792 bytes (18.83 MiB) | 120 MiB | PASS |
+| Release completeness | 44 artefacts, SBOM 15 components | 44 payloads | OK |
+| Distribution set | 20 at version `0.4.0`, expected tag `v0.4.0` | 20 (OD-4) | OK |
+
+The dry run also confirms T1.12's derivation working end to end: the binaries
+jobs carried `EXPECTED_SCHEMA_VERSION: 4` and `EXPECTED_EXPORT_VERSION: 4`,
+derived from `adopt_const` rather than written down — the literals the
+workflow used to hard-code would have failed every one of those smoke steps
+after the wheels were built.
+
+## What this section does not claim
+
+* **It is not a tag or publish authorization.** OD-4 ratified the set and the
+  version for *preparation*; the tag and the two dispatches are a separate
+  decision on this evidence.
+* **N1 has no reference-runner reading on this tree**, and says so above rather
+  than borrowing the developer-machine one.
+* Nothing here re-opens PRD Q6. The machine is unchanged; only the tree moved.
+
+---
+
 # PUBLIC RUNNER — PRD Q6 CLOSED, ALL TWELVE Q4 CONSTANTS RATIFIED
 
 **2026-08-12.** `adopt-core` became public, which changed the runner class and,

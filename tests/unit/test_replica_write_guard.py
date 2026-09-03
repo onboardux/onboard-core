@@ -25,15 +25,19 @@ the marker* rather than because the fixture was wrong.
 
 import datetime as _dt
 import hashlib
+import io
 import json
 import re
 import subprocess
 import sys
 import textwrap
+from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from adopt_cli.main import main
 from adopt_obs import ExitCode
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -101,7 +105,41 @@ ALLOWED: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def _run(*argv: str) -> subprocess.CompletedProcess[str]:
+@dataclass(frozen=True, slots=True)
+class Result:
+    """What one CLI invocation returned, whichever way it was run."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run(*argv: str) -> Result:
+    """One CLI invocation, **in process**, through the real entry point.
+
+    `main(argv)` is what the installed `adopt` console script calls, so this is
+    the same code path a subprocess would take minus the interpreter start. That
+    matters here and nowhere else in this file's design: the table has 46 rows
+    and a subprocess each costs about a second of import, which is 55 s of
+    runtime buying nothing -- every assertion below is about an exit code, a
+    code name on stderr, and a digest, and `main` returns all three.
+
+    `tests/unit/test_cli_usage_errors.py` keeps its subprocesses deliberately:
+    its claim is that stderr contains no `Traceback`, and only a real process
+    can be said to have printed one.
+    """
+    captured_out = io.StringIO()
+    captured_err = io.StringIO()
+    with redirect_stdout(captured_out), redirect_stderr(captured_err):
+        try:
+            code = main(list(argv))
+        except SystemExit as exit_called:  # pragma: no cover -- no command does this
+            code = int(exit_called.code or 0)
+    return Result(code, captured_out.getvalue(), captured_err.getvalue())
+
+
+def _run_out_of_process(*argv: str) -> subprocess.CompletedProcess[str]:
+    """The fixture's own store build, which must not share this process's state."""
     return subprocess.run(
         [sys.executable, str(ENTRY_POINT), *argv],
         check=False,
@@ -143,7 +181,7 @@ def _build_store(root: Path) -> Path:
     )
 
     store = root / "adopt.db"
-    done = _run(
+    done = _run_out_of_process(
         "init",
         str(root),
         "--scope",

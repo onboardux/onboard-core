@@ -17,30 +17,40 @@ Both were found by the independent Build 2 review (B2-01, B2-06) and both were
 still present on `build10/fleet-console` when this file was written.
 """
 
+import io
 import json
-import subprocess
-import sys
+from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from adopt_cli.main import main
 from adopt_obs import AdoptError, ErrorCode, ExitCode
 from adopt_scope import Scope
 from adopt_store.api import SqliteStoreHandle
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENTRY_POINT = REPO_ROOT / "packages" / "adopt-cli" / "src" / "adopt_cli" / "main.py"
-
 ANSWERS = {"artifact_access": True, "deploy_signal": True, "safe_interaction": True}
 
 
-def _run(*argv: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, str(ENTRY_POINT), *argv],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+@dataclass(frozen=True, slots=True)
+class Result:
+    returncode: int
+    stdout: str
+
+
+def _run(*argv: str) -> Result:
+    """One CLI invocation, in process, through the real entry point.
+
+    `main(argv)` is what the installed console script calls, so this exercises
+    the CLI's own helpers -- which is where both defects were -- without paying
+    an interpreter start per command. The assertions here are exit codes and a
+    JSON payload, and `main` produces both.
+    """
+    captured = io.StringIO()
+    with redirect_stdout(captured), redirect_stderr(io.StringIO()):
+        code = main(list(argv))
+    return Result(code, captured.getvalue())
 
 
 @pytest.fixture
@@ -71,7 +81,7 @@ def two_environments(tmp_path: Path) -> tuple[Path, Path]:
             "web",
             "--json",
         )
-        assert done.returncode == ExitCode.SUCCESS, done.stderr
+        assert done.returncode == ExitCode.SUCCESS, done.stdout
     return store, tree
 
 
@@ -120,7 +130,7 @@ def test_a_staging_ingest_does_not_append_to_the_prod_item(
         str(store),
         "--json",
     )
-    assert first.returncode == ExitCode.SUCCESS, first.stderr
+    assert first.returncode == ExitCode.SUCCESS, first.stdout
     assert json.loads(first.stdout)["created"] == 1
 
     (tree / "refunds.md").write_text("# Refunds\n\nThe STAGING procedure.\n", encoding="utf-8")
@@ -134,7 +144,7 @@ def test_a_staging_ingest_does_not_append_to_the_prod_item(
         "--json",
     )
 
-    assert second.returncode == ExitCode.SUCCESS, second.stderr
+    assert second.returncode == ExitCode.SUCCESS, second.stdout
     payload = json.loads(second.stdout)
     assert payload["created"] == 1, "the staging ingest appended to the prod item"
     assert payload["updated"] == 0
@@ -162,7 +172,7 @@ def test_the_prod_chain_is_untouched_by_the_staging_ingest(
             str(store),
             "--json",
         )
-        assert done.returncode == ExitCode.SUCCESS, done.stderr
+        assert done.returncode == ExitCode.SUCCESS, done.stdout
 
     assert [(slug, revisions) for _, slug, revisions in _items(store)] == [
         ("prod", 1),
@@ -194,7 +204,7 @@ def test_a_re_ingest_in_the_same_environment_is_still_idempotent(
 
     second = _run(*argv)
 
-    assert second.returncode == ExitCode.SUCCESS, second.stderr
+    assert second.returncode == ExitCode.SUCCESS, second.stdout
     payload = json.loads(second.stdout)
     assert payload["unchanged"] == 1
     assert payload["created"] == 0

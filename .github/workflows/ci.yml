@@ -280,10 +280,12 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-packages
-      # Fifteen Apache-2.0 distributions were one dispatch from PyPI carrying no
-      # licence at all: no `License-Expression`, no `License-File`, and neither
-      # the Apache text nor the NOTICE inside the wheel or the sdist. Fifteen
-      # PyPI pages would have read "License: UNKNOWN".
+      # Every Apache-2.0 distribution in the workspace was one dispatch from
+      # PyPI carrying no licence at all: no `License-Expression`, no
+      # `License-File`, and neither the Apache text nor the NOTICE inside the
+      # wheel or the sdist. Every PyPI page would have read "License: UNKNOWN".
+      # (Fifteen at the time; the count is `release_context`'s and is not
+      # repeated here.)
       #
       # `licence-gate` above holds 32 **third-party** distributions to seven
       # audited fields each and never looked at ours -- the same

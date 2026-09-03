@@ -41,16 +41,19 @@ reporting, the knowledge verbs (`ingest`, `harvest`, `bind`, `review`, `gaps`),
 
 ## Install
 
-One package pulls in the fifteen the CLI needs:
+One package pulls in everything the CLI needs:
 
 ```sh
 pip install adopt-cli          # or: uv tool install adopt-cli
 adopt version --json
 ```
 
-That is seventeen of the eighteen distributions. `adopt-workflow` is a library
-the CLI does not depend on, so it is published but not installed by the line
-above.
+That is nineteen of the twenty published distributions. `adopt-workflow` is a
+library the CLI does not depend on, so it is published but not installed by the
+line above. **`scripts/release_context.CANONICAL_DISTRIBUTIONS` is the
+authority for the set and its count**, asserted on every pull request; this
+paragraph describes it and three different numbers appeared here before that was
+said out loud.
 
 Or download a single-file binary — `adopt-linux-x86_64`, `adopt-macos-arm64` or
 `adopt-windows-x86_64.exe` — from the GitHub Release. It needs no Python.
@@ -563,8 +566,9 @@ run on public contributions.
   fields are dropped at the sink.
 - Every distributed dependency is licence-verified. The in-binary policy is
   permissive-only.
-- A valid release includes 18 wheels, 18 source distributions, three onefile
-  binaries, a CycloneDX SBOM, SLSA provenance, and keyless cosign evidence.
+- A valid release includes one wheel and one source distribution per canonical
+  distribution, three onefile binaries, a CycloneDX SBOM, SLSA provenance, and
+  keyless cosign evidence.
   `scripts/release_context.py` holds the canonical set and the gate asserts it
   on every pull request, so that module is the authority and this line is a
   description of it.

@@ -844,6 +844,69 @@ class TestWorkflowsAreRunnable:
 
         assert "vars.ADOPT_CONFORMANCE_ADAPTERS != ''" in str(jobs["conformance-matrix"]["if"])
 
+    def test_the_release_workflow_writes_down_no_shape_version(self) -> None:
+        """A release cannot carry a schema number the tree does not report.
+
+        *Fails when* `release.yml` compares against a literal `schema_version`
+        or `export_version`. *Matters because* the workflow hard-coded `3` in
+        four places while the tree reported `4`: the first release of any build
+        that adds a table would have failed its own smoke test on every
+        platform, **after** the wheels were built, the SBOM was emitted and the
+        build facts were stamped -- and the failure would have read as a defect
+        in the artefact rather than in the workflow. *No other instrument
+        catches it because* the release workflow runs on a tag, so a literal
+        stays green through every dry run at the version it happens to name.
+
+        `scripts/packaged_artifact.py` closed the identical class in CI and
+        records that it "was `"schema_version": 3` in three places and every one
+        of them failed the first time a build added a table". This is that
+        lesson, applied to the one workflow it had not reached.
+
+        The scan is over the raw text rather than the parsed YAML, because the
+        literals lived inside `run:` scripts -- a heredoc, a `grep` pattern and
+        a dict -- and none of them is a YAML value the parser would expose.
+        """
+        import re
+
+        text = (self.WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+        offenders = [
+            f"{number}: {line.strip()}"
+            for number, line in enumerate(text.splitlines(), 1)
+            if re.search(r'"(schema|export)_version"\s*:?\s*\*?\s*[0-9]', line)
+            # Comments are prose, not a comparison -- the same distinction
+            # `tools/contracts` makes with `scannable_text`, and for the same
+            # reason: the lines above this test's own subject *describe* the
+            # literals, and a scan that failed on its own documentation is a
+            # scan that acquires an exemption it never needed.
+            and not line.lstrip().startswith("#")
+        ]
+
+        assert not offenders, (
+            "release.yml compares against a written-down shape version:\n  "
+            + "\n  ".join(offenders)
+            + "\nDerive it from `adopt_const` in the `build` job and pass it as an output. "
+            "A literal here fails the release, after the wheels are built, on the first "
+            "build that adds a table."
+        )
+
+    def test_that_scan_would_see_a_planted_literal(self) -> None:
+        """The control: a scan that finds nothing must be able to find something.
+
+        The pattern is asserted against the exact text this workflow used to
+        carry, so a regex that quietly stopped matching -- CR-67's
+        broken-state-indistinguishable-from-passing failure -- cannot pass as a
+        clean tree.
+        """
+        import re
+
+        pattern = r'"(schema|export)_version"\s*:?\s*\*?\s*[0-9]'
+
+        assert re.search(pattern, '              "schema_version": 3,')
+        assert re.search(pattern, """            | grep -q '"schema_version": *3'""")
+        assert not re.search(
+            pattern, '              "schema_version": int(os.environ["EXPECTED_SCHEMA_VERSION"]),'
+        )
+
     def test_binaries_are_packed_from_the_published_wheel(self) -> None:
         """The packer compiles the artefact we ship, not the source tree.
 
@@ -1133,7 +1196,7 @@ class TestWorkflowsAreRunnable:
         assert (
             build_names.index("CycloneDX SBOM")
             < build_names.index("Embed immutable build facts")
-            < build_names.index("Build all 15 Python distributions")
+            < build_names.index("Build every Python distribution in the workspace")
         )
 
         pypi_upload = next(

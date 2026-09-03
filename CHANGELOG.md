@@ -15,6 +15,119 @@ it, a removed or retyped column is a rejected pull request.
 
 Nothing yet.
 
+## [0.4.0] — unreleased
+
+**The first release carrying Builds 1–10.** Nine new verbs, five new
+distributions, and **schema version 4**. The minor version tracks the schema
+version, which is why this is `0.4.0` and not `0.3.2`.
+
+**Schema 4 is additive and a version-3 store is not stranded.** Build 4 adds one
+table, `coverage_gap`, as a per-version migration tranche
+(`0002__coverage_gap.sql`, both dialects), so an existing `0.3.x` store upgrades
+under `adopt store migrate` rather than being replaced, and a version-3 export
+bundle still imports — asserted by `tests/unit/test_schema_v4_compat.py`.
+`export_version` moves to `4` with it.
+
+**Five new distributions**, bringing the canonical release set to twenty:
+`adopt-map`, `adopt-knowledge`, `adopt-ask`, `adopt-handover`, `adopt-probe`.
+Each is a v6.1 §2.1 **A2** ratification recorded in
+`scripts/release_context.py`. Nineteen of the twenty are reachable by installing
+`adopt-cli`; `adopt-workflow` is a library the CLI does not depend on.
+
+### Added
+
+- **`adopt map`** (Build 1) — the inventory. Three archetype packs (generic, web,
+  ai) walk a repository once and record identities with a per-kind attribute
+  digest, so a later run can tell a moved referent from a new one.
+  `--check-expected` measures recall against a curated list rather than a
+  coverage ratio.
+- **`adopt ingest`, `adopt harvest`, `adopt bind`, `adopt review`** (Build 2) —
+  documents and local git history become knowledge, bound to identities. A
+  structural match binds; a name match is a suggestion a human confirms, which
+  is the whole of critical invariant #2.
+- **`adopt ask`, `adopt answer`, `adopt serve`** (Build 3) — the store answers,
+  says how much to trust the answer, and escalates what it cannot. An
+  escalation's answer is captured as confirmed knowledge, so the next asker gets
+  it.
+- **`adopt pack`, `adopt draft`, `adopt gaps`** (Build 4) — audience-scoped
+  handover packs, byte-stable given the same revisions, with a gap appendix. The
+  new `coverage_gap` table carries a disposition per gap.
+- **`adopt probe`** (Build 5) — declarative probes with a capability manifest,
+  a versioned baseline and a diff that names what changed. A probe carries no
+  executable content and exactly one module can open a socket, which is the
+  whole safety argument for having no sandbox.
+- **`adopt refresh`, `adopt review --resolve`** (Build 6) — re-map, re-probe,
+  classify what changed, stale the bound knowledge and open one review session.
+- **`adopt pull`, `adopt ci-sense`** (Builds 7–8) — the client halves of the
+  control plane: a verified read replica, and a CI relay that senses a change
+  and posts it for the plane to classify.
+- **`adopt handover`** (Build 9) — six recorded steps and an acceptance record
+  the client keeps, with a digest they can reproduce.
+
+### Fixed
+
+- **Every parser-level usage error escaped the CLI as exit `1` with a
+  traceback.** The installed typer vendors its own click, so nothing `main`
+  caught matched what typer raised: `adopt pack --no-such-flag --json` and
+  `adopt identity build --json` exited `1` with a rich panel and an empty
+  stdout, where §13 says `2`. Three `adopt pack` refusals rode the same hole.
+  Now exit `2` (or `3` for the policy refusal) with the message on stderr, and a
+  gate refuses any click or typer parser exception raised in a command.
+- **Eleven canon-writing verbs could write into a read replica.** `refresh` and
+  `handover` each carried their own check; `init`, `map`, `ingest`, `harvest`,
+  `bind`, `gaps`, `review`, `answer`, `draft`, `pack --draft-missing` and
+  `probe add/run/baseline` carried none, and every write succeeded — into a file
+  the next `adopt pull` replaces wholesale. One guard now sits at the one door
+  they all open through (`STORE_TARGET_IS_REPLICA`). `adopt ask` still answers
+  on a replica, which is what a replica is for.
+- **An ingest under one environment appended to another environment's item.**
+  Build 2's reads matched on `system_id` alone, so a staging ingest of the same
+  relative path recognised the **prod** item as already stored and appended the
+  staging text to its revision chain — exit `0`, no staging item, and the chain
+  reading as an ordinary edit.
+- **`adopt bind` joined two firms' data.** An item and an identity from
+  different firms produced a binding row whose ends resolve to different
+  tenants; now refused with `SCOPE_VIOLATION` before the insert.
+- **Ingest, harvest and the review actions were not atomic.** Each chained
+  facade calls that commit separately, and idempotence keys on the provenance
+  row — so a document whose item and provenance committed and whose audience tag
+  did not was reported `unchanged` by every retry, permanently. A confirmation
+  whose binding write failed left the queue saying a human had confirmed an
+  action that never occurred, and `resolve` refused the retry. Each logical
+  write is now one transaction.
+- **A stale queue entry could bind what the current document no longer says.** A
+  queue entry keys on `(item_id, revision_id)` and survives the edit that
+  invalidates it; suggestions now derive from the item's head, while the body
+  the reviewer reads is unchanged.
+- **`adopt map --check-expected` passed over an emptied list.** A file of only
+  comments exited `0` with no `expected` payload at all — a perfect recall floor
+  over nothing. Now refused.
+- **Move detection could alias two unrelated referents for ever.** Pairing was
+  by attribute digest alone, so a `config_key` and an `endpoint` whose
+  attributes rendered identically collided and the alias was written through
+  `IdentityFacade.move()`. Pairing is now within one identity kind and one
+  extractor.
+- **The `config_key` namespace was the file's basename**, so
+  `services/a/config.json` and `services/b/config.json` collapsed to one
+  namespace and the second observation was absorbed by URI-keyed idempotence.
+  It is now the repository-relative path stem. **This changes persisted
+  `config_key` URIs** and is done deliberately before the first release carrying
+  Build 1, when no store depends on the old scheme.
+
+### Security
+
+- **Directory ingest followed symlinks out of the tree.**
+  `adopt ingest docs/` used an unbounded `rglob` with no containment rule, no
+  symlink rule, no depth bound and no count bound, so a link committed into a
+  client repository copied out-of-tree material into the knowledge store and
+  cited it by absolute path. Ingest now enumerates through the one bounded walk
+  the rest of the programme uses. An explicitly named file is unchanged: naming
+  a path is a choice.
+- **Oversized files bypassed the map's file-count bound.** Only readable files
+  counted toward `MAP_TREE_TOO_LARGE`, so a tree of files each over
+  `MAP_MAX_FILE_BYTES` walked to the end and refused nothing. Every candidate
+  now counts before it is classified.
+
 ## [0.3.1] — 2026-08-19
 
 A patch release fixing two defects in `0.3.0`. **No schema change** — the store

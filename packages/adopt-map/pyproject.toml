@@ -1,6 +1,6 @@
 [project]
 name = "adopt-map"
-version = "0.3.1"
+version = "0.4.0"
 description = "adopt map: deterministic identity extraction from a repository. Build 1."
 requires-python = ">=3.12"
 license = "Apache-2.0"

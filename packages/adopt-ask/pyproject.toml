@@ -1,6 +1,6 @@
 [project]
 name = "adopt-ask"
-version = "0.3.1"
+version = "0.4.0"
 description = "adopt ask: honest three-way answers over the store, cited and freshness-gated. Build 3."
 requires-python = ">=3.12"
 license = "Apache-2.0"

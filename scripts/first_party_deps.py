@@ -1,6 +1,6 @@
 """`first-party-deps`: every `adopt_*` a distribution imports, it also declares.
 
-**Two of the fifteen distributions tagged at `v0.3.0` import a first-party module
+**Two of the distributions tagged at `v0.3.0` import a first-party module
 they never declared, and the release shipped that way.** `adopt-store` imports
 `adopt_identity` in `facades/identity.py`; `adopt-cli` imports `adopt_model` in
 `commands/init.py` and `commands/boundary.py`. `pip install adopt-store` alone
@@ -10,7 +10,7 @@ raises `ModuleNotFoundError` on its first facade import. See `BACKLOG.md` B-06.
 independent maskings, both the shape of CR-53 and CR-54 -- *correct in the tree
 every test runs against, broken from an installed subset*:
 
-* Every test runs under `uv sync --all-packages`, which installs all fifteen
+* Every test runs under `uv sync --all-packages`, which installs every
   distributions whatever any one of them declares. No test in this repository
   can observe a missing declaration, because the module is always importable.
 * `packaged-artifact` -- the one gate whose subject is an installed artefact

@@ -291,14 +291,34 @@ class SettingsClassExtractor:
 
 
 class ConfigKeyExtractor:
-    """Settings declared in configuration files, namespaced by the file.
+    """Settings declared in configuration files, namespaced by the file's **path**.
 
-    The namespace is the file stem, so `database.url` in `app.toml` and the same
-    key in `worker.toml` stay two referents. Nesting renders dotted.
+    The namespace is the repository-relative path with the suffix removed, so
+    `database.url` in `services/a/config.json` and the same key in
+    `services/b/config.json` stay two referents. Nesting renders dotted.
+
+    **It was the basename stem until the OD-11 ruling of 2026-09-03 (T1.8), and
+    on a monorepo that silently lost referents.** Two `config.json` files under
+    different services produced the same namespace, so the same key in both
+    rendered one URI -- and identity is URI-keyed and idempotent, so the second
+    observation was absorbed into the first with no conflict, no warning and no
+    count anywhere saying one had gone. Build 1's D4 approved the basename with
+    the caution that the choice becomes persisted URIs and is *"cheap to change
+    now, expensive after real engagement stores exist"*; no engagement store
+    exists and no release carries Build 1, so this is the last cheap moment.
+
+    A genuine file move is still a move: the path changes, the key does not, and
+    `detect_moves` pairs the two by attribute digest exactly as it does for every
+    other path-derived key.
+
+    The version bump to `2` is the H5 mechanism rather than an afterthought --
+    the digest mixes the extractor version in, so every `config_key` digest
+    re-baselines on the next map and no diff reads the scheme change as a change
+    in the client's system.
     """
 
     name = "generic.config_keys"
-    version = "1"
+    version = "2"
 
     #: Manifests owned by other extractors or by the packaging ecosystem. Their
     #: keys are not the system's configuration and listing them would bury the
@@ -320,7 +340,12 @@ class ConfigKeyExtractor:
                 continue
             if not isinstance(data, dict):
                 continue
-            namespace = entry.path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            # The whole repository-relative path without its suffix, as one URI
+            # segment. Build 0's URI semantics already carry a slash as *data*
+            # inside a segment (`02` §4), so `services/a/config` percent-encodes
+            # and parses back byte-exactly -- no new grammar, and the namespace
+            # still reads as a path to a human.
+            namespace = entry.path.rsplit(".", 1)[0] if "." in entry.name else entry.path
             for dotted, value in sorted(_flatten(data)):
                 yield Observation(
                     kind="config_key",

@@ -24,6 +24,68 @@ def _tree(tmp_path: Path, files: dict[str, str]) -> SourceTree:
 
 
 @pytest.mark.unit
+def test_two_same_named_config_files_are_two_referents(tmp_path: Path) -> None:
+    """OD-11 (approved 2026-09-03), the collision it was ruled on, and the fix.
+
+    *Fails when* `ConfigKeyExtractor` derives its namespace from the file's
+    basename. *Matters because* a monorepo has one `config.json` per service, so
+    the same key in two of them rendered **one** URI -- and identity is
+    URI-keyed and idempotent, so the second observation was absorbed into the
+    first with no conflict, no warning and no count anywhere saying a referent
+    had gone. *No other instrument catches it because* two observations
+    collapsing to one identity is exactly what idempotence is supposed to look
+    like; only a fixture that knows the two are different can tell them apart.
+
+    The namespace is now the repository-relative path stem, which Build 0's URI
+    grammar already carries as one percent-encoded segment.
+    """
+    tree = _tree(
+        tmp_path,
+        {
+            "services/a/config.json": '{"database": {"url": "postgres://a"}}',
+            "services/b/config.json": '{"database": {"url": "postgres://b"}}',
+        },
+    )
+
+    found = {
+        (observation.namespace, observation.key)
+        for observation in generic.ConfigKeyExtractor().extract(tree)
+    }
+
+    assert found == {
+        ("services/a/config", ("database.url",)),
+        ("services/b/config", ("database.url",)),
+    }
+
+
+@pytest.mark.unit
+def test_a_config_namespace_survives_the_uri_round_trip(tmp_path: Path) -> None:
+    """The half that makes the change safe rather than merely different.
+
+    A namespace holding a `/` is only usable because `02` §4 treats a slash
+    inside a segment as **data**: the builder percent-encodes it and the parser
+    decodes it byte-exactly. Without this, the new scheme would produce URIs
+    `validate_uri` rejects -- and `identity.uri` is UNIQUE, so a URI that parses
+    but renders differently would let one referent occupy two rows.
+    """
+    from adopt_identity import build_uri, parse_uri, validate_uri
+    from adopt_scope import Scope, ScopeNode
+
+    scope = Scope(
+        firm=ScopeNode(id="f", slug="northwind"),
+        engagement=ScopeNode(id="e", slug="acme-erp"),
+        system=ScopeNode(id="s", slug="orders-api"),
+        environment=ScopeNode(id="v", slug="prod"),
+    )
+    uri = build_uri(scope, "config_key", "services/a/config", ("database.url",))
+
+    validate_uri(uri)
+
+    assert parse_uri(uri).namespace == "services/a/config"
+    assert "%2F" in uri
+
+
+@pytest.mark.unit
 def test_an_endpoint_carries_method_path_and_parameter_names(tmp_path: Path) -> None:
     """*Fails when* the endpoint attribute set drifts from v6.1 §6's "method +
     path + parameter names". *Matters because* those three are the digest input,

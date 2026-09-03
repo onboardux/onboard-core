@@ -30,6 +30,18 @@ packaged file -- one per data set that has to travel:
                  info` past it without once invoking the command under test.
                  B-10's standing lesson was that the journey has to include the
                  verb the build exists for.
+* One probe per **verb family** added by Builds 2-9 -- `ingest`, `gaps`, `ask`,
+                 `pack`, `probe manifest validate`, `probe add`, `refresh` and
+                 `handover` -- because until then this gate proved the installed
+                 artefact for **Build 0 and Build 1 only** (N5). Five
+                 distributions shipped in `0.4.0` whose verbs no installed
+                 artefact had ever run: `ModuleNotFoundError` on a lazily
+                 registered command is exactly what B-10 cost a release, and
+                 every one of those verbs registers lazily.
+
+                 Each probe expects a key **only that verb's package produces**,
+                 and never a count. A count is satisfied by an empty answer; a
+                 key is not.
 
 It runs them from a working directory far from the checkout, because a relative
 fallback is exactly what hid the defect, and a gate that a stray parent
@@ -131,6 +143,47 @@ def seed_tree(work: Path) -> None:
         json.dumps({"artifact_access": True, "deploy_signal": True, "safe_interaction": True}),
         encoding="utf-8",
     )
+    # One document for `ingest` and one probe manifest for `probe add`. Both are
+    # the smallest thing their verb accepts: the question is whether the
+    # packaged artefact can run the verb at all, not how well it runs it.
+    (work / "README.md").write_text(
+        textwrap.dedent(
+            """\
+            ---
+            audience: technical
+            kind: procedure
+            ---
+            # Orders
+
+            The orders API serves refunds, and a refund needs a human decision.
+            """
+        ),
+        encoding="utf-8",
+    )
+    # `127.0.0.1:9` is the discard port. The probe is **added, never run**:
+    # nothing here may open a socket, and `add` is the verb that proves
+    # `adopt-probe` is installed and its manifest validator is reachable.
+    (work / "probe.yaml").write_text(
+        textwrap.dedent(
+            """\
+            probe_id: packaged-artifact-smoke
+            safe_path: sandbox
+            network: { deny_by_default: true, allow: ["127.0.0.1:9"] }
+            http_methods: { allow: [GET] }
+            side_effect_policy: prohibited
+            runtime: { max_seconds: 5, max_memory_mb: 64, max_requests: 1 }
+            cost: { max_model_calls: 0, max_tokens: 100 }
+            output: { retain_raw: false, redaction_policy: pii-default }
+            cleanup: { required: true }
+            diff_method: exact
+            steps:
+              - kind: http
+                method: GET
+                url: "http://127.0.0.1:9/health"
+            """
+        ),
+        encoding="utf-8",
+    )
 
 
 def probes(work: Path) -> tuple[Probe, ...]:
@@ -193,6 +246,83 @@ def probes(work: Path) -> tuple[Probe, ...]:
             ("map", str(work), "--store", str(mapped), "--report", "--json"),
             "GET%20%2Fv1%2Forders",
         ),
+        # -- Builds 2-9, one probe per verb family (N5) ----------------------
+        #
+        # Every one of these commands registers its package lazily inside the
+        # command body, so an undeclared or unpacked distribution surfaces as a
+        # `ModuleNotFoundError` the moment the verb runs and never before. That
+        # is precisely what B-10 cost a release, and until this gate ran them
+        # the five distributions `0.4.0` adds had no installed-artefact evidence
+        # at all.
+        #
+        # These are not journeys. `*-journey` jobs prove the behaviour on real
+        # repositories; what is proved here is that the *artefact* contains the
+        # code and the data each verb needs.
+        Probe(
+            "adopt-knowledge is packaged: ingest writes a document",
+            ("ingest", str(work / "README.md"), "--store", str(mapped), "--json"),
+            '"ingested"',
+        ),
+        Probe(
+            "adopt-coverage is packaged: gaps reports the join",
+            ("gaps", "--store", str(mapped), "--json"),
+            '"uncovered"',
+            # `gaps` exits 4 when it has findings, which a freshly mapped store
+            # reliably does. Degraded-with-findings is the command working.
+            allow_failure=True,
+        ),
+        Probe(
+            "adopt-ask is packaged: the store answers",
+            ("ask", "what is the refund policy", "--store", str(mapped), "--json"),
+            '"branch"',
+            # UNKNOWN is a valid answer and exits 0; the branch key is what says
+            # the retrieval path ran rather than that it found something.
+            allow_failure=True,
+        ),
+        Probe(
+            "adopt-handover is packaged: a pack is assembled",
+            ("pack", "--out", str(work / "pack"), "--store", str(mapped), "--json"),
+            '"sections"',
+        ),
+        Probe(
+            "adopt-probe is packaged: a manifest validates",
+            ("probe", "manifest", "validate", str(work / "probe.yaml"), "--json"),
+            '"declared_hosts"',
+        ),
+        Probe(
+            "adopt-probe is packaged: a probe is stored",
+            ("probe", "add", str(work / "probe.yaml"), "--store", str(mapped), "--json"),
+            '"revision"',
+        ),
+        # `--no-probes` on purpose: the artefact half only. This gate opens no
+        # socket, and a refresh that reached one would make the release job
+        # depend on the runner's network.
+        Probe(
+            "refresh runs the artifact half",
+            ("refresh", "--no-probes", "--store", str(mapped), "--json"),
+            '"counts_by_class"',
+            # Exit 4 means it found something actionable, which is the command
+            # doing its job.
+            allow_failure=True,
+        ),
+        Probe(
+            "adopt-handover is packaged: a handover opens",
+            (
+                "handover",
+                "start",
+                "--receiving-owner",
+                "the-client",
+                "--store",
+                str(mapped),
+                "--json",
+            ),
+            '"handover_id"',
+        ),
+        Probe(
+            "the handover is readable afterwards",
+            ("handover", "status", "--store", str(mapped), "--json"),
+            '"receiving_owner"',
+        ),
     )
 
 
@@ -202,6 +332,27 @@ def _environment() -> dict[str, str]:
     for masking in ("ADOPT_SCHEMA_ASSETS_ROOT", "ADOPT_SCHEMA_MANIFEST", "ADOPT_SCHEMA_OUT_ROOT"):
         env.pop(masking, None)
     return env
+
+
+#: How much of a failing probe's output is reported. Bounded so one broken probe
+#: cannot bury the other sixteen.
+_REPORTED_OUTPUT_BYTES: Final[int] = 900
+
+
+def _tail(output: str) -> str:
+    """The **end** of a failing probe's output, not the beginning.
+
+    A Python traceback names its cause on the last line. Truncating from the
+    front kept the `File "<frozen runpy>"` frames and dropped
+    `ModuleNotFoundError: No module named 'adopt_knowledge'` -- so the gate
+    detected a missing distribution correctly and reported a stack of import
+    machinery, which for anyone reading the log is the same as not detecting it.
+    Found by the second `--self-test` plant, which is what a self-test is for.
+    """
+    text = output.strip()
+    if len(text) <= _REPORTED_OUTPUT_BYTES:
+        return text
+    return "... " + text[-_REPORTED_OUTPUT_BYTES:]
 
 
 def run_probes(adopt: Path, work: Path) -> list[str]:
@@ -218,9 +369,9 @@ def run_probes(adopt: Path, work: Path) -> list[str]:
         )
         output = result.stdout + result.stderr
         if result.returncode != 0 and not probe.allow_failure:
-            failures.append(f"{probe.name}: exited {result.returncode}\n{output.strip()[:800]}")
+            failures.append(f"{probe.name}: exited {result.returncode}\n{_tail(output)}")
         elif probe.expect not in output:
-            failures.append(f"{probe.name}: no {probe.expect!r} in output\n{output.strip()[:800]}")
+            failures.append(f"{probe.name}: no {probe.expect!r} in output\n{_tail(output)}")
         else:
             print(f"  OK -- {probe.name}")
     return failures
@@ -276,14 +427,45 @@ def _bundled_assets(venv_adopt: Path) -> Path:
     return matches[0]
 
 
-def _self_test(scratch: Path) -> int:
-    """Prove the gate fails, and fails by name.
+#: The package `--self-test` removes to prove the verb probes are not decorative.
+#: `adopt_knowledge` is one of the five distributions `0.4.0` adds, it is
+#: imported **inside** `adopt ingest`'s body like every Build 2-9 verb, and no
+#: installed artefact had ever run one of them before T1.14 (N5). Removing it
+#: reproduces B-10's defect exactly: the artefact installs, `version --json`
+#: passes, `detect` passes, `store migrate` passes, and the verb the build exists
+#: for raises `ModuleNotFoundError`.
+_PLANTED_MISSING_PACKAGE: Final[str] = "adopt_knowledge"
 
-    *Fails when* the check passes against an artefact with no schema assets.
-    *Matters because* that artefact is what shipped, and it passed a green suite
-    and a `version --json` smoke test on the way out. *No other instrument
-    catches it because* the check's own subject is a build, so only a planted
-    build exercises the failing branch.
+
+def _installed_package(venv_adopt: Path, package: str) -> Path:
+    """The installed package directory inside the environment."""
+    site = venv_adopt.parent.parent
+    matches = sorted(path for path in site.glob(f"**/{package}") if (path / "__init__.py").exists())
+    if not matches:
+        raise SystemExit(
+            f"no installed {package}/ in the environment. Either the wheel shipped "
+            "without it -- which is the defect this plant exists for -- or the "
+            "layout moved and this helper needs updating."
+        )
+    return matches[0]
+
+
+def _self_test(scratch: Path) -> int:
+    """Prove the gate fails, and fails by name -- twice, for two different causes.
+
+    *Fails when* the check passes against an artefact with no schema assets, or
+    against one missing a distribution whose verb it claims to prove. *Matters
+    because* both artefacts are the kind that ship: the first passed a green
+    suite and a `version --json` smoke test on the way out (CR-53), and the
+    second is B-10's defect, where `pip install adopt-cli` produced a
+    `ModuleNotFoundError` on the flagship verb for every project. *No other
+    instrument catches either because* the check's own subject is a build, so
+    only a planted build exercises the failing branch.
+
+    Two plants, in two environments, because they are two claims. The assets
+    plant proves the gate sees missing **data**; the package plant proves the
+    verb probes see a missing **distribution** -- and a probe list that had
+    grown stale would pass the first and fail nothing.
     """
     adopt = _build_and_install(scratch)
     work = scratch / "work"
@@ -309,6 +491,35 @@ def _self_test(scratch: Path) -> int:
         print(reported[:1500])
         return 1
     print("  OK -- it names SCHEMA_ASSETS_MISSING rather than a missing table")
+
+    # -- The second plant, in its own environment ---------------------------
+    second = scratch / "missing-package"
+    second.mkdir()
+    adopt = _build_and_install(second)
+    work = second / "work"
+    work.mkdir()
+    seed_tree(work)
+
+    print(f"\nplanting: removing {_PLANTED_MISSING_PACKAGE}/ from the environment")
+    shutil.rmtree(_installed_package(adopt, _PLANTED_MISSING_PACKAGE))
+
+    failures = run_probes(adopt, work)
+    if not failures:
+        print(
+            "SELF-TEST FAILED: the gate passed against an artefact missing "
+            f"{_PLANTED_MISSING_PACKAGE}. The verb probes are not reaching the "
+            "packages they claim to prove."
+        )
+        return 1
+    reported = "\n".join(failures)
+    if _PLANTED_MISSING_PACKAGE not in reported:
+        print(
+            f"SELF-TEST FAILED: the failure does not name {_PLANTED_MISSING_PACKAGE}. "
+            "A missing distribution must be reported as one."
+        )
+        print(reported[:1500])
+        return 1
+    print(f"  OK -- the gate fails naming {_PLANTED_MISSING_PACKAGE} when it is removed")
 
     print("\nself-test OK: the gate detects a stripped artefact and says why")
     return 0

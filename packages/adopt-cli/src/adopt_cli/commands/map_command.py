@@ -85,7 +85,16 @@ def map_command(
         system_archetype,
     )
 
-    expected = load_expected(_read_expected(check_expected)) if check_expected else ()
+    # **Presence, not contents.** `expected` used to be the only signal that
+    # `--check-expected` had been passed, so a list that parsed to nothing
+    # disappeared: no `expected` payload, no misses, exit `0`. The flag being
+    # present is now what drives the check, and `load_expected` refuses a list
+    # that names no URI (B1-001).
+    expected = (
+        load_expected(_read_expected(check_expected), source=str(check_expected))
+        if check_expected
+        else ()
+    )
     misses: tuple[str, ...] = ()
 
     tree = SourceTree.scan(path)

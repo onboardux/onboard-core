@@ -11,6 +11,15 @@ available: the file moved, so the path cannot say it, and the key changed, so th
 key cannot say it. Two referents with byte-identical extracted attributes at the
 same extractor version are the same referent, and that is the whole test.
 
+**The digest alone was not the whole test, and the gap was permanent
+corruption** (B1-002, T1.7). A digest is a hash of extracted attributes, so two
+referents of *different kinds* -- a `config_key` and an `endpoint` -- whose
+attribute sets happen to render identically collide, and `runner._move` writes
+the collision through `IdentityFacade.move()` as an alias that resolves for
+ever. Pairing is therefore **within one identity kind**, and within one extractor
+where both sides name one. A cross-kind match is reported as an absence and an
+appearance, which is exactly what it is.
+
 **Three answers, and only one of them writes** (plan decision D6):
 
 * exactly one disappeared and exactly one appeared share a digest -- a move, and
@@ -30,7 +39,9 @@ same extractor version are the same referent, and that is the whole test.
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from adopt_identity import parse_uri
 from adopt_model._enums import IdentityKind
+from adopt_obs import AdoptError
 
 __all__ = [
     "MoveCandidate",
@@ -144,33 +155,70 @@ def detect_moves(
     seen = {entry.uri: entry for entry in observed}
     live = [entry for entry in stored if entry.status not in {"moved", "dead"}]
 
-    disappeared: dict[str, list[StoredIdentity]] = {}
+    disappeared: dict[_PairKey, list[StoredIdentity]] = {}
     for entry in live:
         if entry.uri in seen or entry.digest is None:
             continue
-        disappeared.setdefault(entry.digest, []).append(entry)
+        disappeared.setdefault(_key_of(entry.digest, entry.uri, entry.extractor), []).append(entry)
 
     known = {entry.uri for entry in stored}
-    appeared: dict[str, list[ObservedIdentity]] = {}
+    appeared: dict[_PairKey, list[ObservedIdentity]] = {}
     for uri, arrival in seen.items():
         if uri in known:
             continue
-        appeared.setdefault(arrival.digest, []).append(arrival)
+        appeared.setdefault(_key_of(arrival.digest, arrival.uri, arrival.extractor), []).append(
+            arrival
+        )
 
     return _pair(disappeared, appeared)
 
 
+#: `(digest, identity kind, extractor)` -- what two referents must share before
+#: they can be the same referent.
+_PairKey = tuple[str, str, str | None]
+
+
+def _key_of(digest: str, uri: str, extractor: str | None) -> _PairKey:
+    """The pairing key, kind included.
+
+    The kind comes off the URI rather than a new field, because the URI is
+    already the address and `identity.identity_kind` is one of its segments --
+    `StoredIdentity` deliberately carries only what a comparison needs, and a
+    second copy of the kind would be a second thing to keep in step.
+
+    `extractor` is part of the key when a side names one, and `None` pairs only
+    with `None`: two referents an extractor upgrade renamed still share their
+    extractor, and two produced by *different* extractors are not one referent
+    however their attributes render. Rows written before the extractor was
+    recorded carry `None` on both sides and pair as they always did.
+    """
+    return digest, _kind_of(uri), extractor
+
+
+def _kind_of(uri: str) -> str:
+    """`identity_kind` from a canonical URI, or `""` when it cannot be read.
+
+    An unreadable URI yields `""`, which pairs only with another unreadable one
+    -- fail-closed, on the same argument the rest of this module makes: a
+    referent we cannot address is not a referent we may alias.
+    """
+    try:
+        return str(parse_uri(uri).kind)
+    except AdoptError:
+        return ""
+
+
 def _pair(
-    disappeared: Mapping[str, list[StoredIdentity]],
-    appeared: Mapping[str, list[ObservedIdentity]],
+    disappeared: Mapping[_PairKey, list[StoredIdentity]],
+    appeared: Mapping[_PairKey, list[ObservedIdentity]],
 ) -> MoveOutcome:
     moves: list[MoveCandidate] = []
     absent: list[str] = []
     ambiguous: list[tuple[str, ...]] = []
 
-    for digest in sorted(disappeared):
-        gone = sorted(disappeared[digest], key=lambda entry: entry.uri)
-        arrived = sorted(appeared.get(digest, ()), key=lambda entry: entry.uri)
+    for key in sorted(disappeared):
+        gone = sorted(disappeared[key], key=lambda entry: entry.uri)
+        arrived = sorted(appeared.get(key, ()), key=lambda entry: entry.uri)
         if not arrived:
             absent.extend(entry.uri for entry in gone)
             continue

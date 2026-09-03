@@ -55,6 +55,123 @@ def test_a_unique_digest_match_is_a_move(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_a_digest_collision_across_kinds_is_not_a_move() -> None:
+    """B1-002: pairing by digest alone could alias two unrelated referents.
+
+    *Fails when* `detect_moves` pairs on the digest without the identity kind.
+    *Matters because* the digest is a hash of extracted attributes, so a
+    `config_key` and an `endpoint` whose attribute sets render identically
+    collide -- and `runner._move` writes the pairing through
+    `IdentityFacade.move()`, which makes the old URI resolve to the wrong
+    referent **for ever**: a URI is never rewritten, so nothing later undoes it.
+    *No other instrument catches it because* the move is well formed, the store
+    stays consistent, and the report reads as a successful rename.
+
+    Reported as one absence and one appearance instead, which is what it is.
+    """
+    stored = StoredIdentity(
+        identity_id="idn_endpoint",
+        uri="onboard-v1://northwind/acme-erp/orders-api/prod/endpoint/-/POST%20%2Forders",
+        digest="sha256:collision",
+        status="active",
+    )
+    observed = ObservedIdentity(
+        uri="onboard-v1://northwind/acme-erp/orders-api/prod/config_key/settings/DATABASE_URL",
+        kind="config_key",
+        namespace="settings",
+        key=("DATABASE_URL",),
+        digest="sha256:collision",
+    )
+
+    outcome = detect_moves(observed=[observed], stored=[stored])
+
+    assert outcome.moves == ()
+    assert outcome.absent == (stored.uri,)
+    assert outcome.ambiguous == ()
+
+
+@pytest.mark.unit
+def test_a_move_within_one_kind_is_still_detected() -> None:
+    """The control. A kind fence that refused every pairing would satisfy the row
+    above and delete move detection, which is the one thing an inventory needs to
+    survive a rename."""
+    stored = StoredIdentity(
+        identity_id="idn_endpoint",
+        uri="onboard-v1://northwind/acme-erp/orders-api/prod/endpoint/-/POST%20%2Forders",
+        digest="sha256:same",
+        status="active",
+    )
+    observed = ObservedIdentity(
+        uri="onboard-v1://northwind/acme-erp/orders-api/prod/endpoint/-/POST%20%2Fv2%2Forders",
+        kind="endpoint",
+        namespace=None,
+        key=("POST /v2/orders",),
+        digest="sha256:same",
+    )
+
+    outcome = detect_moves(observed=[observed], stored=[stored])
+
+    assert [candidate.to.uri for candidate in outcome.moves] == [observed.uri]
+
+
+@pytest.mark.unit
+def test_two_extractors_producing_one_digest_are_not_one_referent() -> None:
+    """The second half of the fence, and the reason it is `None`-tolerant.
+
+    *Fails when* the pairing ignores which extractor produced each side. A
+    referent an upgrade renamed still has the same extractor; two produced by
+    *different* extractors are not one referent however their attributes render.
+    Rows written before the extractor was recorded carry `None` on both sides
+    and pair exactly as they always did -- a fence that treated an unknown as a
+    mismatch would turn every pre-Build-6 identity into a permanent absence.
+    """
+    stored = StoredIdentity(
+        identity_id="idn_a",
+        uri="onboard-v1://northwind/acme-erp/orders-api/prod/symbol/-/handler",
+        digest="sha256:same",
+        status="active",
+        extractor="generic.symbols",
+    )
+    observed = ObservedIdentity(
+        uri="onboard-v1://northwind/acme-erp/orders-api/prod/symbol/-/handler_v2",
+        kind="symbol",
+        namespace=None,
+        key=("handler_v2",),
+        digest="sha256:same",
+        extractor="web.routes",
+    )
+
+    outcome = detect_moves(observed=[observed], stored=[stored])
+
+    assert outcome.moves == ()
+    assert outcome.absent == (stored.uri,)
+
+
+@pytest.mark.unit
+def test_an_expected_list_of_only_comments_is_refused(tmp_path: Path) -> None:
+    """B1-001: invariant #1's instrument was vacuous on an emptied list.
+
+    *Fails when* a `--check-expected` file that parses to zero URIs is treated
+    as an empty list. *Matters because* `adopt map --check-expected empty.txt`
+    exited `0` and emitted no `expected` payload at all -- a perfect recall floor
+    over nothing, and emptying the file is the cheapest way to silence a real
+    miss, which is the one thing a **named** list exists to make impossible.
+    *No other instrument catches it because* a vacuous check and a passing check
+    produce the same exit code and, before this, the same output.
+    """
+    from adopt_obs import AdoptError, ErrorCode
+
+    listing = tmp_path / "expected.txt"
+    listing.write_text("# why this list exists\n\n#  and nothing else\n", encoding="utf-8")
+
+    with pytest.raises(AdoptError) as refusal:
+        load_expected(listing.read_text(encoding="utf-8"), source=str(listing))
+
+    assert refusal.value.code == ErrorCode.MAP_EXPECTED_LIST_UNREADABLE
+    assert refusal.value.exit_code == 2
+
+
+@pytest.mark.unit
 def test_two_identical_candidates_are_reported_and_nothing_is_written() -> None:
     """*Fails when* an ambiguous pairing is guessed. *Matters because* three
     identical `__init__.py` stubs genuinely share a digest, and a guess mints a

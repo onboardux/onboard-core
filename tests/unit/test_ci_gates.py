@@ -907,6 +907,59 @@ class TestWorkflowsAreRunnable:
             pattern, '              "schema_version": int(os.environ["EXPECTED_SCHEMA_VERSION"]),'
         )
 
+    def test_the_schema_benchmark_applies_the_whole_ladder(self) -> None:
+        """N1 measures the current schema, not whichever tranche is named here.
+
+        *Fails when* `bench/schema_bench.py` writes a migration filename down
+        again. *Matters because* it named `0001__init_v3.sql` in both dialects,
+        so after the Builds 1-10 merge it created a version-3 store, compared
+        `user_version` against `SCHEMA_VERSION` (4) and exited non-zero -- the
+        nightly `bench` on `main` went red reporting a budget breach for a
+        benchmark that never ran, on the first night after a merge that changed
+        nothing about N1. *No other instrument catches it because* `bench` runs
+        nightly and at release only (`bench/RUNNER.md` rule 4), so a hand-kept
+        ladder stays green through every pull request until the day a build adds
+        a tranche.
+
+        The same class as `release.yml`'s four `"schema_version": 3` literals
+        above and as `apply_generated_schema`'s Build 7 defect: a file list
+        beside the emitter is a second source of truth for the schema.
+        """
+        text = (REPO_ROOT / "bench" / "schema_bench.py").read_text(encoding="utf-8")
+        offenders = [
+            f"{number}: {line.strip()}"
+            for number, line in enumerate(text.splitlines(), 1)
+            if ("__init_v3.sql" in line or "__coverage_gap.sql" in line)
+            # Prose describing the defect is not the defect, the distinction
+            # `test_the_release_workflow_writes_down_no_shape_version` already
+            # draws: a scan that fails on its own documentation acquires an
+            # exemption it never needed.
+            and not line.lstrip().startswith(("#", "`", '"'))
+            and "`" not in line
+        ]
+        assert not offenders, (
+            "bench/schema_bench.py names a migration file:\n  "
+            + "\n  ".join(offenders)
+            + "\nRead the ladder from the directory with `_ladder(dialect)`. A named tranche "
+            "measures whatever that one file builds, and reports the difference as a breach."
+        )
+
+    def test_that_ladder_scan_would_see_a_planted_filename(self) -> None:
+        """The control: the scan must be able to find the text it forbids.
+
+        Asserted against the exact lines this module used to carry, so a
+        predicate that quietly stopped matching -- CR-67's
+        broken-state-indistinguishable-from-passing failure -- cannot pass as a
+        clean tree.
+        """
+        planted = '    sql = (MIGRATIONS / "sqlite" / "0001__init_v3.sql").read_text()'
+        assert "__init_v3.sql" in planted
+        assert not planted.lstrip().startswith(("#", "`", '"'))
+        assert "`" not in planted
+
+        prose = "    # This module named `0001__init_v3.sql` in both dialects, which was"
+        assert "`" in prose
+
     def test_binaries_are_packed_from_the_published_wheel(self) -> None:
         """The packer compiles the artefact we ship, not the source tree.
 

@@ -1,10 +1,23 @@
-"""N1 -- schema version 3 creates cleanly in both dialects within the budget.
+"""N1 -- the current schema creates cleanly in both dialects within the budget.
 
 Measures what the requirement actually says: the time to take an empty store to
-schema version 3 by applying the generated initial migration. SQLite is measured
-in process; Postgres is measured through `psql` when `ADOPT_BENCH_PG_DSN` names a
-database, so the open repository does not acquire a Postgres driver dependency it
-has no other use for.
+`SCHEMA_VERSION` by applying **every** generated migration in order. SQLite is
+measured in process; Postgres is measured through `psql` when `ADOPT_BENCH_PG_DSN`
+names a database, so the open repository does not acquire a Postgres driver
+dependency it has no other use for.
+
+**The ladder is read from the directory, never listed here.** This module named
+`0001__init_v3.sql` in both dialects, which was correct while that was the only
+tranche and silently wrong the moment Build 4 emitted `0002__coverage_gap.sql`:
+the benchmark then created a version-3 store, compared its `user_version`
+against `SCHEMA_VERSION` (4) and exited non-zero, so the nightly `bench` on
+`main` went red the first night after the Builds 1-10 merge -- reporting the
+tree as breaching N1 when nothing about N1 had changed. That is
+`plane_store.postgres.connection.apply_generated_schema`'s Build 7 defect and
+`release.yml`'s hard-coded `"schema_version": 3` (T1.12) in a third costume: a
+hand-kept file list is a second source of truth for the schema, and it falls
+behind the first time somebody adds a tranche. `test_ci_gates.py` now fails on a
+migration filename written down in this file.
 
 Reports always. **Asserts only on the reference runner** (`bench/RUNNER.md`
 rule 1). When a dialect cannot be measured it says so and does not quietly
@@ -42,8 +55,28 @@ def _percentile_95(samples: list[float]) -> float:
     return ordered[index]
 
 
+def _ladder(dialect: str) -> list[Path]:
+    """Every generated migration for one dialect, in application order.
+
+    Sorted by filename, which is the order the emitter numbers them in and the
+    order `apply_generated_schema` and `adopt_store.sqlite.store` both apply
+    them. An empty ladder is a refusal rather than a zero-second measurement:
+    a benchmark with nothing to run is the fastest possible benchmark and means
+    nothing at all.
+    """
+    directory = MIGRATIONS / dialect
+    found = sorted(directory.glob("*.sql")) if directory.is_dir() else []
+    if not found:
+        raise SystemExit(
+            f"no generated {dialect} migrations under {directory}. "
+            "Run `uv run adopt-schema generate` -- N1 measures creating the schema, and "
+            "an empty ladder would report a perfect score for building nothing."
+        )
+    return found
+
+
 def _sqlite_samples() -> list[float]:
-    sql = (MIGRATIONS / "sqlite" / "0001__init_v3.sql").read_text(encoding="utf-8")
+    ladder = [path.read_text(encoding="utf-8") for path in _ladder("sqlite")]
     samples: list[float] = []
     with tempfile.TemporaryDirectory() as scratch:
         for iteration in range(ITERATIONS):
@@ -51,7 +84,8 @@ def _sqlite_samples() -> list[float]:
             started = time.perf_counter()
             connection = sqlite3.connect(path)
             try:
-                connection.executescript(sql)
+                for sql in ladder:
+                    connection.executescript(sql)
                 connection.commit()
             finally:
                 connection.close()
@@ -68,7 +102,7 @@ def _sqlite_samples() -> list[float]:
             if version != SCHEMA_VERSION:
                 raise SystemExit(
                     f"the created store reports user_version {version}, not {SCHEMA_VERSION}. "
-                    "The benchmark is measuring something that is not schema version 3."
+                    "The benchmark is measuring something that is not the current schema."
                 )
     return samples
 
@@ -81,7 +115,7 @@ def _postgres_samples(dsn: str) -> list[float]:
             "measured. Install the client or unset the variable -- do not let the run report "
             "a SQLite-only number as if it covered both dialects."
         )
-    sql_path = MIGRATIONS / "postgres" / "0001__init_v3.sql"
+    ladder = _ladder("postgres")
     samples: list[float] = []
     for iteration in range(ITERATIONS):
         schema = f"bench_{iteration}"
@@ -92,21 +126,22 @@ def _postgres_samples(dsn: str) -> list[float]:
             check=True,
             capture_output=True,
         )
-        subprocess.run(
-            [
-                psql,
-                dsn,
-                "-v",
-                "ON_ERROR_STOP=1",
-                "-q",
-                "-c",
-                f"SET search_path TO {schema};",
-                "-f",
-                str(sql_path),
-            ],
-            check=True,
-            capture_output=True,
-        )
+        for sql_path in ladder:
+            subprocess.run(
+                [
+                    psql,
+                    dsn,
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-q",
+                    "-c",
+                    f"SET search_path TO {schema};",
+                    "-f",
+                    str(sql_path),
+                ],
+                check=True,
+                capture_output=True,
+            )
         samples.append(time.perf_counter() - started)
     return samples
 

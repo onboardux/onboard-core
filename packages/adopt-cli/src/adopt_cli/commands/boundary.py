@@ -155,7 +155,7 @@ def boundary(
     if scope is None:
         view = _unpersisted_view(decision, typed_archetype)
     else:
-        with open_configured_store(store, read_only=False) as handle:
+        with open_configured_store(store, read_only=False, verb="boundary --scope") as handle:
             resolved = handle.scope().resolve(ScopePath.parse(scope))
             view = declare_boundary(
                 handle.boundary(),

@@ -8,19 +8,56 @@ from pathlib import Path
 from typing import Final
 
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+#: The exact set the release publishes. Frozen on purpose: the release pipeline
+#: fails closed on anything it does not name, so a package cannot reach PyPI by
+#: appearing in the workspace.
+#:
+#: **`adopt-map` was added for Build 1**, which is the ratification v6.1 §2.1
+#: amendment **A2** anticipates -- *"extending the frozen release distribution
+#: set is a one-line owner ratification at the first release including Build
+#: 1"*. Worth knowing that A2 undersells when it bites: `artifact-licence`
+#: asserts this count on **every pull request**, not only at release, so Build 1
+#: could not go green without it.
+#:
+#: **`adopt-knowledge` was added for Build 2** on exactly that precedent and
+#: under the same A2 ratification, carried by the owner's approval of the Build 2
+#: sprint plan. It was the one addition this block never recorded, found by the
+#: production-readiness audit (N2): the set was right and its provenance had a
+#: hole, which is the half of a ratification that matters when somebody later
+#: asks who approved twenty.
+#:
+#: **`adopt-ask` was added for Build 3** on exactly that precedent and under the
+#: same A2 ratification, carried by the owner's approval of the Build 3 sprint
+#: plan (decision D6).
+#:
+#: **`adopt-handover` was added for Build 4** on the same precedent and the same
+#: A2 ratification, carried by the owner's approval of the Build 4 sprint plan.
+#:
+#: **`adopt-probe` was added for Build 5** on the same precedent and the same A2
+#: ratification, carried by the owner's approval of the Build 5 sprint plan.
+#:
+#: **Twenty distributions, ratified as the canonical release set for `0.4.0` by
+#: the owner on 2026-09-03 (OD-4).** That ratification covers the *set* and the
+#: target version; it is not authorization to push the tag or publish, which is
+#: a separate decision on the strict dry run's evidence.
 CANONICAL_DISTRIBUTIONS: Final[frozenset[str]] = frozenset(
     {
         "adopt-agent",
+        "adopt-ask",
         "adopt-cli",
         "adopt-const",
         "adopt-coverage",
         "adopt-detect",
         "adopt-export",
         "adopt-freshness",
+        "adopt-handover",
         "adopt-identity",
+        "adopt-knowledge",
+        "adopt-map",
         "adopt-model",
         "adopt-obs",
         "adopt-policy",
+        "adopt-probe",
         "adopt-schema",
         "adopt-scope",
         "adopt-store",

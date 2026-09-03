@@ -90,6 +90,7 @@ _HEX_DIGITS: Final[frozenset[str]] = frozenset("0123456789abcdefABCDEF")
 _TRIPLET_LENGTH: Final[int] = 3
 
 #: firm, engagement, system, environment, kind, namespace, then key.
+# const-sync: ok -- the count of scope segments in a URI, not a schema version.
 _SCOPE_SEGMENTS: Final[int] = 4
 _FIXED_SEGMENTS: Final[int] = 6
 _MIN_SEGMENTS: Final[int] = _FIXED_SEGMENTS + 1

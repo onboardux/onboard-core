@@ -15,6 +15,16 @@ on:
   # changes it silently. Without this trigger the only way to re-read those four
   # is to push a commit, which makes the measurement a side effect of an
   # unrelated change. A ratification gate needs to be re-runnable on demand.
+  #
+  # **Three jobs skipped on this trigger for the whole of its life** (T1.10).
+  # `constants-sync`, `error-registry-sync` and `conformance-matrix` guard
+  # themselves against fork and Dependabot pull requests, and their event
+  # disjunction admitted only `push` and `pull_request` -- so a dispatch, which
+  # exists precisely to re-read the conformance matrix's elapsed time, skipped
+  # the job that measures it. Run 33657338875 on the build branch: 26 success,
+  # 3 skipped. A dispatch can only be started by a collaborator with write
+  # access, so it never runs fork code and the fork/Dependabot protections below
+  # are unchanged.
   workflow_dispatch:
 
 permissions:
@@ -32,7 +42,7 @@ env:
 
 jobs:
   lint:
-    name: lint (ruff, mypy --strict, twelve import contracts)
+    name: lint (ruff, mypy --strict, thirteen import contracts)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,6 +81,7 @@ jobs:
         vars.ADOPT_PACK_REPOSITORY != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository &&
@@ -108,6 +119,7 @@ jobs:
         vars.ADOPT_PACK_REPOSITORY != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository &&
@@ -268,10 +280,12 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-packages
-      # Fifteen Apache-2.0 distributions were one dispatch from PyPI carrying no
-      # licence at all: no `License-Expression`, no `License-File`, and neither
-      # the Apache text nor the NOTICE inside the wheel or the sdist. Fifteen
-      # PyPI pages would have read "License: UNKNOWN".
+      # Every Apache-2.0 distribution in the workspace was one dispatch from
+      # PyPI carrying no licence at all: no `License-Expression`, no
+      # `License-File`, and neither the Apache text nor the NOTICE inside the
+      # wheel or the sdist. Every PyPI page would have read "License: UNKNOWN".
+      # (Fifteen at the time; the count is `release_context`'s and is not
+      # repeated here.)
       #
       # `licence-gate` above holds 32 **third-party** distributions to seven
       # audited fields each and never looked at ours -- the same
@@ -369,6 +383,7 @@ jobs:
         vars.ADOPT_CONFORMANCE_ADAPTERS != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&
             github.event.pull_request.head.repo.full_name == github.repository &&
@@ -439,6 +454,357 @@ jobs:
           name: metrics-conformance
           path: ci-metrics.jsonl
           if-no-files-found: ignore
+
+  map-journey:
+    name: map-journey (the Build 1 demo, on two real repositories)
+    runs-on: ubuntu-24.04
+    # **Build 1's Definition of Done, executed.** v6.1 §4 R1 makes every build
+    # end in a verb an FDE runs on a real engagement and gets value from that
+    # day, and this job is the only instrument that can say whether that is
+    # true: it clones two real repositories at pinned commits and runs v6.1 §6's
+    # demo against them line by line.
+    #
+    # **Its own job, not a step in `unit`.** It clones from the network and maps
+    # ~400 files across two trees, and putting that inside the pytest jobs would
+    # spend the `CI_UNIT_MAX_MINUTES` ratchet on work that is not a unit test --
+    # the same argument that keeps `packaged-artifact` outside them.
+    #
+    # **The pins are the point.** A curated expected-identities list is true of
+    # one tree. `test_map_journey` reads the commit from `tests/reference/*/
+    # repo.json` and refuses a checkout that is not at it, so a clone that
+    # silently drifted to a newer default branch fails loudly instead of passing
+    # while measuring a repository nobody curated.
+    #
+    # **The CLI under test stays offline.** The network here belongs to `git
+    # clone` and to `uv`; `adopt map` opens no socket, and nothing in this job
+    # passes `--allow-network`.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      # One clone per manifest, each at its recorded commit. `--filter=blob:none`
+      # rather than `--depth 1`: a shallow clone cannot check out an arbitrary
+      # commit, and pinning is the whole reason this job exists.
+      - name: Clone each reference repository at its pinned commit
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/reference"
+          for manifest in tests/reference/*/repo.json; do
+            slug=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['slug'])" "$manifest")
+            url=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['url'])" "$manifest")
+            commit=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['commit'])" "$manifest")
+            echo "--- $slug @ $commit"
+            git clone --quiet --filter=blob:none "$url" "${RUNNER_TEMP}/reference/${slug}"
+            git -C "${RUNNER_TEMP}/reference/${slug}" checkout --quiet "$commit"
+          done
+      # **Fails on any extractor `failed` outcome** (B-08), on any missing
+      # curated identity (invariant #1), on a second run that writes, and on a
+      # planted miss that does not exit 4. The rules live in the test, not in
+      # this file: a gate written as shell here is a gate nobody writes a
+      # negative test for.
+      #
+      # **A skip is not a pass**, and `ADOPT_REFERENCE_REPOS_REQUIRED` is what
+      # makes that true here. The journey skips when the clones are absent,
+      # which is the ordinary state of a developer machine and must never be the
+      # state of this job -- a silently skipped Definition of Done is exactly
+      # the `0/0 covered (100%)` failure CR-67 found in a gate that had gone
+      # blind. With the flag set, every one of those skips is a failure.
+      #
+      # That rule was shell for one run: it counted
+      # `pytest --collect-only -q | grep -c "::test_"`, and `-q` prints a
+      # per-file summary rather than test ids, so it counted zero and failed a
+      # job whose journey had just passed on both repositories. It now lives in
+      # the test, where a negative case can drive it.
+      - name: The v6.1 §6 Build 1 demo, run literally on both repositories
+        env:
+          ADOPT_REFERENCE_REPO_ROOT: ${{ runner.temp }}/reference
+          ADOPT_REFERENCE_REPOS_REQUIRED: "1"
+        run: uv run pytest tests/e2e/test_map_journey.py -v
+
+  knowledge-journey:
+    name: knowledge-journey (the Build 2 demo, on two real repositories)
+    runs-on: ubuntu-24.04
+    # **Build 2's Definition of Done, executed.** Same shape and same argument as
+    # `map-journey` one job above: v6.1 §4 R1 makes every build end in a verb an
+    # FDE runs on a real engagement, and this clones two real repositories at
+    # pinned commits and runs v6.1 §6's Build 2 demo against them line by line --
+    # ingest, harvest, the one review queue, gaps, and the G2 move check.
+    #
+    # **Its own job rather than a step in `unit`.** It clones from the network,
+    # maps two trees and mines forty commits in each; putting that inside the
+    # pytest jobs would spend the `CI_UNIT_MAX_MINUTES` ratchet on work that is
+    # not a unit test.
+    #
+    # **A skip is not a pass.** `ADOPT_REFERENCE_REPOS_REQUIRED` turns every
+    # missing-clone skip into a failure, which is the whole of what makes this
+    # job evidence -- the rule lives in the test, where a negative case drives
+    # it, and `test_map_journey` owns that negative case for both journeys.
+    #
+    # **Full history, not a shallow clone.** `--filter=blob:none` fetches every
+    # commit and no blobs; `--depth 1` would leave `adopt harvest --since` with
+    # one commit to mine and this job green over nothing.
+    #
+    # **The CLI stays offline.** The network belongs to `git clone` and to `uv`.
+    # Nothing here passes `--allow-network`, and harvest refuses it anyway.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Clone each reference repository at its pinned commit
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/reference"
+          for manifest in tests/reference/*/repo.json; do
+            slug=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['slug'])" "$manifest")
+            url=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['url'])" "$manifest")
+            commit=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['commit'])" "$manifest")
+            echo "--- $slug @ $commit"
+            git clone --quiet --filter=blob:none "$url" "${RUNNER_TEMP}/reference/${slug}"
+            git -C "${RUNNER_TEMP}/reference/${slug}" checkout --quiet "$commit"
+          done
+      # The journey runs `git mv` inside the clone and moves the file back in a
+      # `finally`. A committer identity is configured because a repository with
+      # none refuses some git operations on a fresh runner, and the journey must
+      # fail on a defect rather than on a missing `user.email`.
+      - name: Give each clone a committer identity for the G2 move
+        run: |
+          set -euo pipefail
+          for slug in $(ls "${RUNNER_TEMP}/reference"); do
+            git -C "${RUNNER_TEMP}/reference/${slug}" config user.name "adopt ci"
+            git -C "${RUNNER_TEMP}/reference/${slug}" config user.email "ci@example.invalid"
+          done
+      - name: The v6.1 §6 Build 2 demo, run literally on both repositories
+        env:
+          ADOPT_REFERENCE_REPO_ROOT: ${{ runner.temp }}/reference
+          ADOPT_REFERENCE_REPOS_REQUIRED: "1"
+        run: uv run pytest tests/e2e/test_knowledge_journey.py -v
+
+  ask-journey:
+    name: ask-journey (the Build 3 demo, verbatim)
+    runs-on: ubuntu-24.04
+    # **Build 3's Definition of Done, executed.** v6.1 §6's Build 3 demo block,
+    # line for line: a KNOWN answer citing revisions and provenance, an honest
+    # UNKNOWN, escalate with consent, `adopt answer`, the re-ask that now serves
+    # KNOWN, and a STALE answer naming its cause after a real `git mv` plus a
+    # real `adopt map`.
+    #
+    # **A fixture repository rather than a pinned clone**, unlike the two jobs
+    # above, and the difference is deliberate. This is a test of the three-way
+    # *branch*, so it needs a corpus where the right answer is known: one
+    # document that answers the refund question and none that answers the
+    # key-rotation one. On somebody else's README, UNKNOWN would depend on what
+    # they happened not to write about. It therefore clones nothing and needs no
+    # network, which is also why it is fast enough to run on every PR.
+    #
+    # **A git identity is configured** because the journey runs `git init`,
+    # `git commit` and `git mv` inside a temporary checkout, and a runner with no
+    # global identity refuses the commit -- which would fail this job for a
+    # reason that is not a defect.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Give the runner a committer identity for the journey's own checkout
+        run: |
+          git config --global user.name "adopt ci"
+          git config --global user.email "ci@example.invalid"
+      # No adapter is configured anywhere in this job, and the journey asserts
+      # that: R3 makes the no-model mode the product rather than a fallback, so
+      # the demo has to pass with nothing to call.
+      - name: The v6.1 §6 Build 3 demo, run literally
+        run: uv run pytest tests/e2e/test_ask_journey.py -v
+
+  pack-journey:
+    name: pack-journey (the Build 4 demo, verbatim)
+    runs-on: ubuntu-24.04
+    # **Build 4's Definition of Done, executed.** v6.1 §6's Build 4 demo block:
+    # a pack assembled per audience with every section stamped and dated, the
+    # same revisions rendering byte-identical bytes, the lineage sidecar
+    # resolving to real revisions, and a gap disposition surviving an
+    # `adopt map` rerun.
+    #
+    # **All five demo lines run here** as of S4.2, including `--draft-missing`,
+    # the review confirm and `--format docx`.
+    #
+    # **The drafting leg opens no socket.** It drives the real `Runner` against
+    # the recorded fake adapter (kind `test`), configured per-test through the
+    # environment -- so the seam, the shipped prompt, the grounding check and the
+    # whole write path are exercised while the only thing scripted is the model's
+    # reply. No credential exists in this job and none is needed.
+    #
+    # **No adapter is configured for the job itself**, which is what keeps R3
+    # honest: the tests that assert a complete pack with no model in sight run in
+    # the same job as the ones that assert drafting works, so a change making the
+    # model mandatory goes red here rather than in the field.
+    #
+    # **A fixture repository rather than a pinned clone**, for `ask-journey`'s
+    # reason: the assertions are about which knowledge a section selects, which
+    # needs a corpus whose right answer is known. It clones nothing, needs no
+    # network, and runs on every PR.
+    #
+    # **A git identity is configured** because the journey runs `git init` and
+    # `git commit` in a temporary checkout, and a runner with no global identity
+    # refuses the commit -- failing the job for something that is not a defect.
+    #
+    # **Linux is where the line-ending assertion earns its keep.** The journey
+    # writes its fixture document with CRLF on purpose, so the renderer's
+    # normalisation is exercised here and not only on a Windows developer
+    # machine.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Give the runner a committer identity for the journey's own checkout
+        run: |
+          git config --global user.name "adopt ci"
+          git config --global user.email "ci@example.invalid"
+      # Pandoc is the demo's fourth line and is **installed here rather than
+      # vendored**: it is GPL-2.0-or-later, so `03` §7.3 permits it only across a
+      # process boundary, and a copy inside our artefact would be exactly the
+      # linking the policy forbids. `subprocess-deps.toml` declares the
+      # invocation site; this step is what makes the DOCX assertion run rather
+      # than skip. Typst is deliberately **not** installed: PDF is FR surface
+      # behind the identical wrapper and the demo does not name it, so its test
+      # skips here and the job stays a minute shorter.
+      - name: Install pandoc, the DOCX converter the demo's fourth line needs
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
+      - name: The v6.1 §6 Build 4 demo, run literally
+        run: uv run pytest tests/e2e/test_pack_journey.py -v
+      # The drafting invariant, separately and by name. It is in the unit suite
+      # the `unit` job already runs, and it is named again here because a job
+      # called "the Build 4 demo" that could go green while invariant #7 was
+      # broken would be a demo of the wrong thing.
+      - name: Invariant #7 for drafts -- ungrounded means nothing is written
+        run: uv run pytest tests/unit/test_drafting.py tests/unit/test_pack_derived.py -v
+
+  handover-journey:
+    name: handover-journey (the Build 9 demo, verbatim)
+    runs-on: ubuntu-24.04
+    # **Build 9's Definition of Done, executed.** v6.1 §6's Build 9 demo block:
+    # the six recorded steps, `adopt handover status` describing every one of
+    # them, and the two honesty rules -- an event cannot open (or close) leaving
+    # the system unowned, and unresolved items transfer with named owners rather
+    # than being closed to look complete.
+    #
+    # **The client-side check is why this job exists rather than a unit test.**
+    # One case imports the delivered bundle into a fresh store, re-exports it and
+    # recomputes the acceptance digest from those bytes -- with a `written_at`
+    # that necessarily differs. That is exactly what a client does to verify what
+    # they were handed, and nothing short of a real export round trip proves it.
+    #
+    # **A fixture repository rather than a pinned clone**, for `pack-journey`'s
+    # reason: the assertions are about which identities are uncovered and which
+    # knowledge a section selects, which needs a corpus whose right answer is
+    # known. It clones nothing, needs no network, and runs on every PR.
+    #
+    # **No pandoc and no adapter.** The handover emits Markdown only and calls no
+    # model on any path, so this job installs nothing beyond the workspace --
+    # which is itself the check that R3's no-model mode is complete for the verb
+    # that closes an engagement.
+    #
+    # **A git identity is configured** because the journey runs `git init` and
+    # `git commit` in a temporary checkout, and a runner with no global identity
+    # refuses the commit -- failing the job for something that is not a defect.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Give the runner a committer identity for the journey's own checkout
+        run: |
+          git config --global user.name "adopt ci"
+          git config --global user.email "ci@example.invalid"
+      - name: The v6.1 §6 Build 9 demo, run literally
+        run: uv run pytest tests/e2e/test_handover_journey.py -v
+      # The transfer's transaction, named separately. It is in the unit suite the
+      # `unit` job already runs, and it is named again here because a job called
+      # "the Build 9 demo" that could go green while a refused close left an
+      # ownership assignment behind would be a demo of the wrong thing.
+      - name: The two honesty rules, by name
+        run: uv run pytest tests/unit/test_handover_transfer.py -v
+
+  probe-journey:
+    name: probe-journey (the v6.1 Build 5 demo, end to end)
+    runs-on: ubuntu-24.04
+    # **The proxy, never the gate.** v6.1 §10 makes G1 a safe repeatable probe
+    # against a *real client AI deployment*, which is a manual owner action no
+    # runner can perform. What this job proves is the machinery: a probe
+    # validated, executed against a loopback fixture under its declared
+    # allow-list and budgets, versioned as a baseline, re-run against a changed
+    # response, diffed with the change named, and the contradiction surfaced in
+    # `adopt gaps` and in the client's pack. The real-system run is recorded in
+    # the session log when it happens; this job cannot stand in for it.
+    #
+    # A job of its own for the reason the other four journeys have one: the
+    # `unit` job runs `-m unit` and nothing runs `-m e2e`, so a demo not named
+    # here is a demo nobody runs.
+    #
+    # The model step goes through the real `adopt_agent.Runner` against the
+    # `fake_recorded` adapter (kind `test`, permitted offline), so the seam, the
+    # skill and the budget are exercised with no network, no credential and no
+    # provider.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Give the runner a committer identity for the journey's own checkout
+        run: |
+          git config --global user.name "adopt ci"
+          git config --global user.email "ci@example.invalid"
+      - name: The v6.1 §6 Build 5 demo, run literally
+        run: uv run pytest tests/e2e/test_probe_journey.py -v
+      # The two invariants this build adds, named separately. They are in the
+      # unit suite the `unit` job already runs, and they are named again here
+      # because a job called "the Build 5 demo" that could go green while
+      # `probe_changed` was being reported as drift -- or while an unverified
+      # draft could raise a conflict -- would be a demo of the wrong thing.
+      - name: The revision guard and Bet 4's honesty rule, by name
+        run: uv run pytest tests/unit/test_probe_baseline_diff.py tests/unit/test_probe_conflict.py -v
+
+  refresh-journey:
+    name: refresh-journey (the v6.1 Build 6 demo, verbatim)
+    runs-on: ubuntu-24.04
+    # **Build 6's Definition of Done, executed** -- and until T1.9 it ran in no
+    # job at all. `tests/e2e/test_refresh_journey.py` had existed since S6.1
+    # with fifteen cases, `grep -rn refresh .github/` returned nothing, and no
+    # job runs `-m e2e`: v6.1 R1 makes every build end in a verb an FDE runs on
+    # a real engagement, and the one instrument that proves Build 6's is that
+    # verb had never executed on a runner.
+    #
+    # A job of its own, for the reason the other six journeys have one. No
+    # `-m e2e` catch-all: a named job per journey is what makes a *missing*
+    # journey visible in the job list, and a catch-all would have hidden this
+    # one for another four builds.
+    #
+    # It needs nothing the others do: no clone, no pandoc, no git identity, no
+    # network. The probe half runs against a loopback HTTP server the test
+    # starts itself, and the artifact half re-maps a tree it built.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: The v6.1 6 Build 6 demo, run literally
+        run: uv run pytest tests/e2e/test_refresh_journey.py -v
+      # Build 6's two invariants, named separately. They are in the unit suite
+      # the `unit` job already runs, and they are named again here because a job
+      # called "the Build 6 demo" that could go green while propagation staled
+      # the wrong bindings -- or while the classification cascade returned the
+      # wrong class -- would be a demo of the wrong thing.
+      - name: Propagation and the classification matrix, by name
+        run: uv run pytest tests/unit/test_change_records.py tests/unit/test_map_diff.py -v
 
   golden-g0:
     name: golden-g0 (export -> import -> export is byte-identical)
@@ -560,6 +926,49 @@ jobs:
           fi
           uv run python scripts/plant_violation.py --revert
           echo "planted provider-SDK import detected -- gate is live"
+      # Build 5's new irreversible risk class (v6.1 R6 permits a
+      # planted-violation-grade instrument for exactly this). `probe-io` is the
+      # whole safety argument for dropping v4's sandbox: probes are declarative
+      # data and only `adopt_probe.runner` can reach the network, so a probe
+      # cannot call a host its manifest never declared. The plant goes into a
+      # *submodule* rather than the package root, which is CR-67's lesson --
+      # a self-test that plants where discovery is easiest proves nothing about
+      # the discovery bug it is meant to catch.
+      - name: Prove the gate still rejects probe I/O outside the runner
+        run: |
+          set -euo pipefail
+          uv run python scripts/plant_violation.py --kind probe-io
+          if uv run lint-imports --config importlinter.ini; then
+            echo "::error::a planted probe socket outside adopt_probe.runner was NOT detected"
+            uv run python scripts/plant_violation.py --revert
+            exit 1
+          fi
+          uv run python scripts/plant_violation.py --revert
+          echo "planted probe I/O detected -- gate is live"
+      # T1.1's gate, and the class it guards has already returned once: two
+      # `typer.BadParameter` refusals in `commands/pack.py` were diagnosed, and
+      # a third was then added by a later build to the same file while
+      # `commands/knowledge.py` -- one directory away -- carried a docstring
+      # explaining why it must not be. The installed typer vendors its own click
+      # under `typer._click`, so such a raise is not a `click.ClickException`:
+      # it escapes `main()` as exit 1 with a rich traceback and an empty stdout,
+      # where contracts 13 says 2 or 3 with an envelope.
+      #
+      # A unit test rather than a fourteenth import contract, because the rule
+      # is about a *raise* and not about a dependency, and `03` 5.1's frozen set
+      # is extended only for a new irreversible risk class (v6.1 R6). The plant
+      # goes into a `commands/` submodule for CR-67's reason.
+      - name: Prove the gate still rejects a planted typer.BadParameter refusal
+        run: |
+          set -euo pipefail
+          uv run python scripts/plant_violation.py --kind bad-parameter
+          if uv run pytest tests/unit/test_cli_usage_errors.py -q -k parser_exception; then
+            echo "::error::a planted typer.BadParameter refusal in a command module was NOT detected"
+            uv run python scripts/plant_violation.py --revert
+            exit 1
+          fi
+          uv run python scripts/plant_violation.py --revert
+          echo "planted typer.BadParameter refusal detected -- gate is live"
       - name: The tree is exactly as it was found
         run: git diff --exit-code
       # The sprint plan's Final Output Validation greps both repositories.

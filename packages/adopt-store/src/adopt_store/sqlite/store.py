@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Final
 
-from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, format_timestamp
+from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, format_timestamp, get_logger
 from adopt_store.sqlite.connection import (
     connect,
     read_user_version,
@@ -32,6 +32,8 @@ from adopt_store.sqlite.connection import (
 )
 
 __all__ = ["SqliteStore", "split_statements"]
+
+_log = get_logger(__name__)
 
 _PRAGMA: Final[str] = "PRAGMA"
 #: `user_version` is stored in the database header and is journaled, so it
@@ -136,12 +138,29 @@ class SqliteStore:
         self._depth = 1
         try:
             yield
+            self._connection.execute("COMMIT;")
         except BaseException:
-            self._connection.execute("ROLLBACK;")
-            self._depth = 0
+            self._rollback_after_failure()
             raise
-        self._connection.execute("COMMIT;")
-        self._depth = 0
+        finally:
+            self._depth = 0
+
+    def _rollback_after_failure(self) -> None:
+        """Roll back, and never let the rollback replace what caused it.
+
+        A `COMMIT` that fails leaves SQLite in one of two states: still inside
+        the transaction (`SQLITE_BUSY` and the deferred-constraint failures), or
+        already rolled back for us (`SQLITE_FULL`, `SQLITE_IOERR`). The first
+        needs this `ROLLBACK`; the second raises "cannot rollback - no
+        transaction is active" from it. Letting that second error propagate
+        would hand the caller a message about rollback when what actually failed
+        was their commit, so it is logged and dropped -- the state it reports is
+        the state this method exists to reach.
+        """
+        try:
+            self._connection.execute("ROLLBACK;")
+        except sqlite3.Error as exc:
+            _log.warn("store_rollback_after_failure_failed", error_type=type(exc).__name__)
 
     def require_writable(self) -> None:
         """Raise ``STORE_READ_ONLY`` before a write reaches a read-only store.
@@ -210,10 +229,14 @@ class SqliteStore:
                         format_timestamp(self._clock.now()),
                     ),
                 )
+                # Inside the `try` for the same reason as `transaction()`: a
+                # `COMMIT` that raises from outside one leaves the transaction
+                # open, and this is the method whose whole promise is that a
+                # failed migration leaves nothing behind.
+                self._connection.execute("COMMIT;")
             except Exception:
-                self._connection.execute("ROLLBACK;")
+                self._rollback_after_failure()
                 raise
-            self._connection.execute("COMMIT;")
 
     def append_schema_meta(self, schema_version: int, export_version: int, written_by: str) -> None:
         """Append one `schema_meta` row — never update one (CR-04).

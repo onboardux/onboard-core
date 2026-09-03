@@ -25,6 +25,7 @@ from typing import Any, Final, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from adopt_const import INITIAL_SCHEMA_VERSION
 from adopt_obs import AdoptError, ErrorCode
 from adopt_schema.assets import schema_dir
 
@@ -171,6 +172,34 @@ class Manifest(_Strict):
 
     def exportable_tables(self) -> list[tuple[str, Table]]:
         return [(n, t) for n, t in self.ordered_tables() if t.exportable]
+
+    def tranche(self, version: int) -> list[tuple[str, Table]]:
+        """The tables the migration producing `version` creates, in FK order.
+
+        The initial migration carries everything at or below
+        `INITIAL_SCHEMA_VERSION`, because this line began at 3 and no earlier
+        version exists to have created anything. Every version after that
+        carries **exactly** what it introduced.
+
+        That split is what keeps `0001__init_v3.sql` byte-identical when a build
+        adds a table. The alternative -- one file regenerated to hold the whole
+        schema -- would either rewrite a migration that has already run on real
+        stores, or leave existing stores with no pending migration and a missing
+        table they discover at the first query (the CR-53 failure, one layer up).
+        """
+        if version <= INITIAL_SCHEMA_VERSION:
+            return [(n, t) for n, t in self.ordered_tables() if t.since <= version]
+        return [(n, t) for n, t in self.ordered_tables() if t.since == version]
+
+    def migration_versions(self) -> list[int]:
+        """Every schema version that needs a migration file, in application order.
+
+        Always begins with the initial version, then each distinct `since` above
+        it. A version that introduced no table produces no file, which is
+        correct: migrations exist to create things.
+        """
+        later = {t.since for t in self.tables.values() if t.since > INITIAL_SCHEMA_VERSION}
+        return [INITIAL_SCHEMA_VERSION, *sorted(later)]
 
 
 def _dependencies(manifest: Manifest) -> dict[str, set[str]]:
@@ -335,6 +364,30 @@ def _check_enum_identifiers(manifest: Manifest) -> Iterator[str]:
             yield f"enum name {name!r} is not a plain lowercase identifier."
 
 
+def _check_since(manifest: Manifest) -> Iterator[str]:
+    """Nothing is introduced at a version the manifest itself has not reached.
+
+    A `since` above `schema_version` names a migration that is never generated,
+    so the table would exist in the manifest, in the generated models and in the
+    export schema -- and in no database. That is silent until the first query
+    against it, and it looks exactly like a packaging fault rather than a
+    manifest edit that forgot to bump the version.
+    """
+    for name, table in manifest.tables.items():
+        if table.since > manifest.schema_version:
+            yield (
+                f"table {name!r} declares since {table.since}, above the manifest's "
+                f"schema_version {manifest.schema_version}. No migration would create it. "
+                "Bump schema_version in the same edit that introduces the table."
+            )
+    for name, enum in manifest.enums.items():
+        if enum.since > manifest.schema_version:
+            yield (
+                f"enum {name!r} declares since {enum.since}, above the manifest's "
+                f"schema_version {manifest.schema_version}."
+            )
+
+
 def _validate(manifest: Manifest) -> None:
     problems: list[str] = []
     for name, table in manifest.tables.items():
@@ -344,6 +397,7 @@ def _validate(manifest: Manifest) -> None:
         problems.extend(_check_scope(name, table))
     problems.extend(_check_index_name_uniqueness(manifest))
     problems.extend(_check_enum_identifiers(manifest))
+    problems.extend(_check_since(manifest))
 
     if problems:
         raise _invalid(

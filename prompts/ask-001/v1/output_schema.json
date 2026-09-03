@@ -1,0 +1,9 @@
+{
+  "type": "object", "additionalProperties": false,
+  "required": ["answer_md", "cited_revision_ids"],
+  "properties": {
+    "answer_md":          { "type": "string", "maxLength": 4000 },
+    "cited_revision_ids": { "type": "array", "maxItems": 8,
+                            "items": { "type": "string", "minLength": 1 } }
+  }
+}

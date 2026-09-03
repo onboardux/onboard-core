@@ -40,6 +40,7 @@ from adopt_export import (
 from adopt_obs import AdoptError, ErrorCode, ManualClock
 from adopt_store import open_store
 from adopt_store.api import SqliteStoreHandle, writer_identity
+from adopt_store.sqlite.records import SqliteChangeRecords
 from tests.golden.fixture import FIXTURE_START, build_fixture_store
 
 pytestmark = pytest.mark.unit
@@ -274,3 +275,55 @@ def test_export_refuses_a_non_empty_directory(
     assert caught.value.code is ErrorCode.EXPORT_TARGET_NOT_EMPTY
     # The bundle already there is intact.
     assert read_bundle(bundle).export_version == MAX_SUPPORTED_EXPORT_VERSION
+
+
+def test_a_global_row_in_the_target_does_not_refuse_the_import(
+    bundle: Path, target: SqliteStoreHandle, clock: ManualClock
+) -> None:
+    """*Fails when* a table that belongs to no tenant counts as tenant occupancy.
+
+    *Matters because* the emptiness check asks whether *this tenant's* canon is
+    empty, and it used to ask whether the database held any exportable row at
+    all. On a single-tenant local store those coincide; on `adopt-plane`'s shared
+    Postgres they do not. `classifier_version` is `scope_level: global`, a global
+    table gets no generated row-level-security policy, and every tenant session
+    therefore counts every row in it -- so **one** such row left by the first
+    tenant refused `POST /v1/activate` for every tenant after it (CR-76).
+
+    *No other instrument catches it because* the refusal above asserts the
+    happy-path mistake -- importing the same bundle twice -- and passes whether
+    the check is scoped or not. Only a target holding a global row **and nothing
+    else** can tell the two readings apart.
+    """
+    # Written through the records class Build 6's cascade uses, rather than
+    # hand-inserted: the row this test is about is the one the product itself
+    # puts into every store that has classified anything.
+    changes = SqliteChangeRecords(target.backend)
+    with changes.transaction():
+        changes.ensure_classifier_version(
+            version_label="deterministic-cascade@1",
+            training_data_categories="none",
+            released_at=clock.now(),
+        )
+    records = target.import_records()
+    assert records.row_count("classifier_version") == 1
+    assert records.row_count("firm") == 0, "the tenant's own canon is still empty"
+
+    applied = apply_bundle(records, bundle)
+
+    assert applied.export_version == MAX_SUPPORTED_EXPORT_VERSION
+    assert records.row_count("firm") == 1
+    # The bundle's own row was imported rather than skipped: a tenant's
+    # `classification` rows carry a foreign key to the `classifier_version` id
+    # **their** bundle was written with, and skipping the insert would leave
+    # those references dangling.
+    assert records.row_count("classifier_version") == 1 + _bundle_classifier_rows(bundle)
+
+
+def _bundle_classifier_rows(bundle: Path) -> int:
+    """How many `classifier_version` rows the bundle carries, read from its manifest."""
+    payload = _read_manifest(bundle)
+    for entry in payload["tables"]:  # type: ignore[union-attr]
+        if entry["name"] == "classifier_version":
+            return int(entry["rows"])
+    return 0

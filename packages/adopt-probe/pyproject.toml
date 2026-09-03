@@ -1,0 +1,55 @@
+[project]
+name = "adopt-probe"
+version = "0.4.0"
+description = "adopt probe: declarative behavioural probes, executed safely and recorded. Build 5."
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "The Adopt Authors" }]
+# **This package contains the only code in the programme permitted to open a
+# socket for a probe**, and the `probe-io` import contract enforces that against
+# `adopt_probe.runner` by name. Everything else here is pure: the manifest module
+# parses and validates, the ports module declares what the runner is handed.
+#
+# `adopt-store` is deliberately **absent** (CR-34, CR-37, and `adopt-export`'s
+# precedent): `ProbeRunRecords` is declared here, in the consumer, and realized
+# by `SqliteProbeRunRecords` in `adopt-store`. Depending on `adopt-store` would
+# pull `sqlite3` into this package's import graph through `adopt_store/__init__`
+# -> `api` -> `sqlite` and break `no-raw-sqlite`, which lists this package as a
+# source module.
+#
+# `adopt-agent` is present and load-bearing: a `prompt` step is a model call, and
+# v6.1 §8 permits exactly one door for one. No provider SDK and no HTTP client
+# appear here -- the `http` step uses the standard library over the operating
+# system's trust store, which is CR-46's decision applied a second time rather
+# than a new one (a `certifi`-bearing client is refused `in-binary` by the
+# licence gate).
+dependencies = [
+    "adopt-agent",
+    "adopt-const",
+    "adopt-identity",
+    "adopt-model",
+    "adopt-obs",
+    "adopt-policy",
+    "pyyaml>=6.0.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/onboardux/onboard-core"
+Source = "https://github.com/onboardux/onboard-core"
+Issues = "https://github.com/onboardux/onboard-core/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/adopt_probe"]
+
+# Apache-2.0 4(a) and 4(d): the licence and the NOTICE travel with every
+# redistribution. `uv build` builds the wheel from the sdist, so placing the
+# repository root's single authored copy here puts it in both artefacts and
+# leaves nothing to drift.
+[tool.hatch.build.targets.sdist.force-include]
+"../../LICENSE" = "LICENSE"
+"../../NOTICE" = "NOTICE"

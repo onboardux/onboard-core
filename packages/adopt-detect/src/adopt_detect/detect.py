@@ -52,7 +52,7 @@ from adopt_detect.rules import ARCHETYPES, ArchetypeRules, load_rule_sets, needs
 from adopt_model._enums import Archetype
 from adopt_obs import AdoptError, ErrorCode
 
-__all__ = ["DetectionResult", "RuleHit", "bounded_listing", "detect"]
+__all__ = ["DetectionResult", "RuleHit", "bounded_listing", "detect", "walk_files"]
 
 #: The flag whose name the ambiguity report prints. It is named here, not
 #: implemented here: `04` §4 step 4 is a later sprint's, and the re-run hint has
@@ -63,8 +63,24 @@ DISAMBIGUATION_FLAG: Final[str] = "ADOPT_FEATURE_AGENT_DISAMBIGUATION"
 #: correctness rather than speed: its object store contains compressed copies of
 #: everything, and a `contains` rule would fire on packfile bytes that no longer
 #: reflect the working tree.
+#: `.adopt` is this tool's own working directory -- the store, the runtime annex
+#: and whatever else it writes beside the tree it is looking at. Walking it makes
+#: the tool part of the system it is describing: detection would score an
+#: archetype partly from our own files, and `adopt map` would mint identities for
+#: our own database. Both are the same error, which is why the exclusion lives
+#: with the walk rather than in either caller.
 _ALWAYS_SKIPPED: Final[frozenset[str]] = frozenset(
-    {".git", ".hg", ".svn", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache"}
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".mypy_cache",
+        ".adopt",
+    }
 )
 
 
@@ -163,6 +179,27 @@ def _walk(root: Path, ignore: GitignoreFilter) -> Iterator[tuple[str, Path, bool
             yield relative, absolute, True
 
 
+def walk_files(root: Path | str) -> Iterator[tuple[str, Path]]:
+    """Every file this programme considers in a tree, as `(relative, absolute)`.
+
+    **This is the one walk.** `detect`, `bounded_listing` and `adopt map` all
+    reach a tree through it, so "what is in this repository" has a single answer
+    with a single set of bounds, one `.gitignore` scope, one symlink rule and one
+    deterministic order. A second walk written beside a new consumer would be a
+    second answer, and the one that drifted would be the one deciding what the
+    map contains.
+
+    It opens nothing: callers that need bytes read them under their own bound.
+    Depth is bounded here by `DETECT_MAX_DEPTH`; a **file-count** bound belongs
+    to the caller, because what to do when a tree is too large differs -- the
+    listing truncates and says so, the map refuses with `MAP_TREE_TOO_LARGE`.
+    """
+    resolved = Path(root).resolve()
+    ignore = GitignoreFilter.for_tree(resolved)
+    for relative, absolute, _is_file in _walk(resolved, ignore):
+        yield relative, absolute
+
+
 def bounded_listing(root: Path | str, *, limit: int) -> tuple[tuple[str, ...], bool]:
     """The first `limit` paths this walk would consider. Returns `(paths, truncated)`.
 
@@ -175,14 +212,8 @@ def bounded_listing(root: Path | str, *, limit: int) -> tuple[tuple[str, ...], b
     reasoning over less evidence than it appears to have, and a model told the
     listing was truncated can say so in its confidence.
     """
-    # Resolved and filtered exactly as `detect()` does it, three lines below.
-    # Copying the two lines rather than sharing them is the smaller risk: sharing
-    # would mean a helper both call, and the thing that must not drift is the
-    # *bounds and the filter*, which are named constants and one classmethod.
-    resolved = Path(root).resolve()
-    ignore = GitignoreFilter.for_tree(resolved)
     paths: list[str] = []
-    for relative, _absolute, _is_file in _walk(resolved, ignore):
+    for relative, _absolute in walk_files(root):
         if len(paths) >= limit:
             return tuple(paths), True
         paths.append(relative)

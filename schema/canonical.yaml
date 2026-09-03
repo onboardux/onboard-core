@@ -11,9 +11,16 @@
 # Editing this file after the 0.3.0 tag is additive-only, enforced by
 # `adopt-schema lint`. Removal is `retired_in_version`; the physical object
 # stays and is written NULL.
+#
+# Version 4 adds `coverage_gap` and its `gap_status` enum (Build 4). A table's
+# `since` is what decides which migration creates it: the initial migration
+# carries everything at or below version 3, and every version after that gets
+# its own file. Nothing at version 3 is touched, which is what lets a store
+# written by an older binary be upgraded and a store written by a newer one be
+# read (read-only) by an older binary.
 
-schema_version: 3
-export_version: 3
+schema_version: 4
+export_version: 4
 
 # ---------------------------------------------------------------------------
 # Enums -- declared once, emitted as CHECK constraints in both dialects (CR-10),
@@ -113,6 +120,13 @@ enums:
   review_resolution:
     since: 3
     values: [confirmed, corrected, rejected]
+  # Build 4. The human disposition of a coverage gap -- never whether the gap
+  # exists, which `recompute_coverage()` derives and this vocabulary cannot
+  # contradict. `resolved` records that the knowledge was written; `waived`
+  # records a decision not to write it and carries a mandatory expiry.
+  gap_status:
+    since: 4
+    values: [open, acknowledged, resolved, waived]
   approval_subject:
     since: 3
     values: [knowledge_revision, probe_revision, binding_revision]
@@ -156,8 +170,9 @@ enums:
     values: [1, 2, 3, 4, 5]
 
 # ---------------------------------------------------------------------------
-# Tables -- all 37 from source spec §4, including every one no Build 0 code
-# writes to, so that no later build item ever writes a migration.
+# Tables -- the 37 from source spec §4, including every one no Build 0 code
+# writes to, so that no later build item ever writes a migration; plus
+# `coverage_gap` at version 4, the one table v6.1 §8 budgets for Builds 1-10.
 # ---------------------------------------------------------------------------
 tables:
 
@@ -334,7 +349,23 @@ tables:
       - { name: identity_id,       type: id, nullable: false, references: identity.id }
       - { name: extractor,         type: text }
       - { name: extractor_version, type: text }
+      # Build 1 (v6.1 §6) writes the per-kind **attribute digest** here -- never a
+      # raw file hash -- so that a comment-only edit cannot manufacture
+      # staleness. Build 6 compares digests only within a matching
+      # `extractor_version`: an extractor upgrade re-baselines rather than
+      # reporting a change storm. `RevisionWriter.retire` also uses this column
+      # for an identity's terminal reason, which is why the digest comparison is
+      # scoped to revisions whose status is `active`.
       - { name: source_version,    type: text }
+      # Where the extractor saw it: `<repo-relative path>:<start>-<end>`, one
+      # line span. Added for Build 1 (v6.1 §6, decision D3): the build must record
+      # "file, span, extractor id, extractor version" per identity, and
+      # `provenance` cannot carry it -- that table's `revision_id` references
+      # `knowledge_revision`, so an identity revision has nowhere to point. The
+      # alternative considered and rejected was packing path and span into
+      # `source_version` as JSON, which would give one column two meanings and
+      # make Build 6 parse JSON to do a digest equality check.
+      - { name: source_ref,        type: text }
       - { name: confidence,        type: real }
       # The move/alias chain.
       - { name: alias_of_identity_id, type: id, references: identity.id }
@@ -864,6 +895,44 @@ tables:
       - { name: occurred_at, type: ts, nullable: false }
     indexes:
       - { name: idx_audit_scope, columns: [firm_id, occurred_at] }
+
+  # Build 4 (v6.1 §6). The ONLY table the whole Builds 1-10 line adds, and it
+  # holds a disposition -- never an existence claim. `recompute_coverage()`
+  # remains the sole authority on whether an identity is uncovered; a row here
+  # says only what a human decided to do about it. A gap the recompute no longer
+  # derives vanishes from the report whatever this table holds, which is why the
+  # report is a join and never a read of this table alone.
+  #
+  # One row per `gap_key`, updated in place. This is deliberately NOT a revision
+  # family: the four append-only families are content whose history is the
+  # product, while a disposition is current intent, and `no-revision-update`
+  # guards `*_revision` tables precisely because those are the ones that must
+  # never be updated.
+  coverage_gap:
+    since: 4
+    purpose: The human disposition of one derived coverage gap; existence stays derived.
+    scope_level: environment
+    scope_ref: { via: [identity_id] }
+    exportable: true
+    primary_key: [id]
+    columns:
+      - { name: id,          type: id, nullable: false }
+      - { name: identity_id, type: id, nullable: false, references: identity.id }
+      # identity URI + environment + kind (v6.1 §6 Build 4). Deterministic, so
+      # the same gap disposed twice is one row, and stable across regeneration.
+      - { name: gap_key,     type: text, nullable: false }
+      - { name: status,      type: enum(gap_status), nullable: false }
+      - { name: owner_actor_id, type: text }
+      - { name: note,           type: text }
+      # Mandatory on a waiver, enforced by the facade rather than by DDL: the
+      # rule is "a waiver expires", which is a statement about one status value
+      # and not a column-level constraint either dialect can express.
+      - { name: waived_until,   type: ts }
+      - { name: created_at, type: ts, nullable: false }
+      - { name: updated_at, type: ts, nullable: false }
+    indexes:
+      - { name: idx_coverage_gap_key, columns: [gap_key], unique: true }
+      - { name: idx_coverage_gap_status, columns: [status] }
 
   # ═══════════════ BOUNDARY ═══════════════
 

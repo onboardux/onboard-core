@@ -23,6 +23,8 @@ from adopt_store.api import OpenRestriction, Store, open_store, scope_facade, wr
 from adopt_store.doctor import Finding, doctor
 from adopt_store.facades import (
     BindingFacade,
+    ChangeFacade,
+    ClassifiedChange,
     IdentityFacade,
     KnowledgeFacade,
     ProbeFacade,
@@ -41,6 +43,8 @@ __all__ = [
     "VECTOR_FEATURE_FLAG",
     "BindingFacade",
     "BindingRevisionDraft",
+    "ChangeFacade",
+    "ClassifiedChange",
     "Finding",
     "IdentityFacade",
     "IdentityRevisionDraft",

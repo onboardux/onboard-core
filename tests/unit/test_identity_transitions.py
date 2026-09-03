@@ -18,6 +18,7 @@ from collections.abc import Iterator
 import pytest
 
 from adopt_identity import build_uri
+from adopt_model import IdentityRevision
 from adopt_obs import AdoptError, ErrorCode, ManualClock
 from adopt_scope import Scope
 from adopt_store import doctor, open_store
@@ -57,6 +58,70 @@ def scope(store: SqliteStoreHandle) -> Scope:
 
 def _revision_count(store: SqliteStoreHandle, identity_id: str) -> int:
     return len(store.revision_records().revision_ids("identity_revision", identity_id))
+
+
+def _identity_revisions(store: SqliteStoreHandle) -> list[IdentityRevision]:
+    return list(store.export_records().table_rows("identity_revision", IdentityRevision))
+
+
+@pytest.mark.unit
+def test_the_creating_revision_carries_the_digest_and_the_span(
+    store: SqliteStoreHandle, scope: Scope
+) -> None:
+    """Build 0 amendment B-07 item 2, and decision D3's column.
+
+    *Fails when* `observe` drops the attribute digest or the source span, so the
+    creating revision carries nulls. *Matters because* v6.1 §6 requires Build 1
+    to record "file, span, extractor id, extractor version" per identity, and
+    Build 6 compares digests **only within a matching extractor version** -- a
+    null digest beside a real version is a comparison that silently never fires.
+    *No other instrument catches it because* the facade returns the `identity`
+    row, which is unchanged either way, and every existing test asserts on that
+    row rather than on the revision behind it.
+    """
+    store.identities().observe(
+        scope=scope,
+        kind="endpoint",
+        namespace=None,
+        key="POST /v1/orders",
+        extractor="web.endpoints",
+        extractor_version="1",
+        source_version="sha256:not-a-file-hash-but-an-attribute-digest",
+        source_ref="src/api/orders.py:41-58",
+    )
+
+    revision = _identity_revisions(store)[0]
+
+    assert revision.status == "active"
+    assert revision.extractor == "web.endpoints"
+    assert revision.extractor_version == "1"
+    assert revision.source_version == "sha256:not-a-file-hash-but-an-attribute-digest"
+    assert revision.source_ref == "src/api/orders.py:41-58"
+
+
+@pytest.mark.unit
+def test_re_observation_with_a_changed_digest_still_writes_no_revision(
+    store: SqliteStoreHandle, scope: Scope
+) -> None:
+    """The Build 1 / Build 6 boundary, asserted rather than assumed.
+
+    *Fails when* someone adds digest-comparison-and-append to `observe`.
+    *Matters because* Build 1's idempotence promise is "a re-run after no change
+    writes nothing", and appending on a digest change without Build 6's
+    `change_event` row, classification and review queue would stale bound
+    knowledge with nowhere to report it -- silent staleness is the exact failure
+    H5 exists to prevent. *No other instrument catches it because* the identity
+    row and its URI are identical either way; only the revision count differs.
+    """
+    facade = store.identities()
+    common = {"scope": scope, "kind": "config_key", "namespace": "env", "key": "DATABASE_URL"}
+    identity = facade.observe(**common, extractor_version="1", source_version="digest-a")
+
+    facade.observe(**common, extractor_version="1", source_version="digest-b")
+
+    assert _revision_count(store, identity.id) == 1, (
+        "Build 1 records digests; Build 6 compares them and owns what a change means"
+    )
 
 
 @pytest.mark.unit

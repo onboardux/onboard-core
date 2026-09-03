@@ -232,10 +232,11 @@ def _seed_rest(writer: _Writer, scope: Scope) -> None:
 
     # -- identity and its revision chain ---------------------------------
     identity_id = new_id("idn")
+    identity_uri = build_uri(scope, "endpoint", None, "POST /v1/orders")
     writer.add(
         "identity",
         id=identity_id,
-        uri=build_uri(scope, "endpoint", None, "POST /v1/orders"),
+        uri=identity_uri,
         firm_id=ids.firm,
         engagement_id=ids.engagement,
         system_id=ids.system,
@@ -387,6 +388,22 @@ def _seed_rest(writer: _Writer, scope: Scope) -> None:
         referent="POST /v1/orders",
         batch_key="pr-4711",
         raw=None,
+    )
+    # Build 4's one additive table. `waived` with its mandatory expiry, because
+    # that is the only status carrying a value in `waived_until` -- a row in any
+    # other status would round-trip a NULL there and prove nothing about the
+    # column that actually has a rule attached to it.
+    writer.add(
+        "coverage_gap",
+        id=new_id("gap"),
+        identity_id=identity_id,
+        gap_key=f"{identity_uri}|{_ENVIRONMENT_SLUG}|endpoint",
+        status="waived",
+        owner_actor_id="actor:fde",
+        note="SME session booked",
+        waived_until=later,
+        created_at=now,
+        updated_at=now,
     )
     writer.add(
         "classification",

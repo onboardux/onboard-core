@@ -23,26 +23,51 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 
 from adopt_model import (
+    Approval,
+    AudienceTag,
+    AuditEvent,
     Binding,
     BindingRevision,
+    ChangeEvent,
+    Classification,
+    Connector,
+    CoverageGap,
+    Escalation,
     Identity,
     IdentityRevision,
     KnowledgeItem,
     KnowledgeRevision,
     ObservabilityBoundary,
+    OwnershipAssignment,
     ProbeDefinition,
     ProbeDefinitionRevision,
+    Provenance,
+    ReviewBatch,
+    ReviewItem,
     Sensor,
     SensorHeartbeat,
+    ValueEvent,
 )
-from adopt_model._enums import FreshnessState, SensorHealth
+from adopt_model._enums import (
+    ConnectorStatus,
+    EscalationStatus,
+    FreshnessState,
+    ReviewResolution,
+    SensorHealth,
+)
 
 __all__ = [
     "BindingRecords",
+    "ChangeRecords",
+    "ConnectorRecords",
+    "CoverageGapRecords",
+    "EscalationRecords",
     "IdentityRecords",
     "KnowledgeRecords",
     "ObservabilityBoundaryRecords",
+    "OperationsRecords",
     "ProbeRecords",
+    "ReviewRecords",
     "RevisionRecords",
     "SensorRecords",
 ]
@@ -71,7 +96,15 @@ class IdentityRecords(Protocol):
 
 
 class KnowledgeRecords(Protocol):
-    """`knowledge_item` and `knowledge_revision`."""
+    """`knowledge_item`, `knowledge_revision`, `provenance` and `audience_tag`.
+
+    The last two arrive with Build 2, which is the first code that writes them.
+    Both hang off a knowledge row and neither is a revision family, so both are
+    plain inserts: `provenance` is append-only by use rather than by rule -- a
+    claim's source is a fact about a revision that already exists, and a
+    revision is immutable -- and `audience_tag` is a set membership whose
+    primary key is `(item_id, audience)`.
+    """
 
     def transaction(self) -> AbstractContextManager[None]: ...
     def insert_item(self, row: KnowledgeItem) -> None: ...
@@ -80,6 +113,25 @@ class KnowledgeRecords(Protocol):
         self, item_id: str, freshness_state: FreshnessState, updated_at: _dt.datetime
     ) -> None:
         """The parent's denormalized freshness (contracts §5 obligation 6)."""
+        ...
+
+    def insert_provenance(self, row: Provenance) -> None:
+        """Record where one revision's claim came from.
+
+        There is no update and no delete, for the reason the revision tables
+        have none: provenance that could be rewritten is provenance that cannot
+        distinguish `artifact_observed` from `authored` after the fact, which is
+        the one distinction v6.1 §6 Build 2 makes non-negotiable.
+        """
+        ...
+
+    def insert_audience_tag(self, row: AudienceTag) -> None:
+        """Tag an item with one audience. `(item_id, audience)` is the key."""
+        ...
+
+    def audiences_for_item(self, item_id: str) -> Sequence[str]:
+        """The audiences already tagged, so a re-tag is a no-op rather than a
+        constraint violation."""
         ...
 
 
@@ -91,6 +143,408 @@ class BindingRecords(Protocol):
     def get_binding(self, binding_id: str) -> Binding | None: ...
     def find_binding(self, item_id: str, identity_id: str) -> Binding | None: ...
     def list_bindings_for_identity(self, identity_id: str) -> Sequence[Binding]: ...
+
+
+class ReviewRecords(Protocol):
+    """`review_batch` and `review_item` -- the one queue (v6.1 §6 F5).
+
+    Introduced by Build 2 for harvest candidates and suggested bindings, and
+    extended rather than replaced by Build 6's change items and Build 8's
+    managed batches. One surface, one habit, one implementation: a second queue
+    would be a second place a reviewer has to remember to look.
+
+    **Two mutable columns on `review_item`, and both move once from `NULL`.**
+    `resolution` is the reviewer's disposition; `proposed_revision_id` is the
+    fix a drafting run attached (Build 8). Neither table is a revision family,
+    so `no-revision-update` does not reach them -- which is exactly why the
+    narrowness is stated here rather than assumed.
+
+    **A proposal is attached rather than inserted with the item, and that is
+    forced by when the two happen.** Build 8's ingestion opens the batch inside
+    the sense transaction, because the batch has to commit with the retirements
+    and the staled bindings it explains; drafting is a later tick, so that a
+    crash between the two degrades to "drafts arrive next tick" instead of
+    losing the batch. The item therefore exists before its proposal does, and a
+    port that could only carry a proposal at insert time would force the batch
+    to wait for a model call -- which is the one thing R3 says the queue must
+    never depend on.
+
+    **What still cannot be rewritten is what the reviewer was shown**: the batch
+    an item belongs to, and the knowledge item it is about. A queue row records
+    a disposition and a proposal; it never holds knowledge.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+    def insert_batch(self, row: ReviewBatch) -> None: ...
+    def insert_item(self, row: ReviewItem) -> None: ...
+    def get_batch(self, review_batch_id: str) -> ReviewBatch | None: ...
+    def get_item(self, review_item_id: str) -> ReviewItem | None: ...
+    def items_in_batch(self, review_batch_id: str) -> Sequence[ReviewItem]: ...
+
+    def set_item_resolution(self, review_item_id: str, resolution: ReviewResolution) -> None:
+        """Stamp one item's disposition. Never un-stamps: the caller checks."""
+        ...
+
+    def set_item_proposal(self, review_item_id: str, proposed_revision_id: str) -> None:
+        """Attach the drafted fix a later sweep produced (Build 8).
+
+        Takes a revision id it did not mint, on `answer_escalation`'s precedent
+        and for its reason: the revision is written by whoever ran the drafting
+        pass, through `KnowledgeFacade`, so the queue records *which* draft was
+        attached and can never be the thing that created one.
+
+        **The caller checks that no proposal is already attached.** Overwriting
+        one would silently discard a draft a reviewer may already be looking at,
+        and would make a re-tick that re-billed a model call indistinguishable
+        from an idempotent one.
+        """
+        ...
+
+    def set_batch_resolution(
+        self,
+        review_batch_id: str,
+        resolution: ReviewResolution,
+        resolved_at: _dt.datetime,
+    ) -> None:
+        """Close a batch once every item in it is resolved."""
+        ...
+
+
+class EscalationRecords(Protocol):
+    """`escalation` -- a question the store could not answer, and what happened.
+
+    Introduced by Build 3, which is the first code that writes the table
+    (v6.1 §6 Build 3, F2). It is deliberately **not** a second review queue:
+    `ReviewRecords` holds dispositions over knowledge someone proposed, and this
+    holds questions nobody has answered yet. The two meet only when
+    `adopt answer` turns one of these into knowledge, and even then the write
+    goes through `KnowledgeFacade` -- nothing on this port creates a revision.
+
+    **`question` is nullable and that nullability is a privacy control, not a
+    convenience.** F2 splits passive logging from explicit escalation: an
+    escalation opened without consent records that a question was asked and
+    stores no text. A caller that always supplied the text would silently
+    convert every ask into a stored transcript, which is exactly the default
+    v6.1 refuses.
+
+    **Two mutable columns, both moving once**: `status` `open -> answered`, and
+    the `candidate_revision_id`/`answered_by`/`answered_at` triple stamped with
+    it. `escalation` is not a revision family, so `no-revision-update` does not
+    reach this `UPDATE` -- which is why the narrowness is written down here, the
+    way `ReviewRecords` writes its own down.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+    def insert_escalation(self, row: Escalation) -> None: ...
+    def get_escalation(self, escalation_id: str) -> Escalation | None: ...
+
+    def list_escalations(
+        self, *, system_id: str, status: EscalationStatus | None = None
+    ) -> Sequence[Escalation]:
+        """Escalations for one system, newest first, optionally by status."""
+        ...
+
+    def set_escalation_answered(
+        self,
+        escalation_id: str,
+        *,
+        candidate_revision_id: str,
+        answered_by: str | None,
+        answered_at: _dt.datetime,
+    ) -> None:
+        """Stamp one escalation as answered. Never un-stamps: the caller checks.
+
+        The revision id is required rather than optional because an escalation
+        that reported itself answered while pointing at no knowledge would be
+        indistinguishable from an open one to every reader except a human
+        reading the timestamp -- and the whole point of the capture ratchet is
+        that the next asker gets the answer, not that someone marked a row.
+        """
+        ...
+
+
+class CoverageGapRecords(Protocol):
+    """`coverage_gap` -- the human disposition of a derived gap, and nothing else.
+
+    Introduced by Build 4, the first code that writes the table (v6.1 §6 Build 4).
+
+    **This port cannot answer whether a gap exists, and that is the design.**
+    `recompute_coverage()` is the sole authority on that, and a row here is only
+    what a human decided to do about a gap the recompute already derived. There
+    is deliberately no `list_open_gaps`-shaped method: a caller that could ask
+    this table what is uncovered would be asking the wrong oracle, and the two
+    answers would disagree the first time knowledge landed without a
+    disposition being updated. The report is a join, always.
+
+    **One row per `gap_key`, updated in place.** `coverage_gap` is not a
+    revision family -- `no-revision-update` guards `*_revision` tables because
+    those hold content whose history is the product, while a disposition is
+    current intent and its history is not something anybody has asked to keep.
+    Stated here rather than assumed, on `ReviewRecords`' and `EscalationRecords`'
+    precedent: a gate that does not cover a table is not a licence to widen what
+    the table permits.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+
+    def upsert_coverage_gap(self, row: CoverageGap) -> None:
+        """Insert the disposition, or replace the one this `gap_key` already has.
+
+        Keyed on `gap_key` rather than on `id`, because the caller disposing a
+        gap has the key the report showed them and never an id -- and two rows
+        for one gap would make "what did we decide about this" a question with
+        two answers.
+        """
+        ...
+
+    def get_coverage_gap(self, gap_key: str) -> CoverageGap | None: ...
+
+    def list_coverage_gaps(self) -> Sequence[CoverageGap]:
+        """Every disposition in the store, for joining onto a derived gap list.
+
+        Unfiltered because the caller's derived list is already scope-filtered
+        and `gap_key` carries the full identity URI: joining a scoped list onto
+        every disposition can only match dispositions in that scope.
+        """
+        ...
+
+
+class ChangeRecords(Protocol):
+    """`change_event`, `classification`, `classifier_version` -- and one binding write.
+
+    Introduced by Build 6, the first code that writes any of them (v6.1 §6
+    Build 6). Build 8 operates the same cascade server-side against a Postgres
+    realization of this port; that is why the diff and the write path above it
+    hold no dialect.
+
+    **Nothing here decides anything.** The cascade lives in `adopt_map.diff` as
+    a pure function, and this port records what it concluded. A port that could
+    classify would be a second opinion about impact, and the two would disagree
+    the first time one of them was fixed.
+
+    **`set_binding_freshness` lives here rather than on `BindingRecords`, and
+    that placement is deliberate.** Propagation is this build's write: it is the
+    first and only writer of `binding.freshness_state = stale`, and keeping it
+    on the port that Build 8 will realize means `BindingRecords` -- which the
+    plane already realizes -- grows no new query path in this build, so the
+    escape suite's denominator is unchanged. `binding` is a parent row, so the
+    `UPDATE` leaves `no-revision-update` untouched, and the column list is
+    closed to exactly one column for the reason `SensorRecords` closes its own:
+    a mutation surface that grows by convenience is how a parent row starts
+    carrying state its revisions should have held.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+    def insert_change_event(self, row: ChangeEvent) -> None: ...
+    def insert_classification(self, row: Classification) -> None: ...
+
+    def ensure_classifier_version(
+        self, *, version_label: str, training_data_categories: str, released_at: _dt.datetime
+    ) -> str:
+        """The id of the classifier version with this label, creating it once.
+
+        Get-or-create rather than insert, because every refresh run classifies
+        with the same deterministic cascade and a row per run would turn a
+        version table into a run log. Build 8's ML classifier lands as a second
+        label here -- a version, not a rewrite (v6.1 §6 Build 8) -- which is the
+        whole reason the deterministic cascade records one at all.
+        """
+        ...
+
+    def set_binding_freshness(
+        self, binding_id: str, freshness_state: FreshnessState, *, updated_at: _dt.datetime
+    ) -> None:
+        """Propagation's one write: a binding's denormalized freshness.
+
+        `updated_at` is accepted for symmetry with `set_item_freshness` and to
+        keep the caller's clock the only clock, though `binding` carries no
+        updated column at schema v3 -- the timestamp of record is the
+        `change_event` that caused this, which is the row a reader needs anyway.
+        """
+        ...
+
+    def classifications_for_batch(self, batch_key: str) -> Sequence[Classification]:
+        """Every classification produced by one refresh run, in id order.
+
+        Keyed on the batch rather than on the event, because a run's meaning is
+        the whole batch: `adopt review` renders one session, and the classes
+        that have no `review_item` row (D6) are readable only from here.
+        """
+        ...
+
+    def change_events_for_batch(self, batch_key: str) -> Sequence[ChangeEvent]:
+        """The events of one refresh run, in id order."""
+        ...
+
+
+class ConnectorRecords(Protocol):
+    """`connector` -- which sensing relay reports for a system, and whether it may.
+
+    Introduced by Build 8, the first code that writes the table (v6.1 §6 Build
+    8). The row is the plane's answer to *is this caller still allowed to post
+    observations for this system*, and it is a canonical `scope_level: system`
+    table rather than plane-local routing state because the customer's export
+    should carry the record of what was watching their system and when it last
+    reported.
+
+    **The lookup is by system, not by connector id**, because that is the only
+    question a caller ever has: the sense endpoint holds a token that resolves
+    to a scope, not to a connector, and it needs to know whether *this system's*
+    relay is revoked before it accepts a payload. A by-id read would force the
+    caller to already know the answer it came to ask. v1 registers exactly one
+    connector per system -- the CI relay -- so the singular read is unambiguous;
+    a second mode arriving for one system is a decision (which relay is
+    authoritative?) and not something this port should quietly average over.
+
+    **Why this is its own port rather than four methods on `SensorRecords`.**
+    That port is realized as `PostgresSensorRecords` and fully escape-covered;
+    extending it here would make it *partially* realized the moment this build
+    added a method the plane had not implemented yet -- the case
+    `escape_coverage.py` calls the harder one to see. Build 5 separated
+    `ProbeRunRecords` from `ProbeRecords` for exactly this reason, and B7's D-5
+    separated `OperationsRecords`; this is that precedent applied a third time.
+
+    **The SQLite realization is not speculative.** `escape_coverage.declared_
+    ports` decides what a store-records port *is* by asking whether some
+    `Sqlite*Records` class realizes it (CR-67's lesson), so a port with no
+    SQLite half is invisible to the gate that would otherwise demand its
+    Postgres escape cases. Build 10's console also reads connector health per
+    system, and Build 9's handover records what was watching a system at
+    transfer -- both are forward consumers named here so no later
+    "simplification" deletes the half that makes the gate work.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+
+    def register_connector(self, row: Connector) -> None:
+        """Record a relay's first contact for a system.
+
+        Insert-only. Re-registration is not an update path: a connector whose
+        status an operator revoked must not be able to un-revoke itself by
+        reconnecting, which is exactly what an upsert here would allow.
+        """
+        ...
+
+    def get_connector(self, system_id: str) -> Connector | None:
+        """The connector registered for this system, or `None` on first contact."""
+        ...
+
+    def touch_connector(self, connector_id: str, last_seen: _dt.datetime) -> None:
+        """Advance `last_seen` and nothing else.
+
+        Deliberately cannot reach `status`: liveness is an observation, and a
+        reporting path that could also clear its own revocation would make the
+        revocation advisory. `SensorRecords.touch`-shaped for the same reason
+        `touch_identity_last_seen` is.
+        """
+        ...
+
+    def set_connector_status(self, connector_id: str, status: ConnectorStatus) -> None:
+        """The operator's path: activate, degrade or revoke a relay."""
+        ...
+
+
+class OperationsRecords(Protocol):
+    """`ownership_assignment`, `approval`, `audit_event`, `value_event`.
+
+    Build 7's port: the four tables an **operated** system writes that are about
+    the operation rather than about the knowledge. They share a port because
+    they share a caller — every capture-class action assigns or consults an
+    owner, records the human who approved it, and lands one audit and one value
+    row — and separating them into four ports would mean four realizations to
+    escape-test for one transaction.
+
+    **Why a new port rather than methods on the ports that already exist.**
+    `BindingRecords`, `KnowledgeRecords` and the rest are realized in
+    `plane-store` today and fully covered by the escape suite. Extending one of
+    them with a method no Postgres class implements produces a *partial*
+    realization, which `escape_coverage.py` calls the harder case to see — B5
+    put probe execution on its own `ProbeRunRecords` for exactly this reason,
+    and this follows that precedent rather than inventing one.
+
+    **Both realizations exist, and the SQLite half is not dead code.** Two
+    reasons, either sufficient: the coverage denominator's membership test is
+    *a store-records port is one a `Sqlite*Records` class realizes* (CR-67), so
+    a port with no SQLite half is invisible to the gate that decides what must
+    be isolated; and Build 9's self-serve handover writes ownership transfer
+    rows against the local store, with no plane involved. A later
+    "simplification" that deletes the SQLite half would silently shrink the
+    denominator, which is precisely the evasion CR-68 made impossible for
+    exclusions and nobody has made impossible for deletions.
+
+    None of these four tables is a revision family, so `no-revision-update`
+    does not reach them. There is still no update method on this port: an
+    ownership assignment ends by having its `effective_to` set, which is what
+    `close_assignment` does and the only mutation any of the four permits.
+    Approvals, audit events and value events are append-only by absence of a
+    method, the same way `RevisionRecords` states it.
+    """
+
+    def transaction(self) -> AbstractContextManager[None]: ...
+
+    def insert_assignment(self, row: OwnershipAssignment) -> None: ...
+    def insert_approval(self, row: Approval) -> None: ...
+    def insert_audit_event(self, row: AuditEvent) -> None: ...
+    def insert_value_event(self, row: ValueEvent) -> None: ...
+
+    def current_owner(self, *, system_id: str, at: _dt.datetime) -> OwnershipAssignment | None:
+        """Who owns `system_id` at `at`, or `None` if nobody does.
+
+        **Narrowest active assignment wins.** A system-scoped row beats an
+        engagement-scoped one covering the same system, because the specific
+        assignment is the one somebody made deliberately. Ties inside a scope
+        break by `effective_from` then `id`, newest first — the same
+        millisecond-collision reasoning `latest_boundary` documents.
+
+        "Active" means `effective_from <= at` and `effective_to` is either NULL
+        or after `at`. Returning `None` is a real answer and the caller must
+        treat it as one: v6.1 §6 Build 7 makes an unowned live system a
+        **refused activation**, not a warning, and a port that fell back to some
+        default owner would make that refusal unreachable.
+        """
+        ...
+
+    def close_assignment(self, assignment_id: str, *, effective_to: _dt.datetime) -> None:
+        """End one assignment. Never deletes: who owned what, when, is history."""
+        ...
+
+    def list_value_events(
+        self, *, system_id: str, event_type: str | None = None
+    ) -> Sequence[ValueEvent]:
+        """The value ledger for one system, newest first.
+
+        Read by the SLO measurement in S7.3 and by B10's console. It lives on
+        this port rather than in a reporting module because the rows are
+        tenant-scoped and every reader of them must go through a scoped
+        realization to see them.
+        """
+        ...
+
+    def list_audit_events(self, *, event_types: Sequence[str]) -> Sequence[AuditEvent]:
+        """Audit rows of the named types for this tenant, newest first.
+
+        **The read half of `insert_audit_event`, and it exists because an
+        outcome nobody can read back is not a record.** S7.3's continuity export
+        writes `continuity_export_delivered` / `continuity_export_failed` and
+        v6.1 §7 requires the delivery status be *visible to the customer* — so
+        the status endpoint, the cadence decision ("is this tenant due?") and
+        B10's red tile all answer from these rows and from nothing else. A
+        plane-local status table would have been a second record of the same
+        fact, free to disagree with the audit trail an auditor reads.
+
+        Scoped by the realization rather than by an argument, exactly as
+        `list_value_events` is: `audit_event` is `firm`-scoped, so the rows a
+        caller can see are the rows their session can see. There is deliberately
+        no `firm_id` parameter — a caller that could name a firm is a caller
+        that could name somebody else's.
+
+        Args:
+            event_types: The types to include. Required and never defaulted to
+                "everything": the audit trail is the widest read in the product,
+                and a caller that has to name what it wants cannot accidentally
+                page the whole of it into a response.
+        """
+        ...
 
 
 class ProbeRecords(Protocol):

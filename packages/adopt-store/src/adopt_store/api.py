@@ -22,11 +22,15 @@ touch.
 **Facades arrive with their tables.** §10.3 declares eleven accessors. `scope()`
 came with S2's tables; `identities()`, `items()`, `bindings()`, `probes()` and
 `revisions()` arrived at S3 with the identity and revision families; `sensors()`
-came with the channel whose health gates freshness; and `boundary()` arrives with
-the tier negotiation that first has something to declare. The remaining three --
-`changes()`, `governance()` and `value()` -- land in the sprints that write the
-tables they front. An accessor that raises is not a seam, it is a placeholder
-wearing one.
+came with the channel whose health gates freshness; `boundary()` arrives with
+the tier negotiation that first has something to declare; and `governance()`
+arrives with Build 2, which writes the first of the tables §10.3 assigns it --
+the review queue. Its other subjects (approval, escalation, ownership, audit)
+gain methods in the build that writes them, on the same rule: an accessor that
+raises is not a seam, it is a placeholder wearing one, and a method that has no
+table yet is the same thing one level down. `changes()` arrives with Build 6,
+which writes `change_event` and `classification`; `value()` is the last one
+outstanding and lands in the sprint that writes the tables it fronts.
 
 **Two ports are exposed that §10.3 does not declare**, and deliberately so:
 `coverage_records()` and `freshness_records()` are the storage halves of
@@ -52,21 +56,35 @@ from adopt_schema.assets import assets_root
 from adopt_schema.migrate import apply as apply_migrations
 from adopt_scope import ScopeFacade
 from adopt_store.facades.boundary import BoundaryFacade
+from adopt_store.facades.change import ChangeFacade
 from adopt_store.facades.identity import IdentityFacade
-from adopt_store.facades.knowledge import BindingFacade, KnowledgeFacade, ProbeFacade
+from adopt_store.facades.knowledge import (
+    BindingFacade,
+    GovernanceFacade,
+    KnowledgeFacade,
+    ProbeFacade,
+)
 from adopt_store.facades.records import RevisionRecords
 from adopt_store.facades.sensors import SensorFacade
 from adopt_store.revisions import RevisionWriter
 from adopt_store.sqlite.records import (
     SqliteBindingRecords,
     SqliteBoundaryRecords,
+    SqliteChangeRecords,
+    SqliteConnectorRecords,
+    SqliteCoverageGapRecords,
     SqliteCoverageRecords,
+    SqliteEscalationRecords,
     SqliteExportRecords,
     SqliteFreshnessRecords,
     SqliteIdentityRecords,
     SqliteImportRecords,
     SqliteKnowledgeRecords,
+    SqliteOperationsRecords,
+    SqlitePackRecords,
     SqliteProbeRecords,
+    SqliteProbeRunRecords,
+    SqliteReviewRecords,
     SqliteRevisionRecords,
     SqliteScopeRecords,
     SqliteSensorRecords,
@@ -91,8 +109,12 @@ COUNTED_TABLES: Final[tuple[str, ...]] = (
     "identity_revision",
     "knowledge_item",
     "knowledge_revision",
+    "provenance",
+    "audience_tag",
     "binding",
     "binding_revision",
+    "review_batch",
+    "review_item",
     "probe_definition",
     "probe_definition_revision",
     "sensor",
@@ -154,6 +176,8 @@ class Store(Protocol):
     def bindings(self) -> BindingFacade: ...
     def probes(self) -> ProbeFacade: ...
     def sensors(self) -> SensorFacade: ...
+    def governance(self) -> GovernanceFacade: ...
+    def changes(self) -> ChangeFacade: ...
     def boundary(self) -> BoundaryFacade: ...
     def revisions(self) -> RevisionWriter: ...
     def close(self) -> None: ...
@@ -220,8 +244,35 @@ class SqliteStoreHandle:
         return self._cached(
             "bindings",
             lambda: BindingFacade(
-                SqliteBindingRecords(self.backend), self.revisions(), clock=self.clock
+                SqliteBindingRecords(self.backend),
+                self.revisions(),
+                # Both readers, so the facade can refuse a binding whose ends are
+                # in different scopes (T1.3). The alternative -- widening
+                # `BindingRecords` with `get_item`/`get_identity` -- would add two
+                # query paths to every realization and to the plane's escape
+                # suite, for a check that reads rows two existing ports already
+                # answer.
+                items=SqliteKnowledgeRecords(self.backend),
+                identities=SqliteIdentityRecords(self.backend),
+                clock=self.clock,
             ),
+        )
+
+    def governance(self) -> GovernanceFacade:
+        return self._cached(
+            "governance",
+            lambda: GovernanceFacade(
+                SqliteReviewRecords(self.backend),
+                SqliteEscalationRecords(self.backend),
+                SqliteCoverageGapRecords(self.backend),
+                clock=self.clock,
+            ),
+        )
+
+    def changes(self) -> ChangeFacade:
+        return self._cached(
+            "changes",
+            lambda: ChangeFacade(SqliteChangeRecords(self.backend), clock=self.clock),
         )
 
     def probes(self) -> ProbeFacade:
@@ -254,6 +305,33 @@ class SqliteStoreHandle:
     def sensor_records(self) -> SqliteSensorRecords:
         """The sensor port, for `doctor`'s NULL-cadence finding."""
         return self._cached("sensor_records", lambda: SqliteSensorRecords(self.backend))
+
+    def connector_records(self) -> SqliteConnectorRecords:
+        """The connector port (Build 8): which relay reports for a system."""
+        return self._cached("connector_records", lambda: SqliteConnectorRecords(self.backend))
+
+    def pack_records(self) -> SqlitePackRecords:
+        """The read port `adopt pack` assembles from (Build 4)."""
+        return self._cached("pack_records", lambda: SqlitePackRecords(self.backend))
+
+    def operations_records(self) -> SqliteOperationsRecords:
+        """Ownership, approvals, audit and value rows (Build 7).
+
+        Exposed on the local handle as well as in the plane because Build 9's
+        self-serve handover writes ownership transfer rows here, with no plane
+        involved.
+        """
+        return self._cached("operations_records", lambda: SqliteOperationsRecords(self.backend))
+
+    def probe_run_records(self) -> SqliteProbeRunRecords:
+        """The port `adopt probe run` records through (Build 5).
+
+        Separate from `probes()`, which is Build 0's thin definition facade: this
+        one carries execution data (`probe_run`, `probe_observation`,
+        `baseline_version`, `conflict`) and satisfies `adopt_probe.ProbeRunRecords`
+        structurally, never by import -- `adopt_probe` holds no dialect.
+        """
+        return self._cached("probe_run_records", lambda: SqliteProbeRunRecords(self.backend))
 
     def export_records(self) -> SqliteExportRecords:
         """The read port `adopt_export.write_bundle` runs on."""

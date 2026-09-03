@@ -4,7 +4,7 @@
 compiling** -- `FATAL: Error, including metadata for distribution 'X' without
 including related package 'Y'` -- so the set passed to
 `--include-distribution-metadata` must be exactly what ends up inside the
-binary, not every distribution the release publishes. Passing all fifteen
+binary, not every distribution the release publishes. Passing the whole set
 failed the `v0.3.1` tag run on all three platforms, because `adopt-workflow` is
 a library `adopt-cli` does not depend on and therefore is not in the binary.
 

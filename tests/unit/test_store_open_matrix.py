@@ -19,8 +19,9 @@ from pathlib import Path
 
 import pytest
 
-from adopt_const import EXPORT_VERSION, SCHEMA_VERSION
+from adopt_const import EXPORT_VERSION, MIN_SUPPORTED_SCHEMA_VERSION, SCHEMA_VERSION
 from adopt_obs import AdoptError, ErrorCode, ManualClock
+from adopt_schema.generate import MIGRATIONS
 from adopt_store import open_store
 from adopt_store.sqlite.connection import read_user_version
 
@@ -114,17 +115,18 @@ def test_current_store_read_only_opens_and_refuses_writes(tmp_path: Path) -> Non
 
 @pytest.mark.unit
 def test_older_store_without_migrate_opens_read_only_and_reports_why(tmp_path: Path) -> None:
-    path = _store_at(tmp_path / "store.db", SCHEMA_VERSION - 1)
+    older = MIN_SUPPORTED_SCHEMA_VERSION - 1
+    path = _store_at(tmp_path / "store.db", older)
     with open_store(path, clock=_clock()) as handle:
         assert handle.read_only is True
         assert handle.restriction is not None
         assert handle.restriction.code is ErrorCode.SCHEMA_MIGRATION_PENDING
-        assert handle.schema_version == SCHEMA_VERSION - 1
+        assert handle.schema_version == older
 
 
 @pytest.mark.unit
 def test_older_store_read_only_reports_the_same_restriction(tmp_path: Path) -> None:
-    path = _store_at(tmp_path / "store.db", SCHEMA_VERSION - 1)
+    path = _store_at(tmp_path / "store.db", MIN_SUPPORTED_SCHEMA_VERSION - 1)
     with open_store(path, read_only=True, clock=_clock()) as handle:
         assert handle.read_only is True
         assert handle.restriction is not None
@@ -203,6 +205,8 @@ def test_schema_meta_is_appended_on_every_writable_open(tmp_path: Path) -> None:
     with open_store(path, clock=_clock()) as handle:
         second = handle.backend.query("SELECT schema_version, export_version FROM schema_meta;")
 
-    assert len(first) == 1
+    # One row per migration applied, each naming the version *it* produced --
+    # then one more for the plain open, which is the binary's own version.
+    assert [tuple(row) for row in first] == [(version, EXPORT_VERSION) for version, _ in MIGRATIONS]
     assert len(second) == len(first) + 1
-    assert [tuple(row) for row in second] == [(SCHEMA_VERSION, EXPORT_VERSION)] * len(second)
+    assert tuple(second[-1]) == (SCHEMA_VERSION, EXPORT_VERSION)

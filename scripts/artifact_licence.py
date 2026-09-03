@@ -182,7 +182,7 @@ def _run_check(directory: Path | None) -> int:
     with tempfile.TemporaryDirectory() as scratch:
         if directory is None:
             directory = Path(scratch) / "dist"
-            print("building the fifteen distributions ...")
+            print(f"building the {len(CANONICAL_DISTRIBUTIONS)} distributions ...")
             _build(directory)
         report = check(directory)
 

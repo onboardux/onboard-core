@@ -22,37 +22,70 @@ from pydantic import BaseModel
 
 from adopt_model import (
     MODEL_FOR_TABLE,
+    Approval,
+    AudienceTag,
+    AuditEvent,
+    BaselineVersion,
     Binding,
     BindingRevision,
+    ChangeEvent,
+    Classification,
+    ClassifierVersion,
+    Conflict,
+    Connector,
+    CoverageGap,
     Engagement,
     Environment,
+    Escalation,
     Firm,
     Identity,
     IdentityRevision,
     KnowledgeItem,
     KnowledgeRevision,
     ObservabilityBoundary,
+    OwnershipAssignment,
     ProbeDefinition,
     ProbeDefinitionRevision,
+    ProbeObservation,
+    ProbeRun,
+    Provenance,
+    ReviewBatch,
+    ReviewItem,
     Sensor,
     SensorHeartbeat,
     System,
     SystemLifecycleEvent,
+    ValueEvent,
 )
-from adopt_model._enums import FreshnessState, LifecycleState, SensorHealth
-from adopt_obs import format_timestamp
+from adopt_model._enums import (
+    ConnectorStatus,
+    EscalationStatus,
+    FreshnessState,
+    LifecycleState,
+    ReviewResolution,
+    SensorHealth,
+)
+from adopt_obs import format_timestamp, new_id
 from adopt_store.sqlite.store import SqliteStore
 
 __all__ = [
     "SqliteBindingRecords",
     "SqliteBoundaryRecords",
+    "SqliteChangeRecords",
+    "SqliteConnectorRecords",
+    "SqliteCoverageGapRecords",
     "SqliteCoverageRecords",
+    "SqliteEscalationRecords",
     "SqliteExportRecords",
     "SqliteFreshnessRecords",
     "SqliteIdentityRecords",
     "SqliteImportRecords",
     "SqliteKnowledgeRecords",
+    "SqliteOperationsRecords",
+    "SqlitePackRecords",
     "SqliteProbeRecords",
+    "SqliteProbeRunRecords",
+    "SqliteReviewRecords",
     "SqliteRevisionRecords",
     "SqliteScopeRecords",
     "SqliteSensorRecords",
@@ -365,6 +398,483 @@ class SqliteKnowledgeRecords:
             (freshness_state, format_timestamp(updated_at), item_id),
         )
 
+    def insert_provenance(self, row: Provenance) -> None:
+        _insert(self._store, "provenance", row)
+
+    def insert_audience_tag(self, row: AudienceTag) -> None:
+        _insert(self._store, "audience_tag", row)
+
+    def audiences_for_item(self, item_id: str) -> Sequence[str]:
+        rows = self._store.query(
+            "SELECT audience FROM audience_tag WHERE item_id = ? ORDER BY audience", (item_id,)
+        )
+        return [str(row["audience"]) for row in rows]
+
+
+class SqliteReviewRecords:
+    """The SQLite implementation of `ReviewRecords`.
+
+    Two `UPDATE`s live here and both write the same column, `resolution`, on a
+    table that is not a revision family. `no-revision-update` therefore does not
+    reach them, which is why the facade states the narrowness as a rule instead
+    of relying on the gate to enforce it.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_batch(self, row: ReviewBatch) -> None:
+        _insert(self._store, "review_batch", row)
+
+    def insert_item(self, row: ReviewItem) -> None:
+        _insert(self._store, "review_item", row)
+
+    def get_batch(self, review_batch_id: str) -> ReviewBatch | None:
+        return _one(
+            self._store, ReviewBatch, "SELECT * FROM review_batch WHERE id = ?", (review_batch_id,)
+        )
+
+    def get_item(self, review_item_id: str) -> ReviewItem | None:
+        return _one(
+            self._store, ReviewItem, "SELECT * FROM review_item WHERE id = ?", (review_item_id,)
+        )
+
+    def items_in_batch(self, review_batch_id: str) -> Sequence[ReviewItem]:
+        rows = self._store.query(
+            "SELECT * FROM review_item WHERE review_batch_id = ? ORDER BY id", (review_batch_id,)
+        )
+        return [_from_row(ReviewItem, dict(row)) for row in rows]
+
+    def set_item_resolution(self, review_item_id: str, resolution: ReviewResolution) -> None:
+        self._store.execute(
+            "UPDATE review_item SET resolution = ? WHERE id = ?", (resolution, review_item_id)
+        )
+
+    def set_item_proposal(self, review_item_id: str, proposed_revision_id: str) -> None:
+        """Attach a drafted fix to an item whose batch already exists (Build 8)."""
+        self._store.execute(
+            "UPDATE review_item SET proposed_revision_id = ? WHERE id = ?",
+            (proposed_revision_id, review_item_id),
+        )
+
+    def set_batch_resolution(
+        self,
+        review_batch_id: str,
+        resolution: ReviewResolution,
+        resolved_at: _dt.datetime,
+    ) -> None:
+        self._store.execute(
+            "UPDATE review_batch SET resolution = ?, resolved_at = ? WHERE id = ?",
+            (resolution, format_timestamp(resolved_at), review_batch_id),
+        )
+
+
+class SqliteEscalationRecords:
+    """The SQLite implementation of `EscalationRecords`.
+
+    One `UPDATE`, writing the four columns an answer stamps. `escalation` is not
+    a revision family, so `no-revision-update` does not reach it -- the same
+    situation `SqliteReviewRecords` documents, and stated here for the same
+    reason: a gate that does not cover a table is not a licence to widen what
+    the table permits.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_escalation(self, row: Escalation) -> None:
+        _insert(self._store, "escalation", row)
+
+    def get_escalation(self, escalation_id: str) -> Escalation | None:
+        return _one(
+            self._store, Escalation, "SELECT * FROM escalation WHERE id = ?", (escalation_id,)
+        )
+
+    def list_escalations(
+        self, *, system_id: str, status: EscalationStatus | None = None
+    ) -> Sequence[Escalation]:
+        """Newest first. Ids are ULID-prefixed, so `id DESC` is time order."""
+        if status is None:
+            rows = self._store.query(
+                "SELECT * FROM escalation WHERE system_id = ? ORDER BY id DESC", (system_id,)
+            )
+        else:
+            rows = self._store.query(
+                "SELECT * FROM escalation WHERE system_id = ? AND status = ? ORDER BY id DESC",
+                (system_id, status),
+            )
+        return [_from_row(Escalation, dict(row)) for row in rows]
+
+    def set_escalation_answered(
+        self,
+        escalation_id: str,
+        *,
+        candidate_revision_id: str,
+        answered_by: str | None,
+        answered_at: _dt.datetime,
+    ) -> None:
+        self._store.execute(
+            "UPDATE escalation SET status = 'answered', candidate_revision_id = ?, "
+            "answered_by = ?, answered_at = ? WHERE id = ?",
+            (
+                candidate_revision_id,
+                answered_by,
+                format_timestamp(answered_at),
+                escalation_id,
+            ),
+        )
+
+
+class SqliteOperationsRecords:
+    """The SQLite implementation of `OperationsRecords` (Build 7).
+
+    Realized locally as well as in the plane because Build 9's self-serve
+    handover writes ownership rows against this store with no plane involved,
+    and because the escape gate's membership test only sees a port that has a
+    `Sqlite*Records` class. Neither reason is decorative — see the port.
+
+    `close_assignment` is the only mutation, and it writes one column of one
+    non-revision table. Nothing here can reach `actor_or_group_id` or
+    `effective_from`: an assignment whose *subject* or *start* could be rewritten
+    would make the ownership history unfalsifiable, and the history is what an
+    audit reads to answer who was responsible on a given day.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_assignment(self, row: OwnershipAssignment) -> None:
+        _insert(self._store, "ownership_assignment", row)
+
+    def insert_approval(self, row: Approval) -> None:
+        _insert(self._store, "approval", row)
+
+    def insert_audit_event(self, row: AuditEvent) -> None:
+        _insert(self._store, "audit_event", row)
+
+    def insert_value_event(self, row: ValueEvent) -> None:
+        _insert(self._store, "value_event", row)
+
+    def current_owner(self, *, system_id: str, at: _dt.datetime) -> OwnershipAssignment | None:
+        """Narrowest active assignment; `None` when nobody owns the system.
+
+        Ordering does the choosing rather than a Python pass over candidates,
+        so the SQLite and Postgres realizations cannot disagree about which of
+        two overlapping assignments is "the" owner — a disagreement that would
+        route an escalation to different people depending on where it was
+        answered.
+
+        The engagement branch resolves through `system.engagement_id` rather
+        than trusting a caller to supply it, because a caller that supplied the
+        wrong engagement would silently produce a plausible owner.
+        """
+        moment = format_timestamp(at)
+        rows = self._store.query(
+            "SELECT oa.* FROM ownership_assignment AS oa "
+            "WHERE (oa.system_id = ? "
+            "   OR (oa.system_id IS NULL AND oa.engagement_id = "
+            "       (SELECT s.engagement_id FROM system AS s WHERE s.id = ?))) "
+            "  AND oa.effective_from <= ? "
+            "  AND (oa.effective_to IS NULL OR oa.effective_to > ?) "
+            "ORDER BY CASE WHEN oa.system_id IS NOT NULL THEN 0 ELSE 1 END, "
+            "         oa.effective_from DESC, oa.id DESC "
+            "LIMIT 1",
+            (system_id, system_id, moment, moment),
+        )
+        return None if not rows else _from_row(OwnershipAssignment, dict(rows[0]))
+
+    def close_assignment(self, assignment_id: str, *, effective_to: _dt.datetime) -> None:
+        self._store.execute(
+            "UPDATE ownership_assignment SET effective_to = ? WHERE id = ?",
+            (format_timestamp(effective_to), assignment_id),
+        )
+
+    def list_value_events(
+        self, *, system_id: str, event_type: str | None = None
+    ) -> Sequence[ValueEvent]:
+        """Newest first. Ids are ULID-prefixed, so `id DESC` is time order."""
+        if event_type is None:
+            rows = self._store.query(
+                "SELECT * FROM value_event WHERE system_id = ? ORDER BY id DESC", (system_id,)
+            )
+        else:
+            rows = self._store.query(
+                "SELECT * FROM value_event WHERE system_id = ? AND event_type = ? ORDER BY id DESC",
+                (system_id, event_type),
+            )
+        return [_from_row(ValueEvent, dict(row)) for row in rows]
+
+    def list_audit_events(self, *, event_types: Sequence[str]) -> Sequence[AuditEvent]:
+        """Newest first. Ids are ULID-prefixed, so `id DESC` is time order.
+
+        **An empty `event_types` returns no rows rather than every row.** The
+        SQL would be `IN ()`, which is a syntax error in SQLite and matches
+        nothing in Postgres — two different behaviours for one caller mistake.
+        Answering "none" in both is the reading that cannot surprise: a caller
+        asking for no types is asking for nothing, and the alternative reading
+        would page a tenant's whole audit trail out of an empty list.
+        """
+        if not event_types:
+            return []
+        # **`json_each` rather than a built `IN (?, ?, ?)` list**, so the SQL
+        # text is a constant whatever the caller asked for and the types cross
+        # as one bound parameter. That is the same shape the Postgres
+        # realization uses (`= ANY(%(event_types)s)`), which is worth more than
+        # the small awkwardness: two realizations of one port that build their
+        # predicates differently are two places for the membership rule to
+        # drift, and a formatted query is the construction S608 exists to flag.
+        rows = self._store.query(
+            "SELECT * FROM audit_event WHERE event_type IN (SELECT value FROM json_each(?)) "
+            "ORDER BY id DESC",
+            (_json.dumps(list(event_types)),),
+        )
+        return [_from_row(AuditEvent, dict(row)) for row in rows]
+
+
+class SqlitePackRecords:
+    """The reads `adopt pack` assembles from (Build 4).
+
+    Here rather than in the CLI because it is SQL, and CR-36's argument for
+    exempting one wiring module rests on the CLI holding **no** dialect
+    knowledge. `adopt_handover` cannot hold it either -- `no-raw-sqlite` names
+    that package as a source module -- so the join lives with the other
+    realizations and the CLI maps the rows into `adopt_handover`'s views.
+
+    Every method is a read. There is no write path on this class and none is
+    coming: a pack is a rendering of what the store already holds.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def knowledge_heads(
+        self, *, system_id: str, environment_id: str | None
+    ) -> Sequence[tuple[KnowledgeItem, KnowledgeRevision]]:
+        """Every item in scope paired with its **current** revision.
+
+        Unverified heads are returned too, deliberately. Filtering to `verified`
+        here would put the honesty rule in two places -- `sections.select`
+        already enforces it, and Build 4's drafting needs the same query to see
+        the drafts it just wrote. One filter, in the module whose job it is.
+
+        An item whose `current_revision_id` is NULL or dangling is skipped by
+        the join rather than reported: `store doctor` is what surfaces a broken
+        head pointer, and a pack is not the place to learn about one.
+        """
+        sql = (
+            "SELECT ki.id AS item_id, kr.id AS revision_id "
+            "FROM knowledge_item ki "
+            "JOIN knowledge_revision kr ON kr.id = ki.current_revision_id "
+            "WHERE ki.system_id = ?"
+        )
+        parameters: tuple[object, ...] = (system_id,)
+        if environment_id is not None:
+            # An item may span environments (`environment_id` is nullable), and
+            # one that does belongs in every environment's pack.
+            sql += " AND (ki.environment_id = ? OR ki.environment_id IS NULL)"
+            parameters += (environment_id,)
+        sql += " ORDER BY ki.id"
+
+        pairs: list[tuple[KnowledgeItem, KnowledgeRevision]] = []
+        for row in self._store.query(sql, parameters):
+            item = _one(
+                self._store,
+                KnowledgeItem,
+                "SELECT * FROM knowledge_item WHERE id = ?",
+                (row["item_id"],),
+            )
+            revision = _one(
+                self._store,
+                KnowledgeRevision,
+                "SELECT * FROM knowledge_revision WHERE id = ?",
+                (row["revision_id"],),
+            )
+            if item is not None and revision is not None:
+                pairs.append((item, revision))
+        return pairs
+
+    def uris_by_item(self) -> dict[str, tuple[str, ...]]:
+        """Bound identity URIs per item, for the section's "applies to" line."""
+        rows = self._store.query(
+            "SELECT b.item_id AS item_id, i.uri AS uri "
+            "FROM binding b JOIN identity i ON i.id = b.identity_id "
+            "ORDER BY b.item_id, i.uri"
+        )
+        grouped: dict[str, tuple[str, ...]] = {}
+        for row in rows:
+            item_id = str(row["item_id"])
+            grouped[item_id] = (*grouped.get(item_id, ()), str(row["uri"]))
+        return grouped
+
+    def audiences_by_item(self) -> dict[str, tuple[str, ...]]:
+        rows = self._store.query(
+            "SELECT item_id, audience FROM audience_tag ORDER BY item_id, audience"
+        )
+        grouped: dict[str, tuple[str, ...]] = {}
+        for row in rows:
+            item_id = str(row["item_id"])
+            grouped[item_id] = (*grouped.get(item_id, ()), str(row["audience"]))
+        return grouped
+
+    def identities_in_scope(
+        self, *, system_id: str, environment_id: str | None
+    ) -> Sequence[Identity]:
+        sql = "SELECT * FROM identity WHERE system_id = ?"
+        parameters: tuple[object, ...] = (system_id,)
+        if environment_id is not None:
+            sql += " AND environment_id = ?"
+            parameters += (environment_id,)
+        sql += " ORDER BY uri"
+        return [_from_row(Identity, dict(row)) for row in self._store.query(sql, parameters)]
+
+    def boundary_for(
+        self, *, system_id: str, environment_id: str | None
+    ) -> ObservabilityBoundary | None:
+        """The system's boundary, most recently declared first.
+
+        Environment-scoped rows win over system-wide ones when an environment is
+        named, because the narrower declaration is the one that was negotiated
+        for the thing being handed over.
+        """
+        rows = self._store.query(
+            "SELECT * FROM observability_boundary WHERE system_id = ? "
+            "ORDER BY declared_at DESC, id DESC",
+            (system_id,),
+        )
+        candidates = [_from_row(ObservabilityBoundary, dict(row)) for row in rows]
+        if environment_id is not None:
+            scoped = [row for row in candidates if row.environment_id == environment_id]
+            if scoped:
+                return scoped[0]
+        return candidates[0] if candidates else None
+
+
+class SqliteCoverageGapRecords:
+    """The SQLite implementation of `CoverageGapRecords`.
+
+    The upsert is a `DELETE` + `INSERT` inside the caller's transaction rather
+    than SQLite's `ON CONFLICT DO UPDATE`, for one reason: the generated model
+    stays the sole authority on what a row contains. An `ON CONFLICT` clause
+    lists the columns to overwrite, so adding a column to the manifest would
+    leave a stale value behind in exactly the rows that were disposed twice --
+    silent, and only in re-disposed rows. `_insert` derives its column list from
+    the model, so this cannot drift.
+
+    Deleting the superseded row is not a history loss: `coverage_gap` holds
+    current intent (contracts §5 -- it is not a revision family), and the row it
+    replaces described the same `gap_key`.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def upsert_coverage_gap(self, row: CoverageGap) -> None:
+        with self._store.transaction():
+            self._store.execute("DELETE FROM coverage_gap WHERE gap_key = ?", (row.gap_key,))
+            _insert(self._store, "coverage_gap", row)
+
+    def get_coverage_gap(self, gap_key: str) -> CoverageGap | None:
+        return _one(
+            self._store,
+            CoverageGap,
+            "SELECT * FROM coverage_gap WHERE gap_key = ?",
+            (gap_key,),
+        )
+
+    def list_coverage_gaps(self) -> Sequence[CoverageGap]:
+        """Every disposition, ordered by key so a report is stable across runs."""
+        rows = self._store.query("SELECT * FROM coverage_gap ORDER BY gap_key")
+        return [_from_row(CoverageGap, dict(row)) for row in rows]
+
+
+class SqliteChangeRecords:
+    """The SQLite implementation of `ChangeRecords` (Build 6).
+
+    **The `class` column is why `_to_row` dumps by alias.** `class` is a Python
+    keyword, so the generated model spells the field `class_` with
+    `alias="class"`; a dump by field name would build `INSERT INTO
+    classification (…, class_, …)` and fail against the real table. That is
+    already the module's rule and this is the class that first depends on it.
+
+    Reads are ordered by `id` so two runs over one store render the same
+    session in the same order -- ULIDs are monotonic, so id order is insertion
+    order, which is the cascade's own order.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def insert_change_event(self, row: ChangeEvent) -> None:
+        _insert(self._store, "change_event", row)
+
+    def insert_classification(self, row: Classification) -> None:
+        _insert(self._store, "classification", row)
+
+    def ensure_classifier_version(
+        self, *, version_label: str, training_data_categories: str, released_at: _dt.datetime
+    ) -> str:
+        """Get-or-create, inside the caller's transaction.
+
+        The read and the write share the caller's unit of work, so two refreshes
+        cannot both miss and both insert: `version_label` has no UNIQUE index in
+        the manifest, and a duplicate would give one classifier two ids and make
+        "which version decided this" ambiguous forever.
+        """
+        with self._store.transaction():
+            existing = self._store.query(
+                "SELECT id FROM classifier_version WHERE version_label = ? ORDER BY id LIMIT 1",
+                (version_label,),
+            )
+            if existing:
+                return str(existing[0]["id"])
+            row = ClassifierVersion(
+                id=new_id("clsv"),
+                version_label=version_label,
+                training_data_categories=training_data_categories,
+                released_at=released_at,
+            )
+            _insert(self._store, "classifier_version", row)
+            return row.id
+
+    def set_binding_freshness(
+        self, binding_id: str, freshness_state: FreshnessState, *, updated_at: _dt.datetime
+    ) -> None:
+        del updated_at  # `binding` carries no updated column at schema v3.
+        self._store.execute(
+            "UPDATE binding SET freshness_state = ? WHERE id = ?",
+            (freshness_state, binding_id),
+        )
+
+    def classifications_for_batch(self, batch_key: str) -> Sequence[Classification]:
+        rows = self._store.query(
+            "SELECT c.* FROM classification c "
+            "JOIN change_event e ON e.id = c.change_event_id "
+            "WHERE e.batch_key = ? ORDER BY c.id",
+            (batch_key,),
+        )
+        return [_from_row(Classification, dict(row)) for row in rows]
+
+    def change_events_for_batch(self, batch_key: str) -> Sequence[ChangeEvent]:
+        rows = self._store.query(
+            "SELECT * FROM change_event WHERE batch_key = ? ORDER BY id", (batch_key,)
+        )
+        return [_from_row(ChangeEvent, dict(row)) for row in rows]
+
 
 class SqliteBindingRecords:
     """The SQLite implementation of `BindingRecords`."""
@@ -415,6 +925,102 @@ class SqliteProbeRecords:
             "SELECT * FROM probe_definition WHERE id = ?",
             (probe_definition_id,),
         )
+
+
+class SqliteProbeRunRecords:
+    """The SQLite implementation of `adopt_probe.ProbeRunRecords`.
+
+    **A separate class from `SqliteProbeRecords`, mirroring a separate port**,
+    and the separation is a decision with a gate behind it: `adopt-plane`
+    realizes `ProbeRecords` as `PostgresProbeRecords`, and its `escape_coverage`
+    gate refuses to exclude any port a `Postgres*Records` class realizes even
+    partially. Adding execution methods to the port the plane already realizes
+    would have forced Build 8's Postgres work forward or turned that gate red.
+
+    **No update and no delete**, for `SqliteRevisionRecords`' reason: a run is a
+    record of what happened, and one that can be edited records nothing.
+    `probe_run.outcome` is decided once, when the run finishes.
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    # -- inserts ----------------------------------------------------------
+
+    def insert_probe_run(self, row: ProbeRun) -> None:
+        _insert(self._store, "probe_run", row)
+
+    def insert_probe_observation(self, row: ProbeObservation) -> None:
+        _insert(self._store, "probe_observation", row)
+
+    def insert_baseline_version(self, row: BaselineVersion) -> None:
+        _insert(self._store, "baseline_version", row)
+
+    def insert_conflict(self, row: Conflict) -> None:
+        _insert(self._store, "conflict", row)
+
+    # -- reads ------------------------------------------------------------
+
+    def list_probe_definitions(
+        self, *, system_id: str, environment_id: str
+    ) -> Sequence[ProbeDefinition]:
+        rows = self._store.query(
+            "SELECT * FROM probe_definition WHERE system_id = ? AND environment_id = ? "
+            "ORDER BY created_at, id",
+            (system_id, environment_id),
+        )
+        return [_from_row(ProbeDefinition, dict(row)) for row in rows]
+
+    def latest_baseline(self, *, probe_definition_revision_id: str) -> BaselineVersion | None:
+        # `id` breaks the tie for `latest_boundary`'s reason: ULIDs are monotonic
+        # within a millisecond and `created_at` is millisecond-truncated, so two
+        # baselines written in one millisecond would otherwise order arbitrarily.
+        return _one(
+            self._store,
+            BaselineVersion,
+            "SELECT * FROM baseline_version WHERE probe_definition_revision_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (probe_definition_revision_id,),
+        )
+
+    def latest_run(
+        self, *, probe_definition_id: str
+    ) -> tuple[ProbeRun, Sequence[ProbeObservation]] | None:
+        """The newest run of **any** revision of one probe, with its observations.
+
+        Joined through `probe_definition_revision` rather than taking a revision
+        id, because "the latest run of this probe" has to span the revision
+        boundary: a probe that was edited and re-run must still be comparable to
+        the baseline recorded before the edit -- that comparison is precisely how
+        *the probe changed* is told apart from *the system changed*.
+        """
+        run = _one(
+            self._store,
+            ProbeRun,
+            "SELECT r.* FROM probe_run r "
+            "JOIN probe_definition_revision v ON v.id = r.probe_definition_revision_id "
+            "WHERE v.probe_definition_id = ? "
+            "ORDER BY r.started_at DESC, r.id DESC LIMIT 1",
+            (probe_definition_id,),
+        )
+        if run is None:
+            return None
+        rows = self._store.query(
+            "SELECT * FROM probe_observation WHERE probe_run_id = ? ORDER BY id",
+            (run.id,),
+        )
+        return run, [_from_row(ProbeObservation, dict(row)) for row in rows]
+
+    def open_conflicts(self, *, identity_id: str, intent_revision_id: str) -> Sequence[Conflict]:
+        rows = self._store.query(
+            "SELECT * FROM conflict WHERE identity_id = ? AND intent_revision_id = ? "
+            "AND disposition = 'open' ORDER BY detected_at, id",
+            (identity_id, intent_revision_id),
+        )
+        return [_from_row(Conflict, dict(row)) for row in rows]
 
 
 class SqliteRevisionRecords:
@@ -568,6 +1174,52 @@ class SqliteBoundaryRecords:
             "SELECT * FROM observability_boundary WHERE system_id = ? AND environment_id = ? "
             "ORDER BY declared_at DESC, id DESC LIMIT 1",
             (system_id, environment_id),
+        )
+
+
+class SqliteConnectorRecords:
+    """The SQLite implementation of `ConnectorRecords`.
+
+    Build 8's port. The plane realizes it too and is where the sense endpoint
+    actually calls it; this half exists because `escape_coverage.declared_ports`
+    recognizes a store-records port by asking whether some `Sqlite*Records`
+    class realizes it, and a port invisible to that gate is a port whose
+    Postgres escape cases nobody demands (CR-67).
+    """
+
+    def __init__(self, store: SqliteStore) -> None:
+        self._store = store
+
+    def transaction(self) -> AbstractContextManager[None]:
+        return self._store.transaction()
+
+    def register_connector(self, row: Connector) -> None:
+        _insert(self._store, "connector", row)
+
+    def get_connector(self, system_id: str) -> Connector | None:
+        return _one(
+            self._store,
+            Connector,
+            "SELECT * FROM connector WHERE system_id = ? ORDER BY id",
+            (system_id,),
+        )
+
+    def touch_connector(self, connector_id: str, last_seen: _dt.datetime) -> None:
+        """Advance `last_seen`, and nothing else.
+
+        The column list is exhaustive for `touch_identity_last_seen`'s reason:
+        `status` is the operator's to move, and a reporting path that could
+        also clear its own revocation would make the revocation advisory.
+        """
+        self._store.execute(
+            "UPDATE connector SET last_seen_at = ? WHERE id = ?",
+            (format_timestamp(last_seen), connector_id),
+        )
+
+    def set_connector_status(self, connector_id: str, status: ConnectorStatus) -> None:
+        self._store.execute(
+            "UPDATE connector SET status = ? WHERE id = ?",
+            (status, connector_id),
         )
 
 

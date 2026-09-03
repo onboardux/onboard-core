@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from adopt_const import INITIAL_SCHEMA_VERSION
 from adopt_obs import AdoptError, ErrorCode
 from adopt_schema.assets import ASSETS_ROOT_ENV, assets_root, checkout_root, schema_dir
 from adopt_schema.emitters import sqlite as sqlite_emitter
@@ -34,7 +35,9 @@ def _assets_tree(root: Path) -> Path:
     directory = root / "schema" / "migrations" / "sqlite"
     directory.mkdir(parents=True)
     (directory / "0001__init_v3.sql").write_text(
-        sqlite_emitter.emit(load_manifest()), encoding="utf-8", newline="\n"
+        sqlite_emitter.emit(load_manifest(), version=INITIAL_SCHEMA_VERSION),
+        encoding="utf-8",
+        newline="\n",
     )
     return root
 

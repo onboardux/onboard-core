@@ -6,6 +6,12 @@
       "tests": 663,
       "behaviors": 6,
       "seconds": 70.5
+    },
+    {
+      "sprint": "S5.2",
+      "tests": 1103,
+      "behaviors": 7,
+      "seconds": 210.7
     }
   ]
 }

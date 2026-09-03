@@ -1,12 +1,17 @@
 # Reference runner — the hardware every performance number means
 
-**Status: private-runner capture retained; public release capture pending (CR-57,
-2026-08-11).** The figures below are what the private repository's runner reported
-about itself, captured by `.github/workflows/bench.yml` and recorded in
-`bench/RATIFICATION.md`. They remain truthful history, but Q6 is reopened because
-`adopt-core` becomes public before the final strict dry run. CR-57 requires a
-fresh public evidence set for all twelve Q4 values; seven of those values are
-owned by this benchmark runner and five are owned by other workflows.
+**Status: the public runner is ratified. PRD Q6 is CLOSED and all twelve Q4
+constants were ratified on the public standard runner on 2026-08-12** (run
+`31605693290`, recorded at the top of `bench/RATIFICATION.md` under *PUBLIC
+RUNNER*). The pin table below still describes the **private** 2 vCPU / 7.8 GiB
+machine and is kept as history; the ratified machine is 4 vCPU / 15 GiB and its
+own table is in `RATIFICATION.md`.
+
+**This header said "public release capture pending" until 2026-09-03**, six
+months after the capture it was waiting for had happened, and the two documents
+contradicted each other in the one place a reader goes to ask which numbers are
+evidence. Corrected rather than rewritten: nothing below is deleted, and what is
+genuinely still open is named in *What is still open*.
 
 A performance number without a machine attached is not a requirement, it is an
 anecdote. Every constant in implementation spec §2.3 — `SCHEMA_CREATE_P95_SECONDS`,
@@ -65,17 +70,33 @@ A benchmark green on a bigger machine tells us nothing about the constant.
    measurement event, not a CI tweak.
 4. **The benchmark job runs nightly and at release**, not on every pull request.
    Per-PR benchmarking on shared runners measures the neighbours.
+5. **The CI duration ratchets are judged on the reference runner, and nowhere
+   else.** `CI_UNIT_MAX_MINUTES` and `CI_PR_MAX_MINUTES` are enforced by
+   `scripts/ci_ratchet.py`, which has no notion of a runner and will happily
+   fail on a laptop -- so this rule lives here, beside the machine the numbers
+   mean. A developer-machine reading is **diagnostic**: useful for spotting a
+   regression early, and by itself neither a gate result nor a plan deviation. A
+   red local ratchet with a green CI ratchet is a statement about the laptop.
+
+   Rule 1 already says this for `bench`; the ratchets were outside its scope
+   because they are read from `ci.yml` rather than from `bench.yml`, and the
+   omission cost three builds a re-litigation each (Build 6 ruled it
+   2026-08-26; Builds 8 and 9 each reopened it as an owner call in their §14
+   item 0). **Confirmed by the owner 2026-09-03 (OD-10)** and written down here
+   so it stops being re-decided. No change to `ci_ratchet.py`: the rule is about
+   *whose reading is authoritative*, and the script only ever sees one.
 
 ## What is still open
 
-**The public release machine is open.** PRD Q6 was closed against the private
-capture and is reopened by CR-57. Keep the table above as historical evidence;
-after visibility changes, append the actual public capture to
-`bench/RATIFICATION.md` and then update this pin.
+**What is open is a re-measurement, not a ratification.** PRD Q6 is closed and
+all twelve Q4 constants are ratified on the public runner (`RATIFICATION.md`,
+2026-08-12). What has not happened is a reading of those twelve on the **Builds
+1-10 tree**: the nightly `bench` on `main` produces it once that stack merges,
+and a threshold that breaches there is an explicit decision on the measured
+evidence rather than a re-ratification of everything.
 
-PRD Q4 is open for all twelve constants. The two readings below remain useful
-history, but rule 3 prevents them from being release ratifications after the
-runner-class transition:
+The two readings below are the **private** runner's and remain useful history;
+rule 3 is why they are not release evidence:
 
 `bench.all` supplies seven of those readings. Conformance duration, unit/PR CI
 duration, the coverage floor, and binary size come from their owning workflows;

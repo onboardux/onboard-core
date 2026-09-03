@@ -132,3 +132,42 @@ are test and type-checking dependencies and are never linked into the wheel or
 the single-file binary. Promoting either to a runtime dependency would flip them
 to `in-binary` and the gate would reject the change — which is the intended
 behaviour, not an obstacle to work around.
+
+## External converters invoked as subprocesses *(Build 4, v6.1 §6)*
+
+`adopt pack --format docx|pdf` converts the canonical Markdown with an external
+binary. Neither is a Python distribution and neither appears in `uv.lock`, so
+neither reaches `licence_gate.py` through the resolved tree — and unlike `git`
+or `sqlite3` above, **these are invoked by shipped product code at runtime**
+rather than by the toolchain that builds it. That is the whole reason they carry
+rows: the toolchain section's argument ("we run it, we do not ship it") does not
+cover a converter a user's own `adopt` invocation starts.
+
+The rows are in this table's format, so the seven-field completeness check
+applies to them exactly as it does to a dependency. The invocation site is
+declared in `subprocess-deps.toml`, which is what turns "we only shell out to
+pandoc" from an intention into a checked fact.
+
+**Pandoc is GPL-2.0-or-later and could never be `in-binary`** (`03` §7.3
+permits no copyleft there). It is never imported, never linked and never
+bundled: `adopt_handover.derived` builds an argument list and calls
+`subprocess.run`. Typst is Apache-2.0 and would pass the in-binary rule if it
+were a Python library — it is a Rust binary, so it arrives through the same seam
+and is recorded the same way rather than by a different rule for a different
+licence.
+
+**Absence is not a failure mode that hides.** A machine without the tool gets
+`PACK_RENDERER_MISSING` naming it and the install command; the canonical
+Markdown pack is written either way.
+
+| Dependency | Repository | Version | Licence hash | Security status | Usage mode | Owner | Re-verification date | Licence |
+|---|---|---|---|---|---|---|---|---|
+| `pandoc` | https://github.com/jgm/pandoc | 3.x (any installed; the version used is printed on every conversion) | `bd0a1b6d9ff8a4c1` | clean-2026-08-25 | subprocess | onboardux | 2026-11-25 | GPL-2.0-or-later |
+| `typst` | https://github.com/typst/typst | 0.13.x (any installed; the version used is printed on every conversion) | `2af71558e438db0b` | clean-2026-08-25 | subprocess | onboardux | 2026-11-25 | Apache-2.0 |
+
+**The version column names a range rather than a pin**, and the reason is in
+`derived.py`: refusing to convert a document because the local converter is one
+patch release ahead is a worse outcome than converting it, and v6.1 already
+concedes that derived formats are content-equivalent rather than byte-stable.
+What is recorded instead is the version that actually ran, printed on every
+conversion and carried in the `pack.converted` event.

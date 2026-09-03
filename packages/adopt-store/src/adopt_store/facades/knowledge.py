@@ -14,12 +14,44 @@ normal path.
 """
 
 import datetime as _dt
+from collections.abc import Sequence
+from typing import Final
 
-from adopt_model import Binding, KnowledgeItem, ProbeDefinition
-from adopt_model._enums import ItemKind
+from adopt_model import (
+    AudienceTag,
+    Binding,
+    CoverageGap,
+    Escalation,
+    KnowledgeItem,
+    ProbeDefinition,
+    Provenance,
+    ReviewBatch,
+    ReviewItem,
+)
+from adopt_model._enums import (
+    AuthorityClass,
+    BindingStatus,
+    DiffMethod,
+    EscalationBranch,
+    EscalationStatus,
+    GapStatus,
+    ItemKind,
+    ReviewResolution,
+    SafePath,
+    SourceType,
+    Verification,
+)
 from adopt_obs import AdoptError, Clock, ErrorCode, SystemClock, new_id, truncate_to_millisecond
 from adopt_scope import Scope
-from adopt_store.facades.records import BindingRecords, KnowledgeRecords, ProbeRecords
+from adopt_store.facades.records import (
+    BindingRecords,
+    CoverageGapRecords,
+    EscalationRecords,
+    IdentityRecords,
+    KnowledgeRecords,
+    ProbeRecords,
+    ReviewRecords,
+)
 from adopt_store.revisions import (
     FAMILIES,
     INITIAL_BINDING_FRESHNESS,
@@ -29,7 +61,13 @@ from adopt_store.revisions import (
     RevisionWriter,
 )
 
-__all__ = ["BindingFacade", "KnowledgeFacade", "ProbeFacade"]
+__all__ = ["BindingFacade", "GovernanceFacade", "KnowledgeFacade", "ProbeFacade"]
+
+#: `binding_status`'s middle value, and the one nothing wrote before Build 6.
+#: Spelled here rather than inline so the two readers of the value -- this
+#: facade, which writes it, and `adopt_freshness.resolve`, which skips it --
+#: cannot drift into meaning different things by one of them being edited.
+_BINDING_SUPERSEDED: Final[BindingStatus] = "moved"
 
 
 class KnowledgeFacade:
@@ -56,6 +94,482 @@ class KnowledgeFacade:
     def get(self, item_id: str) -> KnowledgeItem | None:
         return self._records.get_item(item_id)
 
+    def record(
+        self,
+        *,
+        scope: Scope,
+        kind: ItemKind,
+        title: str,
+        body_md: str,
+        authority_class: AuthorityClass,
+        verification: Verification | None = None,
+        confidence: float | None = None,
+        source_version: str | None = None,
+        actor_id: str | None = None,
+    ) -> tuple[str, str]:
+        """Create an item from primitives. Returns `(item_id, revision_id)`.
+
+        The door for packages that may not import `adopt_store` -- exactly the
+        shape and the reason `IdentityFacade.observe` has one. `adopt_knowledge`
+        declares a narrow writer protocol and is handed this facade
+        structurally; a draft-typed signature would force it to depend on this
+        package, and through it on `sqlite3`, which `no-raw-sqlite` forbids.
+
+        `create` remains for callers that already hold a `KnowledgeRevisionDraft`.
+        Both go through the one `RevisionWriter`, so there is still exactly one
+        path that writes a `knowledge_revision`.
+        """
+        return self._writer.create_item(
+            scope=scope,
+            kind=kind,
+            title=title,
+            revision=KnowledgeRevisionDraft(
+                authority_class=authority_class,
+                body_md=body_md,
+                verification=verification,
+                confidence=confidence,
+                source_version=source_version,
+            ),
+            actor_id=actor_id,
+        )
+
+    def append(
+        self,
+        *,
+        item_id: str,
+        expected_head_id: str | None,
+        body_md: str,
+        authority_class: AuthorityClass,
+        verification: Verification | None = None,
+        confidence: float | None = None,
+        source_version: str | None = None,
+        actor_id: str | None = None,
+    ) -> str:
+        """Append a revision from primitives, enforcing `expected_head_id`.
+
+        Raises:
+            AdoptError: ``REVISION_CHAIN_FORK`` when the head moved under the
+                caller. Nothing is written.
+        """
+        return self._writer.append_revision(
+            parent_id=item_id,
+            draft=KnowledgeRevisionDraft(
+                authority_class=authority_class,
+                body_md=body_md,
+                verification=verification,
+                confidence=confidence,
+                source_version=source_version,
+            ),
+            expected_head_id=expected_head_id,
+            actor_id=actor_id,
+        )
+
+    def record_provenance(
+        self,
+        *,
+        revision_id: str,
+        source_type: SourceType,
+        source_ref: str,
+        observed_at: _dt.datetime | None = None,
+    ) -> str:
+        """Record where one revision's claim came from. Returns the row id.
+
+        Provenance is written *about* a revision that already exists, so it is
+        appended and never amended. `source_type` is the manifest's enum, and
+        the distinction it carries is the one v6.1 §6 Build 2 rests on: a mined
+        field cites its commit, and anything a human or a model added is
+        `human` and can never claim to have been observed in an artifact.
+        """
+        row_id = new_id("prov")
+        self._records.insert_provenance(
+            Provenance(
+                id=row_id,
+                revision_id=revision_id,
+                source_type=source_type,
+                source_ref=source_ref,
+                observed_at=observed_at,
+            )
+        )
+        return row_id
+
+    def tag_audience(self, *, item_id: str, audience: str) -> bool:
+        """Tag an item with one audience. `True` when the tag was new.
+
+        Re-tagging is a no-op rather than an error: ingest is idempotent by
+        design, and a second run over an unchanged document must not fail on the
+        `(item_id, audience)` primary key it wrote the first time.
+        """
+        if audience in set(self._records.audiences_for_item(item_id)):
+            return False
+        self._records.insert_audience_tag(AudienceTag(item_id=item_id, audience=audience))
+        return True
+
+    def audiences(self, item_id: str) -> tuple[str, ...]:
+        return tuple(self._records.audiences_for_item(item_id))
+
+    def retire(self, *, item_id: str, reason: str, actor_id: str | None = None) -> str:
+        """Append the item's terminal revision and set it `retired`.
+
+        **Build 6's `retire` review action, and the only way an item ends.** The
+        knowledge family has no status column on its revisions, so the terminal
+        state is the parent's `freshness_state` (contracts §5 obligation 6) --
+        `RevisionWriter.retire` writes both in one transaction, and this door
+        exists so a reviewer's decision goes through the same writer as
+        everything else rather than through a second path that would have to
+        remember the pair.
+
+        The item stays readable forever. A retired note is the answer to "what
+        did we believe in March", and `resolve_freshness` reports it as
+        `retired` rather than as absent -- which is what lets `adopt ask` say
+        "that was withdrawn" instead of "no idea".
+        """
+        return self._writer.retire(parent_id=item_id, reason=reason, actor_id=actor_id)
+
+
+def _batch_resolution(outcomes: Sequence[ReviewResolution | None]) -> ReviewResolution:
+    """What a whole batch's outcome was, given its items'.
+
+    A batch closes as `confirmed` only when every item was confirmed and as
+    `rejected` only when every item was rejected. **Anything else is
+    `corrected`** -- the reviewer neither accepted the batch as offered nor
+    threw it away. Summarising a mixed session as `confirmed` would be the
+    review-queue equivalent of a green build with a failing test in it.
+    """
+    distinct = {outcome for outcome in outcomes if outcome is not None}
+    if distinct == {"confirmed"}:
+        return "confirmed"
+    if distinct == {"rejected"}:
+        return "rejected"
+    return "corrected"
+
+
+class GovernanceFacade:
+    """`review_batch` / `review_item` / `escalation` -- the queue, and the questions.
+
+    The queue holds **dispositions, never knowledge**. A batch names what a
+    human was shown in one sitting; an item names one knowledge row inside it
+    and, once resolved, what the human decided. Confirming is what creates a
+    binding or appends a verified revision, and that work belongs to the caller
+    -- this facade records the decision and nothing else, so a reviewer's
+    disposition can never be manufactured by the code that acts on it.
+
+    **Build 3 adds `escalation` here rather than in a facade of its own**, on the
+    store's own rule that an accessor's subjects gain methods in the build that
+    writes them. The two tables are not one queue and are deliberately not
+    merged: a review item is a disposition over knowledge that *exists*, and an
+    escalation is a question nobody has answered yet. What they share is the
+    posture this class holds -- it records what a human decided or asked, and
+    creating knowledge from either is the caller's work through
+    `KnowledgeFacade`. `answer_escalation` therefore takes a revision id it did
+    not mint, which is what keeps a capture auditable back to the write that
+    made it.
+    """
+
+    def __init__(
+        self,
+        records: ReviewRecords,
+        escalations: EscalationRecords,
+        gaps: CoverageGapRecords,
+        *,
+        clock: Clock | None = None,
+    ) -> None:
+        self._records = records
+        self._escalations = escalations
+        self._gaps = gaps
+        self._clock: Clock = clock if clock is not None else SystemClock()
+
+    def _now(self) -> _dt.datetime:
+        return truncate_to_millisecond(self._clock.now())
+
+    def open_batch(
+        self,
+        *,
+        system_id: str,
+        batch_key: str,
+        items: Sequence[tuple[str, str | None]],
+        owner_actor_id: str | None = None,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Open a batch over `(item_id, proposed_revision_id)` pairs.
+
+        Returns:
+            `(review_batch_id, review_item_ids)`.
+
+        Raises:
+            ValueError: When no items are supplied. An empty batch opens, shows
+                a reviewer nothing and can never be resolved. This is a caller
+                mistake rather than a runtime condition -- a run that produced
+                nothing to review says so and opens no batch -- so it is refused
+                the way an unregistered table name is, and carries no error code
+                a client could receive.
+        """
+        if not items:
+            raise ValueError(
+                "a review batch needs at least one item. A run with nothing to review "
+                "reports that plainly rather than queueing an empty session."
+            )
+
+        opened = self._now()
+        batch_id = new_id("rb")
+        item_ids: list[str] = []
+
+        with self._records.transaction():
+            self._records.insert_batch(
+                ReviewBatch(
+                    id=batch_id,
+                    system_id=system_id,
+                    batch_key=batch_key,
+                    item_count=len(items),
+                    owner_actor_id=owner_actor_id,
+                    opened_at=opened,
+                )
+            )
+            for item_id, proposed_revision_id in items:
+                review_item_id = new_id("ri")
+                self._records.insert_item(
+                    ReviewItem(
+                        id=review_item_id,
+                        review_batch_id=batch_id,
+                        item_id=item_id,
+                        proposed_revision_id=proposed_revision_id,
+                    )
+                )
+                item_ids.append(review_item_id)
+
+        return batch_id, tuple(item_ids)
+
+    def get_batch(self, review_batch_id: str) -> ReviewBatch | None:
+        return self._records.get_batch(review_batch_id)
+
+    def get_item(self, review_item_id: str) -> ReviewItem | None:
+        return self._records.get_item(review_item_id)
+
+    def items_in(self, review_batch_id: str) -> tuple[ReviewItem, ...]:
+        return tuple(self._records.items_in_batch(review_batch_id))
+
+    def resolve(self, *, review_item_id: str, resolution: ReviewResolution) -> ReviewItem:
+        """Stamp one item's disposition, closing its batch when it was the last.
+
+        Returns:
+            The item **as it was before resolution**, which is what a caller
+            acting on the decision needs: the proposed revision and the item it
+            belongs to.
+
+        Raises:
+            AdoptError: ``REVIEW_ITEM_NOT_FOUND`` when the id names nothing, and
+                ``REVIEW_ITEM_RESOLVED`` when it is already stamped. A second
+                resolution is refused rather than applied, because confirming
+                twice would bind twice and rejecting a confirmed item would
+                leave a binding whose review says it was rejected.
+        """
+        item = self._records.get_item(review_item_id)
+        if item is None:
+            raise AdoptError(
+                ErrorCode.REVIEW_ITEM_NOT_FOUND,
+                message=f"no review item {review_item_id!r}",
+                hint="Run `adopt review` to list the open queue. Ids are per item, not "
+                "per knowledge row.",
+            )
+        if item.resolution is not None:
+            raise AdoptError(
+                ErrorCode.REVIEW_ITEM_RESOLVED,
+                message=f"review item {review_item_id} is already {item.resolution}",
+                hint="A disposition is recorded once. Re-reviewing the same subject means "
+                "a new item in a new batch, so the queue keeps what was decided and "
+                "when.",
+            )
+
+        with self._records.transaction():
+            self._records.set_item_resolution(review_item_id, resolution)
+            outcomes = [
+                row.resolution for row in self._records.items_in_batch(item.review_batch_id)
+            ]
+            if all(outcome is not None for outcome in outcomes):
+                self._records.set_batch_resolution(
+                    item.review_batch_id, _batch_resolution(outcomes), self._now()
+                )
+
+        return item
+
+    # -- escalation (v6.1 §6 Build 3, F2) ---------------------------------
+
+    def open_escalation(
+        self,
+        *,
+        system_id: str,
+        branch: EscalationBranch,
+        question: str | None = None,
+        prior_revision_id: str | None = None,
+        owner_actor_id: str | None = None,
+    ) -> str:
+        """Record a question the store could not answer. Returns the escalation id.
+
+        Args:
+            system_id: The system the question concerns.
+            branch: Why it is escalating. Plan decision D3: an UNKNOWN escalates
+                as `ungrounded`, a STALE one as `stale`; `bug_report` is B7's.
+            question: The text, **only when the asker consented** (F2). The
+                `None` default is the whole of the privacy posture: this facade
+                cannot tell consent from habit, so a caller has to pass the text
+                deliberately, and the default records that a question was asked
+                without recording what it was.
+            prior_revision_id: The revision that was served stale, when the
+                escalation came from a STALE answer. Absent for UNKNOWN --
+                there is nothing prior to point at.
+            owner_actor_id: Who to route it to, when known. B7 fills this from
+                ownership assignments; locally it is whoever asked.
+
+        Note:
+            `channel` is left NULL deliberately (plan D3). The
+            `escalation_channel` enum lists **outbound** channels -- Slack,
+            Teams, ServiceNow, JSM, portal, email -- and a local terminal is
+            none of them. Writing a nearest-fit value would make B7's first
+            channel report unable to tell a question that arrived through a
+            channel from one typed at a prompt.
+        """
+        opened = self._now()
+        escalation_id = new_id("esc")
+        with self._escalations.transaction():
+            self._escalations.insert_escalation(
+                Escalation(
+                    id=escalation_id,
+                    system_id=system_id,
+                    question=question,
+                    branch=branch,
+                    prior_revision_id=prior_revision_id,
+                    status="open",
+                    channel=None,
+                    owner_actor_id=owner_actor_id,
+                    opened_at=opened,
+                )
+            )
+        return escalation_id
+
+    def get_escalation(self, escalation_id: str) -> Escalation | None:
+        return self._escalations.get_escalation(escalation_id)
+
+    def escalations(
+        self, *, system_id: str, status: EscalationStatus | None = None
+    ) -> tuple[Escalation, ...]:
+        """Escalations for one system, newest first, optionally filtered by status."""
+        return tuple(self._escalations.list_escalations(system_id=system_id, status=status))
+
+    def answer_escalation(
+        self,
+        *,
+        escalation_id: str,
+        candidate_revision_id: str,
+        answered_by: str | None = None,
+    ) -> Escalation:
+        """Stamp an escalation answered, pointing at the knowledge that answers it.
+
+        Returns:
+            The escalation **as it was before the stamp**, which is what a
+            caller needs: the branch it opened on, and the question text if any.
+
+        Raises:
+            AdoptError: ``ESCALATION_NOT_FOUND`` when the id names nothing, and
+                ``ESCALATION_ALREADY_ANSWERED`` when it is already stamped. The
+                second refusal is `REVIEW_ITEM_RESOLVED`'s rule applied here:
+                answering twice would leave the row pointing at one of two
+                revisions with no record of which the asker was actually given.
+
+        Note:
+            The write joins the caller's transaction when there is one. That is
+            what makes `adopt answer` one unit of work -- the knowledge, its
+            bindings and this stamp commit together or not at all, so no store
+            can hold an answered escalation whose knowledge was never written.
+        """
+        existing = self._escalations.get_escalation(escalation_id)
+        if existing is None:
+            raise AdoptError(
+                ErrorCode.ESCALATION_NOT_FOUND,
+                message=f"no escalation {escalation_id!r}",
+                hint="`adopt ask --escalate` prints the id it created. Ids are per "
+                "question and per store.",
+            )
+        if existing.status != "open":
+            raise AdoptError(
+                ErrorCode.ESCALATION_ALREADY_ANSWERED,
+                message=f"escalation {escalation_id} is already {existing.status}",
+                hint="A question is answered once. A better answer is a new revision on "
+                "the item this escalation already points at, which keeps the chain "
+                "rather than forking the record of what the asker was told.",
+            )
+
+        with self._escalations.transaction():
+            self._escalations.set_escalation_answered(
+                escalation_id,
+                candidate_revision_id=candidate_revision_id,
+                answered_by=answered_by,
+                answered_at=self._now(),
+            )
+        return existing
+
+    # -- coverage-gap dispositions (v6.1 §6 Build 4) ----------------------
+
+    def dispose_gap(
+        self,
+        *,
+        gap_key: str,
+        identity_id: str,
+        status: GapStatus,
+        owner_actor_id: str | None = None,
+        note: str | None = None,
+        waived_until: _dt.datetime | None = None,
+    ) -> CoverageGap:
+        """Record what a human decided about one derived gap. Returns the row.
+
+        **This never decides whether the gap exists.** `recompute_coverage()` is
+        the only authority on that, and the caller has already consulted it --
+        which is why a `gap_key` naming nothing is refused by the caller with
+        `GAP_NOT_FOUND` rather than here. A facade that could invent a gap would
+        be a second answer to "what is uncovered", and the first thing that
+        happens to a second answer is that it disagrees with the first.
+
+        Re-disposing a gap keeps the row's `id` and `created_at` and advances
+        `updated_at`: the disposition is the same decision revisited, not a new
+        one, and a changing id would break any reference taken to it.
+
+        Raises:
+            AdoptError: ``GAP_WAIVER_NEEDS_UNTIL`` when a waiver carries no
+                expiry. A waiver is the one disposition that silently outlives
+                the reasoning behind it, so v6.1 §6 Build 4 makes the date
+                mandatory. The rule is about one status value rather than a
+                column, which is why neither dialect's DDL expresses it.
+        """
+        if status == "waived" and waived_until is None:
+            raise AdoptError(
+                ErrorCode.GAP_WAIVER_NEEDS_UNTIL,
+                message=f"waiving {gap_key!r} needs an expiry date",
+                hint="Pass `--until <YYYY-MM-DD>`. A waiver without one is a decision "
+                "nobody revisits: the gap stops being reported and no date ever brings "
+                "it back.",
+            )
+
+        now = self._now()
+        with self._gaps.transaction():
+            existing = self._gaps.get_coverage_gap(gap_key)
+            row = CoverageGap(
+                id=existing.id if existing is not None else new_id("gap"),
+                identity_id=identity_id,
+                gap_key=gap_key,
+                status=status,
+                owner_actor_id=owner_actor_id,
+                note=note,
+                waived_until=waived_until,
+                created_at=existing.created_at if existing is not None else now,
+                updated_at=now,
+            )
+            self._gaps.upsert_coverage_gap(row)
+        return row
+
+    def gap_disposition(self, gap_key: str) -> CoverageGap | None:
+        return self._gaps.get_coverage_gap(gap_key)
+
+    def gap_dispositions(self) -> dict[str, CoverageGap]:
+        """Every disposition, keyed by `gap_key`, for joining onto derived gaps."""
+        return {row.gap_key: row for row in self._gaps.list_coverage_gaps()}
+
 
 class BindingFacade:
     """`Store.bindings()` -- contracts §10.3."""
@@ -65,14 +579,73 @@ class BindingFacade:
         records: BindingRecords,
         writer: RevisionWriter,
         *,
+        items: KnowledgeRecords,
+        identities: IdentityRecords,
         clock: Clock | None = None,
     ) -> None:
         self._records = records
         self._writer = writer
+        self._items = items
+        self._identities = identities
         self._clock: Clock = clock if clock is not None else SystemClock()
 
     def _now(self) -> _dt.datetime:
         return truncate_to_millisecond(self._clock.now())
+
+    def _refuse_across_scopes(self, item_id: str, identity_id: str) -> None:
+        """Refuse a binding whose two ends live in different systems.
+
+        **`adopt bind` accepted any two ids and exited `0`.** A knowledge item
+        under one firm could be bound to an identity under another, producing a
+        `binding` row whose `item_id` and `identity_id` resolve to different
+        tenants -- uninterpretable canon in the field store, and, for any caller
+        that has learned a foreign URI, a way to attach one client's prose to
+        another client's referent.
+
+        The check lives here rather than in the CLI because this is the one
+        place a binding is created: ingest's URI tier, harvest's, `adopt bind`,
+        a review confirmation and Build 6's rebind all arrive through `create`.
+        A check in `commands/knowledge.py` would guard exactly one of them.
+
+        **The environment is deliberately not compared.** `binding` derives its
+        row scope `via: [item_id]` and `knowledge_item.environment_id` is
+        nullable because an item may span environments, so an item legitimately
+        describes identities in more than one environment of its system. Firm,
+        engagement and system are the boundary that cannot be crossed.
+
+        Raises:
+            AdoptError: ``SCOPE_VIOLATION`` -- policy, exit `3`, and a security
+                event, exactly as §13 says of every cross-scope access.
+        """
+        item = self._items.get_item(item_id)
+        identity = self._identities.get_identity(identity_id)
+        if item is None or identity is None:
+            # Absence is somebody else's error to raise: `adopt bind` reports it
+            # as `BIND_TARGET_NOT_FOUND`, and inventing a scope refusal here
+            # would tell an operator who mistyped an id that they had crossed a
+            # tenant boundary.
+            return
+        mismatched = [
+            field
+            for field in ("firm_id", "engagement_id", "system_id")
+            if str(getattr(item, field)) != str(getattr(identity, field))
+        ]
+        if not mismatched:
+            return
+        raise AdoptError(
+            ErrorCode.SCOPE_VIOLATION,
+            message=(
+                f"knowledge item {item_id} and identity {identity_id} are in different "
+                f"scopes ({', '.join(mismatched)}); a binding joins one item to one "
+                "referent of the same system"
+            ),
+            hint=(
+                "Check --scope and the URI. A binding across systems -- and above all "
+                "across firms -- produces a row nothing can interpret, because the "
+                "binding's own scope is derived from the item while the coverage it "
+                "creates is read against the identity."
+            ),
+        )
 
     def create(
         self,
@@ -101,6 +674,8 @@ class BindingFacade:
                 `idx_binding_pair` is `UNIQUE`, and a second binding for one pair
                 would give the item two chains describing one relationship.
         """
+        self._refuse_across_scopes(item_id, identity_id)
+
         existing = self._records.find_binding(item_id, identity_id)
         if existing is not None:
             raise AdoptError(
@@ -134,6 +709,42 @@ class BindingFacade:
 
         return binding_id, revision_id
 
+    def bind(
+        self,
+        *,
+        item_id: str,
+        identity_id: str,
+        is_load_bearing: bool,
+        extractor: str | None = None,
+        extractor_version: str | None = None,
+        confidence: float | None = None,
+        actor_id: str | None = None,
+    ) -> tuple[str, str]:
+        """Bind from primitives -- the door for packages that cannot import a draft.
+
+        The same door, for the same reason, as `KnowledgeFacade.record`.
+
+        **`locator_rung` is deliberately not offered here.** Contracts §9 fixes
+        that column's meaning as the *semantic locator hierarchy* -- how a
+        rendered referent is located, product id through fragile selector -- and
+        Build 2's tiers (a written URI, a resolved path, a confirmed name) are
+        not points on it. `extractor` already means "what produced this
+        observation", so the tier is recorded there and the rung stays NULL
+        rather than being given a second, private meaning that Build 4's recipe
+        work would later have to unpick.
+        """
+        return self.create(
+            item_id=item_id,
+            identity_id=identity_id,
+            is_load_bearing=is_load_bearing,
+            revision=BindingRevisionDraft(
+                extractor=extractor,
+                extractor_version=extractor_version,
+                confidence=confidence,
+            ),
+            actor_id=actor_id,
+        )
+
     def get(self, binding_id: str) -> Binding | None:
         return self._records.get_binding(binding_id)
 
@@ -144,6 +755,35 @@ class BindingFacade:
         """Append a `retired` revision. The binding stays readable, because
         coverage provenance depends on it (PRD F6.7)."""
         return self._writer.retire(parent_id=binding_id, reason=reason, actor_id=actor_id)
+
+    def supersede(self, *, binding_id: str, actor_id: str | None = None) -> str:
+        """Append a `moved` revision: this link was **replaced**, not withdrawn.
+
+        **Build 6's `rebind` action is `binding_status = 'moved'`'s first
+        writer.** The value has sat in the manifest since schema v3 with nothing
+        writing it, declared for exactly this: a reviewer has re-pointed the item
+        at the referent's successor, and the successor's binding is what anchors
+        it now.
+
+        The distinction from `retire` is the whole reason both exist, and it is
+        load-bearing in `resolve_freshness`:
+
+        * `retired` means the link was **withdrawn** and nothing replaced it, so
+          the item still stales -- there is no anchor.
+        * `moved` means the link was **replaced**, so it is skipped rather than
+          consulted. Its identity is dead or moved by definition, and reading it
+          would block the item forever -- making every rebind a resolution that
+          changed nothing, which is how a reviewer learns the queue is fake.
+
+        Nothing is edited and nothing is deleted: the old chain keeps every
+        revision it had, and "what was this bound to in March" still answers.
+        """
+        return self._writer.append_revision(
+            parent_id=binding_id,
+            draft=BindingRevisionDraft(status=_BINDING_SUPERSEDED),
+            expected_head_id=self._writer.current_head(binding_id),
+            actor_id=actor_id,
+        )
 
 
 class ProbeFacade:
@@ -221,3 +861,72 @@ class ProbeFacade:
     def retire(self, *, probe_definition_id: str, reason: str, actor_id: str | None = None) -> str:
         """Append a `retired` revision (CR-33)."""
         return self._writer.retire(parent_id=probe_definition_id, reason=reason, actor_id=actor_id)
+
+    # -- field-taking doors (Build 5) --------------------------------------
+    #
+    # `create` above takes a `ProbeDefinitionRevisionDraft`, which is fine for a
+    # caller that already lives in this package. `adopt probe add` does not:
+    # CR-36 makes `adopt_cli.store_option` the only CLI module permitted to reach
+    # `adopt_store` at all, so a command constructing that dataclass would be
+    # reaching past the rule even where the import graph happens not to catch it.
+    #
+    # The remedy is the one `KnowledgeFacade` already uses -- `record` and
+    # `append` take **fields** and build the draft in here, so the draft type
+    # stays an implementation detail of this package and the consumer declares a
+    # narrow protocol over the field signature (`adopt_probe.ports.ProbeWriter`).
+    # Neither method adds capability: both delegate to the machinery above.
+
+    def record(
+        self,
+        *,
+        scope: Scope,
+        name: str,
+        interaction: str,
+        safe_path: SafePath,
+        diff_method: DiffMethod,
+        capability_manifest: str,
+        schedule_cron: str | None = None,
+        actor_id: str | None = None,
+    ) -> tuple[str, str]:
+        """`create`, over fields rather than a draft. Returns `(probe_id, revision_id)`."""
+        return self.create(
+            scope=scope,
+            name=name,
+            revision=ProbeDefinitionRevisionDraft(
+                interaction=interaction,
+                safe_path=safe_path,
+                diff_method=diff_method,
+                capability_manifest=capability_manifest,
+            ),
+            schedule_cron=schedule_cron,
+            actor_id=actor_id,
+        )
+
+    def append(
+        self,
+        *,
+        probe_definition_id: str,
+        expected_head_id: str | None,
+        interaction: str,
+        safe_path: SafePath,
+        diff_method: DiffMethod,
+        capability_manifest: str,
+        actor_id: str | None = None,
+    ) -> str:
+        """Append a revision to an existing probe. Returns the new revision id.
+
+        `expected_head_id` is passed through unchanged, so a concurrent edit
+        raises `REVISION_CHAIN_FORK` from the one mutation path rather than from
+        a check this method invented.
+        """
+        return self._writer.append_revision(
+            parent_id=probe_definition_id,
+            draft=ProbeDefinitionRevisionDraft(
+                interaction=interaction,
+                safe_path=safe_path,
+                diff_method=diff_method,
+                capability_manifest=capability_manifest,
+            ),
+            expected_head_id=expected_head_id,
+            actor_id=actor_id,
+        )

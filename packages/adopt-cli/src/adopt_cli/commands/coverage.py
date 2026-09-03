@@ -60,7 +60,15 @@ def recompute(
     json_output: JsonOption = False,
 ) -> None:
     """Evaluate the six inputs of contracts §6 for every identity in scope."""
-    with open_configured_store(store, read_only=not rebuild) as handle:
+    with open_configured_store(
+        store,
+        read_only=not rebuild,
+        verb="coverage recompute --rebuild",
+        # `--rebuild` writes `identity.covered_cache` and nothing else. The cache
+        # is rebuilt *from* `recompute_coverage()` and is never authoritative, so
+        # nothing a later `adopt pull` overwrites was canon.
+        non_canon_reason="--rebuild writes only the coverage cache, never canon",
+    ) as handle:
         result = recompute_coverage(handle.coverage_records(), system, environment)
         rebuilt = rebuild_cache(handle.backend, result) if rebuild else 0
 

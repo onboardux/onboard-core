@@ -15,7 +15,7 @@ the policy would have been.
 
 from typing import Final
 
-from adopt_const import SCHEMA_VERSION
+from adopt_const import INITIAL_SCHEMA_VERSION
 from adopt_schema.emitters._shared import (
     GENERATED_NOTICE,
     enum_check,
@@ -48,6 +48,19 @@ BACK_OUT: Final[str] = (
     "-- back-out is to drop the database and create a new one. There is no in-place\n"
     "-- reversal, and none will be written."
 )
+
+
+def _back_out(version: int) -> str:
+    """The mandatory back-out note. `migrate.apply` refuses a file without one."""
+    if version <= INITIAL_SCHEMA_VERSION:
+        return BACK_OUT
+    return (
+        f"-- back-out: none is needed, and none is possible in place. This migration\n"
+        f"-- only CREATEs tables introduced at schema version {version}, each with its\n"
+        f"-- derived row-level-security policy; it alters nothing that existed before.\n"
+        f"-- Removal is `retired_in_version` in schema/canonical.yaml, which keeps the\n"
+        f"-- physical object and writes it NULL."
+    )
 
 
 def _pg_type(manifest: Manifest, column: Column) -> str:
@@ -168,11 +181,17 @@ def _rls_sql(manifest: Manifest, name: str, table: Table) -> str:
     )
 
 
-def emit(manifest: Manifest) -> str:
-    """The complete Postgres DDL plus every derived RLS policy."""
+def emit(manifest: Manifest, *, version: int) -> str:
+    """The Postgres DDL for one schema version, plus that tranche's RLS policies.
+
+    Every table a tranche creates gets its policy **in the same file**, so a
+    table can never exist for even one migration without the isolation its scope
+    declares. `_predicate` may walk into a parent an earlier tranche created:
+    that is safe because the tranches apply in version order.
+    """
     header = "\n".join(f"-- {line}" for line in GENERATED_NOTICE.splitlines())
-    version_marker = f"-- schema-version: {SCHEMA_VERSION}"
-    ordered = manifest.ordered_tables()
+    version_marker = f"-- schema-version: {version}"
+    ordered = manifest.tranche(version)
     tables = [_table_sql(manifest, name, table) for name, table in ordered]
     policies = [
         "-- ═══════════════ ROW-LEVEL SECURITY, DERIVED FROM ROW SCOPE ═══════════════",
@@ -181,4 +200,4 @@ def emit(manifest: Manifest) -> str:
         "-- the manifest, and the next regeneration silently reverts it.",
         *[_rls_sql(manifest, name, table) for name, table in ordered],
     ]
-    return "\n\n".join([header, version_marker, BACK_OUT, *tables, *policies]) + "\n"
+    return "\n\n".join([header, version_marker, _back_out(version), *tables, *policies]) + "\n"

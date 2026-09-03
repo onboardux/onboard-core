@@ -120,18 +120,33 @@ def _verify_digests(source: Path, bundle: BundleManifest, manifest: Manifest) ->
     something else, which is precisely the substitution the digest exists to
     prevent.
     """
-    expected = {name for name, _ in manifest.exportable_tables()}
+    # **The bundle's own schema version decides the expected set, not ours.**
+    # A bundle exported at version 3 legitimately carries no table introduced at
+    # 4, and judging it against the running binary's manifest would refuse it as
+    # truncated -- ending the standing-export portability claim (v6.1 §7) the
+    # first time a table was ever added. `read_bundle` has already checked the
+    # declared pair against `export_compat.json`, so this version is negotiated
+    # rather than taken on trust.
+    #
+    # A table the bundle declares that this schema does not know is still
+    # refused: that is a bundle from a *newer* line, which the version window
+    # exists to catch, and applying it would write rows into a table we cannot
+    # validate.
+    expected = {
+        name for name, table in manifest.exportable_tables() if table.since <= bundle.schema_version
+    }
     declared = {entry.name for entry in bundle.tables}
 
     if declared != expected:
         missing = sorted(expected - declared)
         unexpected = sorted(declared - expected)
         raise _malformed(
-            "the manifest's table set does not match schema version "
-            f"{manifest.schema_version}: missing {missing}, unexpected {unexpected}",
-            "Every exportable table produces a file, even when empty (§11), so a missing "
-            "entry is a truncated bundle rather than an empty table. An unexpected entry "
-            "is a table this schema version does not declare.",
+            "the bundle's table set does not match the schema version it declares "
+            f"({bundle.schema_version}): missing {missing}, unexpected {unexpected}",
+            "Every exportable table that existed at the bundle's schema version produces "
+            "a file, even when empty (§11), so a missing entry is a truncated bundle "
+            "rather than an empty table. An unexpected entry is a table that version does "
+            "not declare.",
         )
 
     verified: dict[str, bytes] = {}
@@ -180,6 +195,32 @@ def _parse_rows(table: str, payload: bytes) -> Sequence[BaseModel]:
     return models
 
 
+#: Scope levels whose rows belong to no tenant, and which "an empty store"
+#: therefore does not describe.
+#:
+#: **The emptiness check asks whether *this tenant's* canon is empty**, and until
+#: 2026-08-28 it asked whether the whole database was. On a single-tenant local
+#: store those are the same question. On `adopt-plane`'s shared Postgres they are
+#: not: a `global` table carries no generated row-level-security policy, so every
+#: tenant session sees every row in it, and one `classifier_version` row left by
+#: the first tenant refused `POST /v1/activate` for **every tenant after it**
+#: with `EXPORT_TARGET_NOT_EMPTY`. Reachable with no test involved --
+#: `ensure_classifier_version` writes that row into any field store that has run
+#: Build 6's classifier, so it travels in the first bundle activated.
+#:
+#: The rows are still imported; they are only not counted as occupancy. That
+#: matters: a tenant's `classification` rows carry an FK to the
+#: `classifier_version` id **their own** bundle was written with, so skipping the
+#: insert would leave those references dangling. Two tenants therefore contribute
+#: two rows for one label, which the manifest already permits -- `version_label`
+#: has no UNIQUE index, deliberately.
+#:
+#: `unscoped` joins `global` on the same argument rather than on precedent: both
+#: name a table with no tenant to be empty *of*. No exportable table declares it
+#: today, and naming it here is what stops the next one rediscovering this bug.
+_TENANTLESS: Final[frozenset[str]] = frozenset({"global", "unscoped"})
+
+
 def apply_bundle(
     records: ImportRecords,
     source: Path,
@@ -207,7 +248,9 @@ def apply_bundle(
 
     verified = _verify_digests(source, read, loaded)
 
-    for table_name, _ in loaded.exportable_tables():
+    for table_name, table in loaded.exportable_tables():
+        if table.scope_level in _TENANTLESS:
+            continue
         held = records.row_count(table_name)
         if held:
             raise AdoptError(
@@ -224,9 +267,13 @@ def apply_bundle(
 
     with records.transaction():
         # Foreign-key topological order: `exportable_tables()` is already sorted
-        # by it, so a child never lands before its parent.
+        # by it, so a child never lands before its parent. Restricted to what the
+        # bundle actually carries, for `_verify_digests`' reason: a table
+        # introduced after the bundle's schema version has no file in it, and
+        # the target's own (empty) table is the correct end state.
         for table_name, _ in loaded.exportable_tables():
-            records.insert_rows(table_name, parsed[table_name])
+            if table_name in parsed:
+                records.insert_rows(table_name, parsed[table_name])
 
     _LOGGER.info(
         "export.bundle_applied",

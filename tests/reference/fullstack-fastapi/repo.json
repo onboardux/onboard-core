@@ -1,0 +1,9 @@
+{
+  "slug": "fullstack-fastapi",
+  "url": "https://github.com/fastapi/full-stack-fastapi-template",
+  "commit": "162344da111e833b30892728372ab95331f06873",
+  "archetype": "web",
+  "scope": "acme/platform/fullstack-api/prod",
+  "licence": "MIT",
+  "why": "A real web service: FastAPI routers with prefixes, SQLModel tables, a pydantic-settings class, Alembic migrations and a GitHub Actions matrix. Cloned in CI, never vendored."
+}

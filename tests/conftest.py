@@ -47,6 +47,28 @@ from adopt_store.sqlite.records import SqliteKnowledgeRecords  # noqa: E402
 S4_START = _dt.datetime(2026, 8, 5, 9, 0, 0, tzinfo=_dt.UTC)
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_user_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """No test reads the developer's own `~/.config/adopt/config.toml`.
+
+    Build 0 amendment A1 made `resolve_all` read both config files when a layer
+    is omitted, which is the correct production behaviour and the whole point of
+    the fix. It also means an unpinned call now depends on the machine: a
+    developer with a user config would run a different suite from CI, and the
+    disagreement would surface as a flake in whichever test happened to read a
+    key they had set.
+
+    `HOME` is redirected to an empty directory for the whole session, so
+    `user_config_path()` resolves somewhere that reliably does not exist. Tests
+    that mean to exercise the user layer pass it explicitly.
+    """
+    empty_home = tmp_path_factory.mktemp("hermetic-home")
+    monkeypatch.setenv("HOME", str(empty_home))
+    monkeypatch.setenv("USERPROFILE", str(empty_home))  # Path.home() on Windows
+
+
 @pytest.fixture
 def s4_clock() -> ManualClock:
     return ManualClock(S4_START)

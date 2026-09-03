@@ -22,14 +22,21 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from adopt_cli.config import resolve_all
-from adopt_obs import AdoptError, ErrorCode
+from adopt_cli.replica import refuse_write_to_replica
+from adopt_obs import AdoptError, Clock, ErrorCode
 from adopt_store import open_store
-from adopt_store.annex import SqliteAnnexRecords, open_annex
+from adopt_store.annex import SqliteAnnexRecords, annex_path, open_annex
+from adopt_store.annex.filestate import SqliteFileStateRecords, open_file_state
+from adopt_store.annex.questions import SqliteQuestionLog, open_question_log
+from adopt_store.annex.search import SqliteSearchRecords, open_search
 from adopt_store.api import SqliteStoreHandle, writer_identity
 
 __all__ = [
     "SqliteStoreHandle",
     "configured_annex",
+    "configured_file_state",
+    "configured_question_log",
+    "configured_search",
     "configured_store_path",
     "open_configured_store",
     "open_for_migration",
@@ -65,10 +72,38 @@ def configured_store_path(override: Path | None = None) -> Path:
 
 
 def open_configured_store(
-    override: Path | None = None, *, read_only: bool = True
+    override: Path | None = None,
+    *,
+    read_only: bool = True,
+    verb: str = "this command",
+    non_canon_reason: str | None = None,
 ) -> SqliteStoreHandle:
-    """Open the configured store. The caller closes it."""
-    return open_store(configured_store_path(override), read_only=read_only)
+    """Open the configured store. The caller closes it.
+
+    **A writable open is refused on a replica** (`replica.refuse_write_to_replica`,
+    contracts §13 `STORE_TARGET_IS_REPLICA`), and it is refused *here* because
+    here is the one door every writing verb already comes through. `refresh` and
+    `handover` each carried their own copy of the check and remembered; eleven
+    other canon-writing verbs did not, and every one of them could write into a
+    file the next `adopt pull` replaces wholesale.
+
+    Args:
+        override: `--store`, or `None` for the resolution order.
+        read_only: `False` opens for writing, which is what arms the guard.
+        verb: What the operator ran, so the refusal names the command and not
+            only the file. Unused when `read_only` is `True`.
+        non_canon_reason: The opt-out, and the reason **is** the parameter --
+            there is no way to skip the guard without writing down why. Only
+            three verbs pass it: `ask` and `serve` rebuild the retrieval index
+            in the annex while answering, which is not canon and is the one
+            thing a replica exists to do, and `coverage recompute --rebuild`
+            writes only the cache `recompute_coverage()` derives. Their
+            **capture** paths are refused separately, where they write canon.
+    """
+    path = configured_store_path(override)
+    if not read_only and non_canon_reason is None:
+        refuse_write_to_replica(path, verb=verb)
+    return open_store(path, read_only=read_only)
 
 
 def open_or_create_store(override: Path | None = None) -> SqliteStoreHandle:
@@ -81,6 +116,7 @@ def open_or_create_store(override: Path | None = None) -> SqliteStoreHandle:
     rather than one it should quietly fix.
     """
     target = configured_store_path(override)
+    refuse_write_to_replica(target, verb="init")
     target.parent.mkdir(parents=True, exist_ok=True)
     return open_store(target, migrate=True)
 
@@ -91,6 +127,11 @@ def open_for_migration(override: Path | None = None) -> SqliteStoreHandle:
     `adopt store migrate`'s door. Forward-only, always: implementation spec §7.4
     states the schema has no rollback and recovery is older code against a newer
     store.
+
+    **Not guarded against a replica**, deliberately: a pulled replica is already
+    at the plane's schema version, so migrating it is a no-op, and the schema is
+    not canon -- nothing an operator would lose to the next `adopt pull` is
+    written here.
     """
     return open_store(configured_store_path(override), migrate=True)
 
@@ -122,6 +163,59 @@ def configured_annex() -> Iterator[SqliteAnnexRecords]:
         hint=f"Set {_RUNTIME_KEY}. It carries agent-run idempotency and in-client "
         f"audit, and is never exported.",
     )
+
+
+@contextmanager
+def configured_search(
+    handle: SqliteStoreHandle, *, clock: Clock | None = None
+) -> Iterator[SqliteSearchRecords]:
+    """The retrieval index beside `handle`'s store, opened for one command.
+
+    **Here rather than in `commands/ask.py`**, for the reason this module exists
+    (CR-36, extended by CR-47 to the annex): `no-raw-sqlite` follows indirect
+    chains into `adopt_cli` and exempts only this module by name, so a command
+    importing `adopt_store.annex.search` reaches `sqlite3` through it and breaks
+    the contract. `adopt_ask` is handed a `SearchRecords`, which this satisfies
+    structurally, and never learns which engine answered.
+
+    Unlike `configured_annex` this takes no path of its own: the index is
+    resolved from the store's path, because an index beside a *different* store
+    answers questions about knowledge that store never held.
+    """
+    with open_search(handle.backend, clock=clock) as records:
+        yield records
+
+
+@contextmanager
+def configured_question_log(handle: SqliteStoreHandle) -> Iterator[SqliteQuestionLog]:
+    """The passive question log in the annex beside `handle`'s store.
+
+    Resolved from the store's path rather than from `ADOPT_RUNTIME_PATH`, for
+    `configured_search`'s reason: the log records what was asked *of this
+    store*, and a log beside a different one answers for questions that store
+    never received. `configured_annex` keeps the path key because agent-run
+    idempotency is genuinely store-independent.
+    """
+    with open_question_log(annex_path(handle.backend.path)) as log:
+        yield log
+
+
+@contextmanager
+def configured_file_state(handle: SqliteStoreHandle) -> Iterator[SqliteFileStateRecords]:
+    """The refresh file-state snapshot in the annex beside `handle`'s store.
+
+    Here rather than in `commands/_refresh_support.py`, for `configured_search`'s
+    reason: `no-raw-sqlite` follows indirect chains into `adopt_cli` and exempts
+    only this module by name. The refresh support module is handed the port and
+    never learns which engine answered -- which is also why the snapshot could
+    move into the plane's own storage in Build 8 without the write path noticing.
+
+    Resolved from the store's path, never from `ADOPT_RUNTIME_PATH`: a snapshot
+    beside a different store describes a tree that store was never mapped from,
+    and comparing against it would report the whole repository as rewritten.
+    """
+    with open_file_state(handle.backend.path) as records:
+        yield records
 
 
 def open_named_store(path: Path, *, migrate: bool = False) -> SqliteStoreHandle:

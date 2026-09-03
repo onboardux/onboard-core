@@ -24,6 +24,15 @@ sensor health `STALE`, and so is one that has never reported at all. The
 alternative -- no heartbeat, no problem -- is the reading that makes a dead
 connector look like a quiet system.
 
+**A superseded binding is not consulted (Build 6).** `binding_status` has
+carried `moved` since schema v3 with nothing writing it; Build 6's `rebind` is
+its first writer, and it means *this link was replaced, and the successor
+binding is what anchors the item now*. Such a row is skipped rather than read,
+because its identity is dead or moved by definition -- consulting it would block
+the item forever and make every rebind a resolution that changed nothing. This
+is distinct from `retired`, which means the link was **withdrawn**: that one
+still stales, because nothing replaced it.
+
 **Precedence, and why the override is not simply first.** A retired item is
 terminal and no sensor changes that. A genuinely stale item stays `stale`, which
 is stronger and more actionable than `observation_stale`. The override therefore
@@ -85,6 +94,10 @@ _SENSOR_STALE: Final[str] = "STALE"
 _IDENTITY_DEAD: Final[str] = "dead"
 _IDENTITY_MOVED: Final[str] = "moved"
 _BINDING_RETIRED: Final[str] = "retired"
+#: A binding superseded by a rebind. Distinct from `retired`, which means the
+#: link was withdrawn: this one means the link was *replaced*, and the successor
+#: binding is what now anchors the item.
+_BINDING_MOVED: Final[str] = "moved"
 
 _FRESH: Final[FreshnessState] = "fresh"
 _STALE: Final[FreshnessState] = "stale"
@@ -179,6 +192,17 @@ def _load_bearing_blocker(
     """
     for binding in sorted(bindings, key=lambda row: row.id):
         if not binding.is_load_bearing:
+            continue
+
+        # A **superseded** binding: a reviewer re-pointed this item at the
+        # referent's successor, and this row records the link that used to hold.
+        # It is skipped rather than consulted, because its identity is dead or
+        # moved by definition and would block the item forever -- so `rebind`
+        # could never return an item to service, and a reviewer working the
+        # queue would watch every resolution change nothing. Build 6 is the
+        # first writer of this status (v3 declared it with none); before that
+        # this branch could not be reached, which is why it never existed.
+        if binding_statuses.get(binding.id) == _BINDING_MOVED:
             continue
 
         identity_status = identity_statuses.get(binding.identity_id)

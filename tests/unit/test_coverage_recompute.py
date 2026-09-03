@@ -29,6 +29,7 @@ from adopt_coverage import (
     REASON_NO_LIVE_BINDING,
     REASON_NO_OBSERVABILITY_BOUNDARY,
     REASON_VERIFICATION_CONFLICTED,
+    REASON_VERIFICATION_UNVERIFIED,
     rebuild_cache,
     recompute_coverage,
 )
@@ -44,7 +45,7 @@ def _covered_world(
     add_boundary: Callable[..., str],
     add_audience: Callable[..., None],
     *,
-    verification: str = "verified",
+    verification: str | None = "verified",
 ) -> tuple[str, str, str]:
     """A world in which the one identity is covered on all six counts.
 
@@ -296,15 +297,31 @@ class TestTheSixInputs:
         assert result.verdict(identity_id) is False
         assert REASON_VERIFICATION_CONFLICTED in result.identities[0].reasons
 
-    def test_input_6_unverified_does_not_block_coverage(
+    def test_input_6_unverified_blocks_coverage(
         self,
         s4_store: SqliteStoreHandle,
         s4_scope: Scope,
         add_boundary: Callable[..., str],
         add_audience: Callable[..., None],
     ) -> None:
-        """`unverified` is the honest state every item starts in. Requiring
-        `verified` would make coverage unreachable by construction."""
+        """Only `verified` knowledge counts (v6.1 §6 B2 / F6, Build 2 D5).
+
+        **This assertion is the inverse of the one Build 0 shipped**, and the
+        inversion is the point rather than a correction. Build 0's rule was
+        right for Build 0: nothing could make an item verified, so requiring
+        verification would have made coverage unreachable by construction. Build
+        2 supplies both doors -- ingest writes a human's document as `verified`,
+        and confirming in `adopt review` promotes a mined candidate -- so the
+        rule v6.1 requires became enforceable in the same build that made it
+        satisfiable.
+
+        Fails when an unreviewed harvest candidate is allowed to carry coverage;
+        matters because that is precisely how `adopt gaps` stops asking for the
+        knowledge a system is actually missing; no other instrument catches it
+        because the store is perfectly consistent either way -- the identity has
+        a live binding to a real item, and only this rule distinguishes a
+        machine's guess from something a person stood behind.
+        """
         assert s4_scope.system is not None
         identity_id, _, _ = _covered_world(
             s4_store, s4_scope, add_boundary, add_audience, verification="unverified"
@@ -312,7 +329,32 @@ class TestTheSixInputs:
 
         result = recompute_coverage(s4_store.coverage_records(), s4_scope.system.id)
 
-        assert result.verdict(identity_id) is True
+        assert result.verdict(identity_id) is False
+        assert REASON_VERIFICATION_UNVERIFIED in result.identities[0].reasons
+
+    def test_input_6_a_missing_verification_blocks_exactly_as_unverified_does(
+        self,
+        s4_store: SqliteStoreHandle,
+        s4_scope: Scope,
+        add_boundary: Callable[..., str],
+        add_audience: Callable[..., None],
+    ) -> None:
+        """A NULL `verification` is not permission.
+
+        Fails when absence is read as assent; matters because `verification` is
+        nullable and every writer that simply omits it would otherwise
+        manufacture coverage; no other instrument catches it because the column
+        is legitimately empty on rows no one has reviewed.
+        """
+        assert s4_scope.system is not None
+        identity_id, _, _ = _covered_world(
+            s4_store, s4_scope, add_boundary, add_audience, verification=None
+        )
+
+        result = recompute_coverage(s4_store.coverage_records(), s4_scope.system.id)
+
+        assert result.verdict(identity_id) is False
+        assert REASON_VERIFICATION_UNVERIFIED in result.identities[0].reasons
 
     def test_a_second_live_binding_carries_coverage_when_the_first_cannot(
         self,
@@ -330,7 +372,9 @@ class TestTheSixInputs:
             scope=s4_scope,
             kind="procedure",
             title="How a refund is reversed",
-            revision=KnowledgeRevisionDraft(authority_class="human_confirmed", body_md="v1"),
+            revision=KnowledgeRevisionDraft(
+                authority_class="human_confirmed", body_md="v1", verification="verified"
+            ),
         )
         add_audience(item_id=second_item)
         s4_store.bindings().create(

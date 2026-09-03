@@ -21,6 +21,8 @@ import pytest
 from adopt_cli.commands import doctor as doctor_command
 from adopt_cli.commands import version as version_command
 from adopt_cli.config import REGISTRY, Source, load_config_file, resolve_all
+from adopt_const import EXPORT_VERSION, SCHEMA_VERSION
+from adopt_obs import AdoptError, ErrorCode
 
 KEY = "ADOPT_LOG_LEVEL"
 
@@ -71,7 +73,12 @@ def test_every_registered_key_is_reported_with_a_source() -> None:
 def test_a_secret_is_reported_by_presence_and_source_never_by_value() -> None:
     secret_key = next(k.name for k in REGISTRY if k.is_secret)
 
-    resolutions = resolve_all(env={secret_key: "PLANTED-NOT-A-REAL-CREDENTIAL"})
+    # The file layers are pinned empty rather than omitted: since A1 an omitted
+    # layer reads the real file, and a unit test must not depend on whether the
+    # machine running it happens to have a user config.
+    resolutions = resolve_all(
+        env={secret_key: "PLANTED-NOT-A-REAL-CREDENTIAL"}, project={}, user={}
+    )
     rendered = next(r.render() for r in resolutions if r.key == secret_key)
 
     assert rendered["value"] == "<set>"
@@ -108,6 +115,77 @@ def test_a_malformed_config_file_is_not_silently_ignored(tmp_path: Path) -> None
 
 
 @pytest.mark.unit
+def test_an_omitted_file_layer_is_read_rather_than_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Build 0 amendment A1, and the one defect an operator could hit today.
+
+    Defect sentence: *fails when* `resolve_all` stops reading the two files it
+    documents. *Matters because* a value set in `.adopt/config.toml` -- including
+    `ADOPT_STORE_PATH`, which decides which database every command opens -- then
+    has no effect and produces no error, and the only visible trace is `doctor`
+    truthfully reporting the source as `default`. *No other instrument catches it
+    because* the resolution-order tests inject all four layers and pass
+    perfectly, which is exactly how the production callers came to inject none.
+    """
+    project_dir = tmp_path / "project"
+    (project_dir / ".adopt").mkdir(parents=True)
+    (project_dir / ".adopt" / "config.toml").write_text(
+        'ADOPT_STORE_PATH = "from-the-project-file.db"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(project_dir)
+
+    # `user` stays pinned empty: this asserts the project layer, and the user
+    # file is the machine's, not the test's.
+    resolved = next(
+        r for r in resolve_all(flags={}, env={}, user={}) if r.key == "ADOPT_STORE_PATH"
+    )
+
+    assert resolved.value == "from-the-project-file.db"
+    assert resolved.source is Source.PROJECT_FILE
+
+
+@pytest.mark.unit
+def test_an_explicit_empty_layer_still_means_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`{}` is the test override that says "this layer is empty"; `None` says
+    "read the real one". Collapsing the two would make A1's fix untestable."""
+    project_dir = tmp_path / "project"
+    (project_dir / ".adopt").mkdir(parents=True)
+    (project_dir / ".adopt" / "config.toml").write_text(
+        'ADOPT_STORE_PATH = "must-not-be-read.db"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(project_dir)
+
+    resolved = next(
+        r for r in resolve_all(flags={}, env={}, project={}, user={}) if r.key == "ADOPT_STORE_PATH"
+    )
+
+    assert resolved.value == ".adopt/store.db"
+    assert resolved.source is Source.DEFAULT
+
+
+@pytest.mark.unit
+def test_a_malformed_project_file_fails_typed_rather_than_as_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Since A1 every command reads these files, so the parse failure reaches
+    operators who did not run `doctor`. A raw `TOMLDecodeError` would reach them
+    as a traceback instead of the one documented envelope."""
+    project_dir = tmp_path / "project"
+    (project_dir / ".adopt").mkdir(parents=True)
+    (project_dir / ".adopt" / "config.toml").write_text("not = valid = toml", encoding="utf-8")
+    monkeypatch.chdir(project_dir)
+
+    with pytest.raises(AdoptError) as caught:
+        resolve_all(flags={}, env={}, user={})
+
+    assert caught.value.code is ErrorCode.ADOPT_CONFIG_UNRESOLVED
+    assert "config.toml" in caught.value.message
+
+
+@pytest.mark.unit
 def test_doctor_reports_a_finding_when_an_adapter_has_no_model() -> None:
     payload, findings = doctor_command.build_payload(env={"ADOPT_ADAPTER": "local_openai"})
 
@@ -135,8 +213,8 @@ def test_version_build_facts_are_immutable_artifact_data(
 
     assert payload["sbom_sha256"] is None
     assert payload["build_id"] is None
-    assert payload["schema_version"] == 3
-    assert payload["export_version"] == 3
+    assert payload["schema_version"] == SCHEMA_VERSION
+    assert payload["export_version"] == EXPORT_VERSION
 
     monkeypatch.setattr(version_command, "SBOM_SHA256", "a" * 64)
     build_id = f"github:owner/repo:1:1:{'b' * 40}"

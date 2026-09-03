@@ -665,6 +665,47 @@ class TestWorkflowsAreRunnable:
             # would have caught it is the cheapest thing to drop when a build
             # slows down.
             "artifact-licence",
+            # `map-journey` landed at Build 1 S1.2 and is that build's
+            # **Definition of Done**: v6.1 §6's demo, run line by line on two
+            # real repositories at pinned commits. It is on this list for the
+            # reason the whole build exists to answer -- eight sprints of the
+            # withdrawn v4 line were internally consistent, fully gated and 1604
+            # tests green, and still the wrong build, because nothing in the
+            # gates ran the verb on real code. This job is the one that does,
+            # and deleting it would restore exactly that blindness.
+            "map-journey",
+            # `knowledge-journey` landed at Build 2 S2.2 and is that build's
+            # **Definition of Done**: ingest, harvest, the one review queue,
+            # gaps and the G2 move check, run on the same two pinned
+            # repositories. It is on this list for a reason `map-journey` cannot
+            # cover -- Build 1's journey maps a tree and binds nothing, so it
+            # passes unchanged whether or not a move orphans every binding in
+            # the store. Only a journey that has both a move and bindings can
+            # see invariant #3 fail.
+            "knowledge-journey",
+            # `handover-journey` landed at Build 9 S9.1 and is that build's
+            # **Definition of Done**: the six recorded steps, the two honesty
+            # rules, and the client-side digest check. It is on this list for a
+            # reason the other journeys cannot cover -- Build 9 writes the
+            # ownership transfer and the acceptance record a client keeps, and
+            # both are irreversible in the sense that matters: a closure that
+            # transferred nothing, or a digest a client cannot reproduce, is
+            # discovered by the other party, months later, with no way left to
+            # establish what was actually handed over.
+            "handover-journey",
+            # **The other four journeys, added by T1.9 -- and their absence was
+            # the reason `refresh-journey` did not exist.** `ask-journey`,
+            # `pack-journey` and `probe-journey` were live in `ci.yml` and named
+            # by no structure test, so any of them could have been deleted
+            # without a single instrument noticing; `refresh-journey` was never
+            # written at all, and nothing said so. Build 6's demo therefore ran
+            # in **no** job from S6.1 until the production-readiness sweep found
+            # it. A list that names some journeys and not others is worse than
+            # none: it reads as complete.
+            "ask-journey",
+            "pack-journey",
+            "probe-journey",
+            "refresh-journey",
         }
     )
 
@@ -780,6 +821,16 @@ class TestWorkflowsAreRunnable:
             assert "github.event.pull_request.head.repo.full_name == github.repository" in condition
             assert "dependabot[bot]" in condition
             assert "github.event_name == 'push'" in condition
+            # **A manual dispatch must reach these three** (T1.10). The guard is
+            # about *fork code*, and a dispatch can only be started by a
+            # collaborator with write access -- so excluding it protected
+            # nothing and cost everything: `workflow_dispatch` exists in this
+            # workflow to re-read four Q4 constants, one of which is the
+            # conformance matrix's elapsed time, and the job that measures it
+            # skipped on every dispatch. Asserted beside the fork clauses rather
+            # than in a test of its own, because the two are one condition and a
+            # future edit that drops this will be an edit to this line.
+            assert "github.event_name == 'workflow_dispatch'" in condition
 
         for job_name in ("constants-sync", "error-registry-sync"):
             condition = str(jobs[job_name]["if"])
@@ -792,6 +843,69 @@ class TestWorkflowsAreRunnable:
             assert pack_checkout["with"]["persist-credentials"] is False
 
         assert "vars.ADOPT_CONFORMANCE_ADAPTERS != ''" in str(jobs["conformance-matrix"]["if"])
+
+    def test_the_release_workflow_writes_down_no_shape_version(self) -> None:
+        """A release cannot carry a schema number the tree does not report.
+
+        *Fails when* `release.yml` compares against a literal `schema_version`
+        or `export_version`. *Matters because* the workflow hard-coded `3` in
+        four places while the tree reported `4`: the first release of any build
+        that adds a table would have failed its own smoke test on every
+        platform, **after** the wheels were built, the SBOM was emitted and the
+        build facts were stamped -- and the failure would have read as a defect
+        in the artefact rather than in the workflow. *No other instrument
+        catches it because* the release workflow runs on a tag, so a literal
+        stays green through every dry run at the version it happens to name.
+
+        `scripts/packaged_artifact.py` closed the identical class in CI and
+        records that it "was `"schema_version": 3` in three places and every one
+        of them failed the first time a build added a table". This is that
+        lesson, applied to the one workflow it had not reached.
+
+        The scan is over the raw text rather than the parsed YAML, because the
+        literals lived inside `run:` scripts -- a heredoc, a `grep` pattern and
+        a dict -- and none of them is a YAML value the parser would expose.
+        """
+        import re
+
+        text = (self.WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+        offenders = [
+            f"{number}: {line.strip()}"
+            for number, line in enumerate(text.splitlines(), 1)
+            if re.search(r'"(schema|export)_version"\s*:?\s*\*?\s*[0-9]', line)
+            # Comments are prose, not a comparison -- the same distinction
+            # `tools/contracts` makes with `scannable_text`, and for the same
+            # reason: the lines above this test's own subject *describe* the
+            # literals, and a scan that failed on its own documentation is a
+            # scan that acquires an exemption it never needed.
+            and not line.lstrip().startswith("#")
+        ]
+
+        assert not offenders, (
+            "release.yml compares against a written-down shape version:\n  "
+            + "\n  ".join(offenders)
+            + "\nDerive it from `adopt_const` in the `build` job and pass it as an output. "
+            "A literal here fails the release, after the wheels are built, on the first "
+            "build that adds a table."
+        )
+
+    def test_that_scan_would_see_a_planted_literal(self) -> None:
+        """The control: a scan that finds nothing must be able to find something.
+
+        The pattern is asserted against the exact text this workflow used to
+        carry, so a regex that quietly stopped matching -- CR-67's
+        broken-state-indistinguishable-from-passing failure -- cannot pass as a
+        clean tree.
+        """
+        import re
+
+        pattern = r'"(schema|export)_version"\s*:?\s*\*?\s*[0-9]'
+
+        assert re.search(pattern, '              "schema_version": 3,')
+        assert re.search(pattern, """            | grep -q '"schema_version": *3'""")
+        assert not re.search(
+            pattern, '              "schema_version": int(os.environ["EXPECTED_SCHEMA_VERSION"]),'
+        )
 
     def test_binaries_are_packed_from_the_published_wheel(self) -> None:
         """The packer compiles the artefact we ship, not the source tree.
@@ -1082,7 +1196,7 @@ class TestWorkflowsAreRunnable:
         assert (
             build_names.index("CycloneDX SBOM")
             < build_names.index("Embed immutable build facts")
-            < build_names.index("Build all 15 Python distributions")
+            < build_names.index("Build every Python distribution in the workspace")
         )
 
         pypi_upload = next(

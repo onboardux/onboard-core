@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from adopt_cli.main import main
+from adopt_const import SCHEMA_VERSION
 from adopt_obs import ExitCode
 
 
@@ -54,7 +55,7 @@ def test_the_nuitka_source_entry_point_invokes_the_cli() -> None:
     )
 
     assert completed.returncode == ExitCode.SUCCESS, completed.stderr
-    assert json.loads(completed.stdout)["schema_version"] == 3
+    assert json.loads(completed.stdout)["schema_version"] == SCHEMA_VERSION
 
 
 @pytest.mark.unit

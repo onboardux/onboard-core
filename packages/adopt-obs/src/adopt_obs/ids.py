@@ -74,6 +74,7 @@ PREFIX_REGISTRY: Final[dict[str, str]] = {
     "ri": "review_item",
     "apr": "approval",
     "esc": "escalation",
+    "gap": "coverage_gap",
     "own": "ownership_assignment",
     "aud": "audit_event",
     "ob": "observability_boundary",
@@ -81,6 +82,7 @@ PREFIX_REGISTRY: Final[dict[str, str]] = {
     "ve": "value_event",
     "act": "actor (external reference)",
     "ag": "agent_run (runtime annex)",
+    "qlog": "ask_question_log (runtime annex)",
     "run": "run (log and trace correlation)",
 }
 

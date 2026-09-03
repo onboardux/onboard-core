@@ -1,0 +1,50 @@
+# The verification checklist — `adopt handover verify --checklist THIS`.
+#
+# Authored by the delivering FDE before the session; filled in by the receiving
+# team during it. The tasks are the realistic things the new owners must be able
+# to do using **only the pack and `adopt ask`** — no Slack, no tapping the FDE
+# on the shoulder. Three to six tasks is the usual size: enough to find real
+# gaps, short enough that a room will actually sit through it.
+#
+# A task somebody needed help with is `fail`. That is not a judgement about the
+# person: the finding is about the pack, and every failure becomes an open
+# question you can answer in the room with `adopt answer`.
+
+# Which pack the tasks were performed against. Optional; per-task `audience`
+# overrides it when one round covered two packs.
+audience: client_ops
+
+tasks:
+  # `id`     — short, stable, unique. It keys the recorded outcome and any
+  #            question raised from the task.
+  # `task`   — what they were asked to do. This becomes the question text if
+  #            they could not do it, so write it as something answerable.
+  # `outcome`— pass | fail | skipped. Nothing else is accepted.
+  # `uri`    — optional. The identity the task is about. Naming it means an
+  #            answer captured later binds to the right referent in one step.
+  # `note`   — optional. What actually went wrong; it travels with the question.
+  # `performed_by` — optional. Who did the task, for the audit answer to
+  #            "who verified this". Never who failed it.
+
+  - id: explain-refund-approval
+    task: "Explain why refunds require an approval step, using only the pack"
+    outcome: pass
+    performed_by: bob
+
+  - id: rotate-api-key
+    task: "Rotate the orders API key using only the pack and `adopt ask`"
+    outcome: fail
+    uri: "onboard-v1://northwind/acme-erp/orders-api/prod/config_key/-/ORDERS_API_KEY"
+    note: "The pack names the key but not where it is stored or who can rotate it"
+    performed_by: bob
+
+  - id: run-nightly-backfill
+    task: "Trigger the nightly backfill job and describe how you would know it worked"
+    outcome: skipped
+    note: "No staging environment available on the day; re-run before go-live"
+    performed_by: priya
+
+  - id: find-owner-of-checkout
+    task: "Find out who owns the checkout integration and how to reach them"
+    outcome: pass
+    performed_by: priya

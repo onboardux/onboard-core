@@ -29,6 +29,8 @@ jobs:
       distributions: ${{ steps.context.outputs.distributions }}
       sbom_sha256: ${{ steps.facts.outputs.sbom_sha256 }}
       build_id: ${{ steps.facts.outputs.build_id }}
+      schema_version: ${{ steps.shapes.outputs.schema_version }}
+      export_version: ${{ steps.shapes.outputs.export_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -41,6 +43,29 @@ jobs:
           set -euo pipefail
           uv lock --check
           uv sync --frozen --all-packages --no-dev
+
+      # **Derived once, never written down.** This workflow hard-coded
+      # `"schema_version": 3` and `"export_version": 3` in four places, and the
+      # tree it releases reports 4 -- so a release of any build that adds a
+      # table would have failed its own smoke test, on every platform, after the
+      # wheels were already built. `scripts/packaged_artifact.py` fixed the
+      # identical class in CI and says so in its own comment: "this was
+      # `"schema_version": 3` in three places and every one of them failed the
+      # first time a build added a table".
+      #
+      # The expectation comes from the checkout's `adopt_const`; what the
+      # *artefact* reports is what the smoke steps compare against it. Deriving
+      # both sides from the artefact would make the assertion vacuous.
+      - name: The shape versions this tree releases
+        id: shapes
+        run: |
+          set -euo pipefail
+          uv run --frozen --no-dev python - >> "$GITHUB_OUTPUT" <<'PY'
+          from adopt_const import EXPORT_VERSION, SCHEMA_VERSION
+
+          print(f"schema_version={SCHEMA_VERSION}")
+          print(f"export_version={EXPORT_VERSION}")
+          PY
 
       - name: Validate the lockstep version, tag and publication route
         id: context
@@ -87,7 +112,9 @@ jobs:
           echo "sbom_sha256=$sbom_sha256" >> "$GITHUB_OUTPUT"
           echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
 
-      - name: Build all 15 Python distributions
+      # The count is `release_context`'s, checked immediately below. Naming a
+      # number here would be a second place for the canonical set to be wrong.
+      - name: Build every Python distribution in the workspace
         run: uv build --all-packages --out-dir dist/
 
       # Every source distribution and wheel is published together. Counting
@@ -123,6 +150,8 @@ jobs:
           FIRST_PARTY_DISTRIBUTIONS: ${{ steps.context.outputs.distributions }}
           EXPECTED_SBOM_SHA256: ${{ steps.facts.outputs.sbom_sha256 }}
           EXPECTED_BUILD_ID: ${{ steps.facts.outputs.build_id }}
+          EXPECTED_SCHEMA_VERSION: ${{ steps.shapes.outputs.schema_version }}
+          EXPECTED_EXPORT_VERSION: ${{ steps.shapes.outputs.export_version }}
         run: |
           set -euo pipefail
           work="$(mktemp -d)"
@@ -158,8 +187,8 @@ jobs:
           payload = json.loads(os.environ["VERSION_JSON"])
           expected = {
               "version": os.environ["EXPECTED_VERSION"],
-              "schema_version": 3,
-              "export_version": 3,
+              "schema_version": int(os.environ["EXPECTED_SCHEMA_VERSION"]),
+              "export_version": int(os.environ["EXPECTED_EXPORT_VERSION"]),
               "sbom_sha256": os.environ["EXPECTED_SBOM_SHA256"],
               "build_id": os.environ["EXPECTED_BUILD_ID"],
           }
@@ -169,7 +198,7 @@ jobs:
           grep -q '"scores"' "$work/detect.json"
           "$work/venv/bin/adopt" store migrate --store "$work/s.db" --json
           "$work/venv/bin/adopt" store info --store "$work/s.db" --json \
-            | grep -q '"schema_version": *3'
+            | grep -q "\"schema_version\": *${EXPECTED_SCHEMA_VERSION}"
 
       # PyPI accepts only Python distributions. This artifact must never contain
       # the SBOM, binaries, signatures or provenance from release-bundle.
@@ -196,6 +225,12 @@ jobs:
   binaries:
     name: single-file binary (${{ matrix.os }})
     needs: build
+    # Job-level, because two steps compare against them and a per-step copy is a
+    # second place for a shape version to be wrong -- which is the whole defect
+    # this replaced.
+    env:
+      EXPECTED_SCHEMA_VERSION: ${{ needs.build.outputs.schema_version }}
+      EXPECTED_EXPORT_VERSION: ${{ needs.build.outputs.export_version }}
     strategy:
       fail-fast: false
       matrix:
@@ -325,12 +360,12 @@ jobs:
           # `adopt-core/0.0.0+unknown` into a contract-governed field while its
           # own `version --json` correctly said `0.3.0`.
           #
-          # The set is the dependency closure of `adopt-cli`, not all fifteen.
+          # The set is the dependency closure of `adopt-cli`, not the whole workspace.
           # Nuitka refuses metadata for a distribution whose package it is not
           # compiling -- `FATAL: including metadata for distribution X without
           # including related package Y` -- and `adopt-workflow` is a library the
           # CLI does not depend on, so it is not in the binary and must not be
-          # named here. Passing all fifteen failed on all three platforms.
+          # named here. Passing the whole workspace failed on all three platforms.
           #
           # Derived, never listed, and the derivation is trustworthy *because*
           # `first-party-deps` gates every import as declared: the declared
@@ -422,8 +457,8 @@ jobs:
           payload = json.loads(os.environ["VERSION_JSON"])
           expected = {
               "version": os.environ["EXPECTED_VERSION"],
-              "schema_version": 3,
-              "export_version": 3,
+              "schema_version": int(os.environ["EXPECTED_SCHEMA_VERSION"]),
+              "export_version": int(os.environ["EXPECTED_EXPORT_VERSION"]),
               "sbom_sha256": os.environ["EXPECTED_SBOM_SHA256"],
               "build_id": os.environ["EXPECTED_BUILD_ID"],
           }
@@ -440,7 +475,7 @@ jobs:
           grep -q '"scores"' "$work/detect.json"
           "$BIN" store migrate --store "$work/s.db" --json
           "$BIN" store info --store "$work/s.db" --json \
-            | grep -q '"schema_version": *3'
+            | grep -q "\"schema_version\": *${EXPECTED_SCHEMA_VERSION}"
 
       # The binary must stamp its own version into what it WRITES, not only
       # report it. `version --json` reads `adopt-cli`'s metadata; the provenance

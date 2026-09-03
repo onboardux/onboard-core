@@ -26,7 +26,7 @@ from adopt_detect.boundary import (
     BoundaryView,
     declare_boundary,
 )
-from adopt_detect.detect import DetectionResult, RuleHit, detect
+from adopt_detect.detect import DetectionResult, RuleHit, detect, walk_files
 from adopt_detect.negotiate import (
     AI_MINIMUM_TIER,
     QUESTIONS,
@@ -64,4 +64,5 @@ __all__ = [
     "render_markdown",
     "unavailable_capabilities",
     "violates_archetype_floor",
+    "walk_files",
 ]

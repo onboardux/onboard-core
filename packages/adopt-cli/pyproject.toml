@@ -1,6 +1,6 @@
 [project]
 name = "adopt-cli"
-version = "0.3.1"
+version = "0.4.0"
 description = "The adopt command surface: config resolution, JSON mode, exit codes."
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -12,12 +12,23 @@ authors = [{ name = "The Adopt Authors" }]
 # `adopt_cli` (CR-36) -- sees nothing new.
 dependencies = [
     "adopt-agent",
+    # Build 3. `commands/ask.py` imports it inside the command body, but the
+    # `first-party-deps` gate is about what the distribution needs installed, not
+    # about when the import runs: `pip install adopt-cli` must always yield a
+    # working `adopt ask`.
+    "adopt-ask",
     "adopt-const",
     "adopt-coverage",
     "adopt-detect",
     "adopt-export",
     "adopt-freshness",
+    # Build 4. `commands/pack.py` imports it inside the command body; the
+    # `first-party-deps` gate is about what the distribution needs installed,
+    # so `pip install adopt-cli` must always yield a working `adopt pack`.
+    "adopt-handover",
     "adopt-identity",
+    "adopt-knowledge",
+    "adopt-map",
     # `adopt_model._enums` is imported directly by `commands/init.py` and
     # `commands/boundary.py`. It arrived transitively through `adopt-store` until
     # someone installed a subset that did not include it, which is why an
@@ -25,6 +36,10 @@ dependencies = [
     "adopt-model",
     "adopt-obs",
     "adopt-policy",
+    # Build 5. `commands/probe.py` imports it inside the command body; the
+    # `first-party-deps` gate is about what the distribution needs installed,
+    # so `pip install adopt-cli` must always yield a working `adopt probe run`.
+    "adopt-probe",
     "adopt-scope",
     "adopt-store",
     "typer>=0.12,<1",

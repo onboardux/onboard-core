@@ -24,7 +24,8 @@ from typing import Any, Final
 
 import yaml
 
-from adopt_const import MAP_MAX_FILE_BYTES
+from adopt_const import DETECT_MAX_FILES, MAP_MAX_FILE_BYTES
+from adopt_detect import walk_files
 from adopt_model._enums import ItemKind
 from adopt_obs import AdoptError, ErrorCode
 
@@ -231,13 +232,45 @@ def _relative_to(path: Path, root: Path) -> str:
 
 
 def _candidates(paths: Sequence[Path]) -> Iterator[Path]:
+    """Every file to ingest, through **the one walk**.
+
+    A directory is enumerated by `adopt_detect.walk_files` -- the walker whose
+    own docstring says *"this is the one walk"* -- with the suffix filter
+    applied on top. It was `Path.rglob("*")` until T1.6, which has no
+    containment rule, no symlink rule, no depth bound, no `.gitignore` scope and
+    no count bound: a repository containing `docs/elsewhere -> /etc` copied
+    out-of-tree material into the knowledge store, and `_relative_to` then
+    recorded the **absolute** path of it as the document's provenance, because a
+    path outside the root has no relative form (B2-05).
+
+    An explicitly named **file** keeps today's policy and is ingested whatever
+    its suffix and wherever it lives: an operator naming a path outside the tree
+    is making a choice, and the walk's rules exist to stop a *sweep* reaching
+    where nobody pointed it.
+
+    Raises:
+        AdoptError: ``KNOWLEDGE_SOURCE_UNREADABLE`` when one directory yields
+            more than `DETECT_MAX_FILES` candidates -- contracts §13 already
+            names "exceeds the walk's file bound" as this code's subject.
+            Refused rather than truncated, on `MAP_TREE_TOO_LARGE`'s argument: a
+            corpus quietly smaller than the operator believes reports success
+            over knowledge that was never ingested.
+    """
     for path in paths:
         if path.is_dir():
-            yield from sorted(
-                candidate
-                for candidate in path.rglob("*")
-                if candidate.is_file() and candidate.suffix.lower() in _SUFFIXES
-            )
+            found: list[Path] = []
+            for walked, (_relative, absolute) in enumerate(walk_files(path), 1):
+                if walked > DETECT_MAX_FILES:
+                    raise AdoptError(
+                        ErrorCode.KNOWLEDGE_SOURCE_UNREADABLE,
+                        message=f"{str(path)!r} holds more than {DETECT_MAX_FILES} walkable files",
+                        hint="Ingest a subdirectory, or exclude generated and vendored "
+                        "trees with .gitignore. The bound is the walk's, shared so one "
+                        "directory cannot make a run unbounded.",
+                    )
+                if absolute.suffix.lower() in _SUFFIXES:
+                    found.append(absolute)
+            yield from sorted(found)
         elif path.is_file():
             # A file named outright is ingested whatever its suffix: the
             # operator pointed at it, and the suffix filter exists to keep a

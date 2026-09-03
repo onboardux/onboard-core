@@ -29,6 +29,12 @@ authors = [{ name = "The Adopt Authors" }]
 dependencies = [
     "adopt-agent",
     "adopt-const",
+    # Build 2's directory ingest walks a tree, and there is exactly one walk in
+    # this programme (`adopt_detect.walk_files`). Declared rather than forked:
+    # a second walk beside a second consumer is a second answer to "what is in
+    # this repository", and the one that drifts is the one deciding what the
+    # knowledge store contains.
+    "adopt-detect",
     "adopt-identity",
     "adopt-model",
     "adopt-obs",

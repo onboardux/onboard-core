@@ -81,8 +81,16 @@ class SourceTree:
         resolved = Path(root).resolve()
         files: list[TreeFile] = []
         oversized: list[str] = []
+        walked = 0
         for relative, absolute in walk_files(resolved):
-            if len(files) >= max_files:
+            # **Every candidate counts, before it is classified.** The bound
+            # counted `files` alone, so an oversized file added nothing to it --
+            # a tree of a million files each over `MAP_MAX_FILE_BYTES` walked to
+            # the end and refused nothing, which is the resource-exhaustion path
+            # the bound exists to close. Reproduced with two oversized files and
+            # `max_files=1`, which returned without raising (B1-006).
+            walked += 1
+            if walked > max_files:
                 raise AdoptError(
                     ErrorCode.MAP_TREE_TOO_LARGE,
                     message=f"{resolved} holds more than {max_files} walkable files",

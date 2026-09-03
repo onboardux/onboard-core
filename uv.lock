@@ -275,6 +275,7 @@ source = { editable = "packages/adopt-knowledge" }
 dependencies = [
     { name = "adopt-agent" },
     { name = "adopt-const" },
+    { name = "adopt-detect" },
     { name = "adopt-identity" },
     { name = "adopt-model" },
     { name = "adopt-obs" },
@@ -286,6 +287,7 @@ dependencies = [
 requires-dist = [
     { name = "adopt-agent", editable = "packages/adopt-agent" },
     { name = "adopt-const", editable = "packages/adopt-const" },
+    { name = "adopt-detect", editable = "packages/adopt-detect" },
     { name = "adopt-identity", editable = "packages/adopt-identity" },
     { name = "adopt-model", editable = "packages/adopt-model" },
     { name = "adopt-obs", editable = "packages/adopt-obs" },

@@ -15,7 +15,7 @@ it, a removed or retyped column is a rejected pull request.
 
 Nothing yet.
 
-## [0.4.0] — unreleased
+## [0.4.0] — 2026-09-07
 
 **The first release carrying Builds 1–10.** Nine new verbs, five new
 distributions, and **schema version 4**. The minor version tracks the schema
@@ -226,6 +226,7 @@ See `0.3.1` above.
   is never upgraded, downgraded or repaired in place. That is what makes rolling
   a binary back safe.
 
-[Unreleased]: https://github.com/onboardux/onboard-core/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/onboardux/onboard-core/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/onboardux/onboard-core/releases/tag/v0.4.0
 [0.3.1]: https://github.com/onboardux/onboard-core/releases/tag/v0.3.1
 [0.3.0]: https://github.com/onboardux/onboard-core/releases/tag/v0.3.0

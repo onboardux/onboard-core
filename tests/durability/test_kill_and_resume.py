@@ -110,11 +110,21 @@ def _resume_and_settle(backend: str, journal_dir: Path, key: str) -> tuple[Any, 
     """Bring the killed run to a terminal state, and return `(client, handle)`.
 
     **Asserts the outcome, not the mechanism.** The in-process backend is told to
-    recover; DBOS has already done it inside `launch()`, so its `recover()` finds
-    nothing left to resume. An earlier version of this drill asserted
-    `list(status="running")` was non-empty *before* recovering, and that is a
-    statement about one backend's timing rather than about durability -- it
+    recover; DBOS *may* already have done it inside `launch()`, in which case its
+    `recover()` finds nothing left to resume. An earlier version of this drill
+    asserted `list(status="running")` was non-empty *before* recovering, and that
+    is a statement about one backend's timing rather than about durability -- it
     passed on `inproc` and failed on DBOS for a reason that is not a defect.
+
+    **"DBOS has already done it" used to be stated here as a fact, and it is a
+    race (N29).** `launch()` starts a background recovery thread; this line then
+    resumes explicitly. When both reach the same `dbos.workflow_status` row
+    together, one loses with SQLSTATE 40001 and the drill went red on a
+    serialization conflict inside the engine rather than on anything about
+    durability -- twice, on 2026-09-04 and on plane `main` on 2026-09-08, which
+    is the branch OD-13's fourteen-day soak counts. The backend now reports that
+    conflict instead of raising it; what still has to hold is everything below,
+    and none of it moved.
 
     What both backends must agree on is what this returns: the run reaches a
     terminal state and its result is readable. `result(..., timeout_s=...)` is

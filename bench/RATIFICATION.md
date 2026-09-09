@@ -43,11 +43,40 @@ Runner: `ubuntu-24.04`, GitHub-hosted, public standard class, image
 | CLI | `cli_bench` | **365 ms p95** over 20 cold starts; our imports 348 ms of it; empty-interpreter floor 16 ms | `CLI_COLD_START_MS` 400 | OK |
 
 **`CLI_COLD_START_MS` is the one the plan named as the likeliest breach**, and it
-holds with 35 ms to spare on a tree that added nine verbs. The branch's lazy
-registration is what pays for that. Worth carrying into the next measurement:
-the Sprint 1 record observed that `adopt_knowledge` is imported at CLI import
-time rather than lazily, and it predates that sprint — 348 ms of the 365 is
-our own imports, so that is where any future headroom comes from.
+held with 35 ms to spare on a tree that added nine verbs — *then it ran out.*
+
+## CLI cold start, re-ratified 400 → 500 on 2026-09-09 (CR-92)
+
+| date | p95 | our imports | budget | verdict |
+|---|---|---|---|---|
+| 2026-08-12 | 319 ms | 302 ms | 400 | OK — 1.25× |
+| Builds 1–10 merged | 365 ms | 348 ms | 400 | OK — 1.10× |
+| 2026-09-07 | 383 ms | 367 ms | 400 | OK — 1.04× |
+| **2026-09-08** | **402 ms** | — | 400 | **BREACHED** — nightly `bench` red |
+| 2026-09-09 | 400 ms | 382 ms | 400 | passed by 0 ms |
+
+**Nothing regressed.** The three September readings are the same code on three
+consecutive nights; the spread is the runner's own variance, and the budget had
+less headroom than the variance. What changed is the product: nine verbs since
+the budget was set against a Build 0 CLI.
+
+**500 restores the 1.25× margin the 2026-08-12 ratification recorded** (319 of
+400). It is not a round number chosen to clear 402.
+
+**The alternative was measured first, and it does not work.** `03` §2 calls this
+"the one constant whose purpose is keeping imports off the startup path", so
+deferral was tried before the budget was touched: `adopt_agent` was moved out of
+`commands/agent.py`'s module scope and returned **~5 ms** over six samples. The
+288 ms that module appears to cost under `-X importtime` is its *cumulative*
+column — shared dependencies billed to whoever imports them first — and its true
+self-time is ~21 ms. The cost is pydantic model construction (`adopt_model._tables`),
+the store stack and typer/click/rich, every one of which the other verbs need.
+
+**Where the headroom actually is, for whoever revisits this:** lazy command
+loading in `main.py`, so `adopt version` never builds the model layer at all.
+That is a real refactor of the entry point and it touches the §13 error contract
+and the `bad-parameter` gate, which is why it is recorded here as work rather
+than done in passing.
 
 **N1's report was not a measurement.** `schema_bench` applied
 `0001__init_v3.sql` alone and then compared the created store's `user_version`

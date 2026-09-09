@@ -36,7 +36,11 @@ __all__ = ["post_json"]
 #: Statuses worth one retry: the provider said "not now", not "not ever".
 #: 4xx other than 429 are the caller's fault and retrying them spends money to
 #: receive the same refusal.
-_RETRYABLE: Final[frozenset[int]] = frozenset({408, 425, 429, 500, 502, 503, 504})
+_RETRYABLE: Final[frozenset[int]] = (
+    frozenset(  # const-sync: ok -- HTTP statuses, not a tunable; 500 collided with CLI_COLD_START_MS when that was re-ratified to 500 ms (CR-92)
+        {408, 425, 429, 500, 502, 503, 504}
+    )
+)
 
 #: One retry, and only for the statuses above. AI spec §1 puts transient retry
 #: with the adapter and bounds it; the seam does not retry at all, because that

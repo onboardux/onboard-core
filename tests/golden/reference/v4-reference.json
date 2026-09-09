@@ -1,0 +1,165 @@
+{
+  "archive": {
+    "bytes": 11231,
+    "name": "adopt-golden-v4.tar.gz",
+    "sha256": "85b455ec988162d6a333e40a5872ba158a32bdf1eb053fa821e25aff5f5cc811"
+  },
+  "cut_from": {
+    "binary": "adopt-linux-x86_64",
+    "build_id": "github:onboardux/onboard-core:34144382673:1:a1b32208f0a296bc708e283d860023ce7fdf4609",
+    "release": "v0.4.0"
+  },
+  "export_version": 4,
+  "schema_version": 4,
+  "tables": {
+    "approval": {
+      "rows": 1,
+      "sha256": "39c5eabeb886d94eb425b3940b36c52ab58c7f640a690374e8dd9a35ba58869e"
+    },
+    "audience_tag": {
+      "rows": 1,
+      "sha256": "41fd64f35213fa79189876cd0b8b7fe8c0eb47d0b26ade7a47bfa0748cd30218"
+    },
+    "audit_event": {
+      "rows": 1,
+      "sha256": "5394bb5246c53914dee209df1d205c56d38db36f397679df9424500dd859fc55"
+    },
+    "baseline_version": {
+      "rows": 1,
+      "sha256": "d381cf9abdb359acb58dff0bbcd34dc995293a5a78b287eb9b273b0ce6f4a10a"
+    },
+    "binding": {
+      "rows": 1,
+      "sha256": "213f73b567f3868c4e0c7bcf99fe08b31121ca7dd651a9c3c0df015ae961b526"
+    },
+    "binding_revision": {
+      "rows": 1,
+      "sha256": "ca278f0198e60f32f876e31668c1791d94215e11b2ddf0d789bd9d6c08bdccb0"
+    },
+    "change_event": {
+      "rows": 1,
+      "sha256": "08123436649c0cb42eacf345dafa648e3cfdaa9ed8a4611ccdf5296dc940a966"
+    },
+    "classification": {
+      "rows": 1,
+      "sha256": "f08ae3daa3ef57a68d11f40426a75cda21a93a7b4d78b846a968dea79756b528"
+    },
+    "classifier_version": {
+      "rows": 1,
+      "sha256": "909328fcefc55dd62e28a04ba25d9ddca8fc9a0c5c7e1fef021d17b1578030ba"
+    },
+    "conflict": {
+      "rows": 1,
+      "sha256": "a2536aee84054ebeb86a002cb3249bc5fb651d0272f03e3094e9f9dc8d8c972f"
+    },
+    "connector": {
+      "rows": 1,
+      "sha256": "365ad07cbb37dc68e5bfbc6520c96eeb4fb7d72ac1673efbdff200c23d80e7a6"
+    },
+    "coverage_gap": {
+      "rows": 1,
+      "sha256": "27394b75379a3905a6097b541995b0c4842b9ee8a0f67a3a6e852f17c2fea647"
+    },
+    "death_condition": {
+      "rows": 1,
+      "sha256": "a581ab3fa63142e57ee51a706246d9af095e8bf4a53de49905ec84d08b86abf7"
+    },
+    "engagement": {
+      "rows": 1,
+      "sha256": "50e5c59863421bd12ac6befe613e325252724adee8b086b1b49368d5a9eb5cb7"
+    },
+    "environment": {
+      "rows": 1,
+      "sha256": "310838edce0060f421a280463a83121865614a0d260a259ea071e4f0575196fd"
+    },
+    "escalation": {
+      "rows": 1,
+      "sha256": "910f7444a493e6bbe3d7a46aadab18d85be7169f2f6eb8f5dca694e7b4c32d34"
+    },
+    "firm": {
+      "rows": 1,
+      "sha256": "9fe7caace75a2732a852ff85c1725d4be41d6caa59cccecdf5ee620e5ffffa1f"
+    },
+    "identity": {
+      "rows": 1,
+      "sha256": "395681567c137b627b10dedcc7e1a70da6fe8a4194c25d3707543cc1c63724b7"
+    },
+    "identity_revision": {
+      "rows": 1,
+      "sha256": "9b08e646b70bf3005964dfcfccb05c7803890228cb90fa6646029c5659d664ad"
+    },
+    "knowledge_item": {
+      "rows": 1,
+      "sha256": "4c4c21a3e7859cd53f34cf9c65e0149490352069d5be8d051884cd334df74af1"
+    },
+    "knowledge_revision": {
+      "rows": 1,
+      "sha256": "7154349d9c52d15595ce7515d4205532e89b8a495eaf12f2be16e8388d7b282c"
+    },
+    "observability_boundary": {
+      "rows": 1,
+      "sha256": "f7b31c3441610276cb71b401f157cd3526a5043d68c777733f1496ac07105e95"
+    },
+    "ownership_assignment": {
+      "rows": 1,
+      "sha256": "0bf606da92bc32dc9ac1fb065390763b798664bc1f8a8a1235eb17a3a6dec17d"
+    },
+    "probe_definition": {
+      "rows": 1,
+      "sha256": "cbd23e59ec35a1b4560ba68e2298b5166ac35361671bf5d6946857f2dcff5e25"
+    },
+    "probe_definition_revision": {
+      "rows": 1,
+      "sha256": "b7d44a7fea3971b1ac31c8e69e46a45decf8bcb54c143990ee9d48389b8b1e1c"
+    },
+    "probe_observation": {
+      "rows": 1,
+      "sha256": "7ed83c734e626428d830769994b6d5a9af45d7bb88097ba11e74d243712e1280"
+    },
+    "probe_run": {
+      "rows": 1,
+      "sha256": "275eb12ee548a1cd459dcefc0c02e50d115b9bf468d6bf0e2f817fbc6578cd14"
+    },
+    "provenance": {
+      "rows": 1,
+      "sha256": "024765e710d2ed860f9841353add74fdf2dbee0743386e68e04625074de9b0b7"
+    },
+    "review_batch": {
+      "rows": 1,
+      "sha256": "7367d0d18fe6c82b95fc0793b8248798c3320f26dea9e12e900a59c2ebf74a03"
+    },
+    "review_item": {
+      "rows": 1,
+      "sha256": "a7ecd5d802dfc7100e3c8e3d9cdcc5ede90e21bd5d7c74806fca95fa82c2ab1f"
+    },
+    "sensor": {
+      "rows": 1,
+      "sha256": "072ddcc0e0f34ad128d4aff1e810aae954ed943d49403e80a58a4ba211c9b249"
+    },
+    "sensor_heartbeat": {
+      "rows": 1,
+      "sha256": "fdd5c49079c47142f4b3d52be9d9d5c753501bc62cbcf5241c10aaace6466da3"
+    },
+    "silent_repair_eligibility": {
+      "rows": 1,
+      "sha256": "c27de1d00227253f5e9acca697db377b96b4cb5f80a58d7913219d3d2194332f"
+    },
+    "system": {
+      "rows": 1,
+      "sha256": "5d3e7b7261d83939bfb421a8b68ea243b9af2b0d13ad5683179131fdb9e8c80f"
+    },
+    "system_lifecycle_event": {
+      "rows": 1,
+      "sha256": "10c1b273b642741d48bcf11acfc77878fae549e61268100891adc3ff00a2887b"
+    },
+    "value_baseline": {
+      "rows": 1,
+      "sha256": "d927aa7cd44977f70244e071de1684d3e6312b7f2566117151da11f82afdd130"
+    },
+    "value_event": {
+      "rows": 1,
+      "sha256": "283340125cf5d1f657a3913ce812a48df1e9bfae4be15d93e605e921e7642280"
+    }
+  },
+  "written_by": "adopt-core/0.4.0"
+}

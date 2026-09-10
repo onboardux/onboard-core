@@ -39,8 +39,8 @@ ScopeOption = Annotated[
     str | None,
     typer.Option(
         "--scope",
-        help="firm/engagement/system[/environment], to validate against the boundary "
-        "declared for that scope. Omitted, the strictest default boundary is used.",
+        help="firm/engagement/system, optionally with /environment, to validate against the "
+        "boundary declared for that scope. Omitted, the strictest default boundary is used.",
     ),
 ]
 StoreOption = Annotated[Path | None, typer.Option("--store", help="Store path override.")]

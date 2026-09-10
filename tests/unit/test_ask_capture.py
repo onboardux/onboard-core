@@ -76,6 +76,9 @@ class _Adapter:
             source_ref=source_ref,
         )
 
+    def tag_audience(self, *, item_id: str, audience: str) -> bool:
+        return self._handle.items().tag_audience(item_id=item_id, audience=audience)
+
     def bind(self, *, item_id: str, identity_id: str, is_load_bearing: bool) -> str:
         binding_id, _ = self._handle.bindings().create(
             item_id=item_id, identity_id=identity_id, is_load_bearing=is_load_bearing

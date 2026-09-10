@@ -63,6 +63,8 @@ class _Items(Protocol):
         self, *, revision_id: str, source_type: SourceType, source_ref: str
     ) -> str: ...
 
+    def tag_audience(self, *, item_id: str, audience: str) -> bool: ...
+
 
 class _Bindings(Protocol):
     def create(
@@ -113,6 +115,14 @@ ScopeOption = Annotated[
     str | None,
     typer.Option("--scope", help="firm/engagement/system/environment. Defaults to the store's."),
 ]
+AudienceOption = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--audience",
+        help="Who the answer is for. Repeatable. Defaults to the same audience "
+        "`adopt ingest` gives an untagged document.",
+    ),
+]
 ActorOption = Annotated[str | None, typer.Option("--actor", help="Who answered.")]
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 
@@ -124,11 +134,12 @@ def answer(
     title: TitleOption = None,
     scope: ScopeOption = None,
     store: StoreOption = None,
+    audience: AudienceOption = None,
     actor: ActorOption = None,
     json_output: JsonOption = False,
 ) -> None:
     """Bank a human's answer as confirmed knowledge and resolve the question."""
-    from adopt_ask.capture import capture_answer, identities_to_bind
+    from adopt_ask.capture import DEFAULT_AUDIENCES, capture_answer, identities_to_bind
 
     from adopt_cli.commands._remote_support import configured_remote
 
@@ -169,6 +180,10 @@ def answer(
             title=title or existing.question or f"Answer to {escalation_id}",
             body_md=text,
             identity_ids=identity_ids,
+            # `DEFAULT_AUDIENCES` rather than a literal here: the default lives
+            # in `adopt_ask.capture` beside the rule it protects, so the CLI and
+            # the plane cannot drift into tagging captured answers differently.
+            audiences=tuple(audience) if audience else DEFAULT_AUDIENCES,
             actor_id=actor,
             unmatched_uris=unmatched,
         )
@@ -247,6 +262,9 @@ class _StoreAdapter:
             source_type=cast("SourceType", source_type),
             source_ref=source_ref,
         )
+
+    def tag_audience(self, *, item_id: str, audience: str) -> object:
+        return self._handle.items().tag_audience(item_id=item_id, audience=audience)
 
     def bind(self, *, item_id: str, identity_id: str, is_load_bearing: bool) -> str:
         binding_id, _revision_id = self._handle.bindings().create(

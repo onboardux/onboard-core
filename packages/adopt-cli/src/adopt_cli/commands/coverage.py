@@ -30,12 +30,23 @@ app = typer.Typer(
 )
 
 SystemOption = Annotated[
-    str,
-    typer.Option("--system", help="The system id to evaluate.", show_default=False),
+    str | None,
+    typer.Option("--system", help="System id or slug to evaluate.", show_default=False),
+]
+ScopeOption = Annotated[
+    str | None,
+    typer.Option(
+        "--scope",
+        help="firm/engagement/system, optionally with /environment. The alternative to "
+        "--system, and the string `adopt init` already took.",
+    ),
 ]
 EnvironmentOption = Annotated[
     str | None,
-    typer.Option("--environment", help="One environment id. Omit for every environment."),
+    typer.Option(
+        "--environment",
+        help="One environment id. Omit for every environment, or name one in --scope.",
+    ),
 ]
 StoreOption = Annotated[
     Path | None,
@@ -53,13 +64,27 @@ JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON e
 
 @app.command()
 def recompute(
-    system: SystemOption,
+    system: SystemOption = None,
+    scope: ScopeOption = None,
     environment: EnvironmentOption = None,
     store: StoreOption = None,
     rebuild: RebuildOption = False,
     json_output: JsonOption = False,
 ) -> None:
-    """Evaluate the six inputs of contracts §6 for every identity in scope."""
+    """Evaluate the six inputs of contracts §6 for every identity in scope.
+
+    **`--scope` exists because this command is the remedy for an alarm, and the
+    remedy has to be reachable.** `COVERAGE_CACHE_DISAGREEMENT` fires on every
+    `adopt gaps` and `adopt pack` once a binding is confirmed, and clearing it
+    needs this verb -- which took a system **id** that no verb printed. `store
+    info` reports counts, `store doctor` reports findings, and the only command
+    that ever surfaced a system id was `adopt handover start`, which opens a
+    handover event as a side effect. An operator was left reading the SQLite
+    file by hand to silence an alarm the product raised at them, so the scope
+    string they typed into `adopt init` is now accepted here too.
+    """
+    from adopt_cli.commands._handover_support import resolve_system
+
     with open_configured_store(
         store,
         read_only=not rebuild,
@@ -69,7 +94,21 @@ def recompute(
         # nothing a later `adopt pull` overwrites was canon.
         non_canon_reason="--rebuild writes only the coverage cache, never canon",
     ) as handle:
-        result = recompute_coverage(handle.coverage_records(), system, environment)
+        # `resolve_system` rather than a second resolver: it already accepts an
+        # id, a slug or a scope path, refuses both at once, and with neither
+        # falls through to `resolve_scope`, which returns the store's only
+        # environment and **refuses rather than guessing** when there are
+        # several. A second implementation would be a second answer to "which
+        # system is this", which is how two verbs come to disagree about a store.
+        target = resolve_system(handle, system=system, scope=scope)
+        result = recompute_coverage(
+            handle.coverage_records(),
+            target.system_id,
+            # An explicit `--environment` wins over one named in `--scope`: it is
+            # the narrower statement of the two, and it names an id rather than a
+            # slug, so it cannot be the vaguer thing the operator meant.
+            environment or target.environment_id,
+        )
         rebuilt = rebuild_cache(handle.backend, result) if rebuild else 0
 
     payload = {

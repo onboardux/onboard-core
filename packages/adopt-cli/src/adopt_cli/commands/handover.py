@@ -47,7 +47,8 @@ SystemOption = Annotated[
 ScopeOption = Annotated[
     str | None,
     typer.Option(
-        "--scope", help="firm/engagement/system[/environment]. Narrows to one environment."
+        "--scope",
+        help="firm/engagement/system, optionally with /environment. Narrows to one environment.",
     ),
 ]
 OwnerOption = Annotated[
@@ -396,7 +397,11 @@ def verify(
         raise AdoptError(
             ErrorCode.HANDOVER_CHECKLIST_INVALID,
             message=f"{checklist} is not valid YAML: {error}",
-            hint="See `docs/handover-checklist.example.yaml` for the shape.",
+            hint="A checklist is a mapping with a `tasks:` list, each task carrying `id`, "
+            "`task` and `outcome` (pass | fail | skipped). The annotated example is "
+            "docs/handover-checklist.example.yaml in the source tree, or "
+            "https://github.com/onboardux/onboard-core/blob/main/"
+            "docs/handover-checklist.example.yaml.",
         ) from error
     if not isinstance(raw, dict):
         raise AdoptError(

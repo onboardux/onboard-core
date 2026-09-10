@@ -1,6 +1,6 @@
 [project]
 name = "adopt-handover"
-version = "0.4.0"
+version = "0.4.1"
 description = "adopt pack: audience-scoped handover packs assembled from confirmed knowledge, stamped and byte-stable. Build 4."
 requires-python = ">=3.12"
 license = "Apache-2.0"

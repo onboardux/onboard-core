@@ -15,6 +15,53 @@ it, a removed or retyped column is a rejected pull request.
 
 Nothing yet.
 
+## [0.4.1] — 2026-09-10
+
+**Three defects a hands-on readiness pass over the free builds found by running
+every verb end to end on a real repository.** No schema change — schema stays at
+version 4, which is what makes this a patch release. No new error code, no new
+constant, no new dependency, and no change to the twenty-distribution set.
+
+**Two of the three were the kind that look like nothing is wrong.** A captured
+answer was written, bound, confirmed — and counted by no coverage recompute and
+rendered into no pack. Nine `--help` pages exited `1` with a traceback. Neither
+had an instrument watching it, and both instruments now exist.
+
+### Fixed
+
+- **A captured answer now reaches the deliverable** (CR-96). `adopt answer` wrote
+  no `audience_tag` row, and both readers that filter on one go quiet rather than
+  loud: `recompute_coverage` counts an untagged item as inapplicable, so **the
+  gap the answer closed stayed open**, and the handover pack's "Answers to common
+  questions" section rendered its empty note — whose text is *"`adopt answer`
+  turns one into knowledge"*. Captures now carry the same default audience an
+  untagged ingested document gets, and `adopt answer --audience` (repeatable)
+  names a different one. Answers captured with `0.4.0` carry no tag and need one
+  written before they will render.
+
+- **Every `--help` page renders** (CR-97). Three option help strings carried a
+  literal `[/environment]`, which `rich` parses as a closing markup tag with no
+  opening one. One of them is shared by every `adopt handover` verb, so all seven
+  went down together — and `adopt handover verify` documents the `--checklist`
+  YAML shape in the page that crashed. Both checklist error hints are now
+  self-contained rather than naming a `docs/` path an installed user does not
+  have.
+
+- **`adopt coverage recompute` can be reached from a scope string** (CR-95). It
+  is the documented remedy for `COVERAGE_CACHE_DISAGREEMENT` — an alarm that
+  fires on every `adopt gaps` and `adopt pack` once a binding is confirmed, and
+  never self-heals by design — and it required a system **id** that no verb
+  printed. It now accepts `--scope` or a system **slug**, and with neither
+  resolves the store's own scope as `adopt map` does, refusing rather than
+  guessing when the store holds several environments.
+
+### Changed
+
+- `adopt answer` gains `--audience` (repeatable).
+- `adopt coverage recompute` gains `--scope`; `--system` accepts a slug as well
+  as an id, and is no longer required. Contracts §14 records the row at v3.17,
+  including exit `3` and the `cache_rows_written` field it had never listed.
+
 ## [0.4.0] — 2026-09-07
 
 **The first release carrying Builds 1–10.** Nine new verbs, five new
@@ -226,7 +273,8 @@ See `0.3.1` above.
   is never upgraded, downgraded or repaired in place. That is what makes rolling
   a binary back safe.
 
-[Unreleased]: https://github.com/onboardux/onboard-core/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/onboardux/onboard-core/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/onboardux/onboard-core/releases/tag/v0.4.1
 [0.4.0]: https://github.com/onboardux/onboard-core/releases/tag/v0.4.0
 [0.3.1]: https://github.com/onboardux/onboard-core/releases/tag/v0.3.1
 [0.3.0]: https://github.com/onboardux/onboard-core/releases/tag/v0.3.0

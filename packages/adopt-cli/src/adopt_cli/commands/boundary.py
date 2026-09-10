@@ -57,8 +57,8 @@ ScopeOption = Annotated[
     str | None,
     typer.Option(
         "--scope",
-        help="firm/engagement/system[/environment]. Given, the boundary is written to "
-        "the store; omitted, it is computed and reported without writing.",
+        help="firm/engagement/system, optionally with /environment. Given, the boundary is "
+        "written to the store; omitted, it is computed and reported without writing.",
     ),
 ]
 ArchetypeOption = Annotated[

@@ -104,8 +104,11 @@ def parse_checklist(document: Mapping[str, Any]) -> Checklist:
     if not isinstance(raw_tasks, Sequence) or isinstance(raw_tasks, str | bytes):
         raise _invalid(
             "the checklist has no `tasks` list",
-            "A checklist is a mapping with a `tasks:` list. See "
-            "`docs/handover-checklist.example.yaml` for the shape.",
+            "A checklist is a mapping with a `tasks:` list, each task carrying `id`, "
+            "`task` and `outcome` (pass | fail | skipped). The annotated example is "
+            "docs/handover-checklist.example.yaml in the source tree, or "
+            "https://github.com/onboardux/onboard-core/blob/main/"
+            "docs/handover-checklist.example.yaml.",
         )
     if not raw_tasks:
         raise _invalid(

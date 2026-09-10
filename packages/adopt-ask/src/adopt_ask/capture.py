@@ -4,9 +4,18 @@
 *cheaper than answering out of band* -- cheaper than a Slack reply. If banking an
 answer takes four verbs, the FDE types the Slack reply and the store stays
 ignorant, which is the loop this product exists to break. So `adopt answer` is
-one call that writes the item, its verified revision, its provenance, its
-bindings and the escalation stamp, and either all of that lands or none of it
-does.
+one call that writes the item, its verified revision, its audience tag, its
+provenance, its bindings and the escalation stamp, and either all of that lands
+or none of it does.
+
+**The audience tag is one of those writes and not an afterthought.** It was
+missing until 2026-09-10 (CR-96), and the two readers that filter on it both go
+quiet rather than loud: `recompute_coverage` counts an untagged item as
+inapplicable, so the gap the answer closed stayed open, and
+`adopt_handover.sections.select` filters on the audience, so the pack section
+built for captured answers rendered its empty note. An answer that is banked,
+bound, confirmed and invisible in both places a human looks for it is the
+failure this line prevents.
 
 **The half-written store is the failure this shape prevents**, and it is worse
 than it looks. An escalation stamped `answered` whose knowledge never committed
@@ -38,13 +47,14 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import Final, Protocol
 
-from adopt_knowledge import IdentityView, structural_matches
+from adopt_knowledge import DEFAULT_AUDIENCE, IdentityView, structural_matches
 
 from adopt_obs import AdoptError, ErrorCode
 from adopt_scope import Scope
 
 __all__ = [
     "CONFIRMED",
+    "DEFAULT_AUDIENCES",
     "DEFAULT_KIND",
     "HUMAN_AUTHORITY",
     "HUMAN_SOURCE",
@@ -70,6 +80,14 @@ CONFIRMED: Final[str] = "verified"
 #: made) or a `recipe`. Callers may override for a capture that is genuinely one
 #: of the others.
 DEFAULT_KIND: Final[str] = "answer"
+
+#: Who a captured answer is for when nobody said. The same audience `adopt
+#: ingest` gives a document with no frontmatter and no path hint, and named here
+#: so the CLI, `adopt serve` and the plane cannot each pick a different one --
+#: a captured answer that lands in a different pack depending on which door it
+#: came through would be the contract drift the shared `capture_answer` exists
+#: to prevent.
+DEFAULT_AUDIENCES: Final[tuple[str, ...]] = (DEFAULT_AUDIENCE,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +144,23 @@ class CaptureStore(Protocol):
         """Record where the revision's claim came from. Returns the row id."""
         ...
 
+    def tag_audience(self, *, item_id: str, audience: str) -> object:
+        """Write one `audience_tag` row for the captured item.
+
+        **Part of the port because an untagged capture is an invisible one.**
+        `recompute_coverage` treats an item with zero `audience_tag` rows as
+        inapplicable (input 4), and `adopt_handover.sections.select` filters on
+        the audience -- so an answer written, bound and confirmed without a tag
+        closes no gap and renders into no pack. `adopt_knowledge.drafting` has
+        carried that rule since Build 4; capture did not, which is the defect
+        this method exists to close.
+
+        A realization that cannot tag is a realization that cannot capture, so
+        this is a required member rather than an optional one: a counterparty
+        learns from its type checker, which is the loud way to find out.
+        """
+        ...
+
     def bind(self, *, item_id: str, identity_id: str, is_load_bearing: bool) -> str:
         """Bind the item to an identity. Returns the binding id."""
         ...
@@ -180,6 +215,7 @@ def capture_answer(
     body_md: str,
     identity_ids: Sequence[str],
     kind: str = DEFAULT_KIND,
+    audiences: Sequence[str] = DEFAULT_AUDIENCES,
     actor_id: str | None = None,
     unmatched_uris: Sequence[str] = (),
 ) -> CaptureResult:
@@ -199,6 +235,12 @@ def capture_answer(
             Resolution is separated from writing so a caller can show an
             operator what will be bound before anything is written.
         kind: `knowledge_item.kind`.
+        audiences: Who the answer is for. Defaults to `DEFAULT_AUDIENCE`, the
+            same default `adopt ingest` gives a document with no frontmatter and
+            no path hint -- a captured answer has neither, and the conservative
+            audience is the internal one. **Never empty:** an untagged item is
+            counted by no coverage recompute and rendered into no pack, so a
+            capture with no audience is a capture nothing can see.
         actor_id: Who answered.
         unmatched_uris: Carried through to the result for reporting.
 
@@ -233,6 +275,19 @@ def capture_answer(
             verification=CONFIRMED,
             actor_id=actor_id,
         )
+        # **Tagged in the same transaction that creates the item**, because an
+        # untagged item is one `recompute_coverage` will not count (input 4) and
+        # `sections.select` will not render -- so a capture that committed the
+        # revision and lost the tag would be a capture that answers the next
+        # asker and closes no gap, which is the half-written state this
+        # transaction exists to make impossible.
+        #
+        # An empty sequence is a caller's slip rather than an intent: there is no
+        # audience for which "nobody" is the right answer, and the failure it
+        # produces is invisible. Falling back to the default is a coercion of an
+        # argument, never a repair of stored state.
+        for audience in audiences or DEFAULT_AUDIENCES:
+            store.tag_audience(item_id=item_id, audience=audience)
         provenance_id = store.record_provenance(
             revision_id=revision_id,
             source_type=HUMAN_SOURCE,

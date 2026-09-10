@@ -442,6 +442,93 @@ def test_unverified_knowledge_never_counts_as_coverage(journey: dict[str, Any]) 
     assert listed["uncovered"] == len(listed["gaps"])
 
 
+def test_a_captured_answer_reaches_the_pack_and_closes_its_gap(
+    journey: dict[str, Any],
+) -> None:
+    """The capture ratchet's output is a deliverable, not just a store row.
+
+    *Fails when* `adopt answer` writes an item with no `audience_tag` row.
+    *Matters because* two readers filter on that tag and both go quiet rather
+    than loud: `recompute_coverage` treats an untagged item as inapplicable, so
+    the gap the answer just closed stays open, and `sections.select` filters on
+    the audience, so the pack's "Answers to common questions" section renders
+    its empty note -- an answer captured, bound, confirmed, and invisible in
+    both places a human would look for it. *No other instrument catches it
+    because* no test carried a capture through to a pack: the ask journey stops
+    at the re-ask serving KNOWN, this journey never captured anything, and both
+    are right about what they assert.
+
+    **Both halves are asserted here** because the default is what the defect
+    was: a capture with no `--audience` must still be counted, and a capture
+    that names this pack's audience must still render into it.
+    """
+    # The fixture's one endpoint, and deliberately **not** the Dockerfile:
+    # `REFUND_DOC` already binds that one by canonical URI, so covering it again
+    # would leave the coverage count unchanged and this test would pass whether
+    # or not the capture was counted.
+    uri = _payload(
+        _run(
+            "identity",
+            "build",
+            "--scope",
+            SCOPE,
+            "--kind",
+            "endpoint",
+            "--key",
+            "POST /v1/orders",
+            "--json",
+            cwd=journey["checkout"],
+        )
+    )["uri"]
+
+    before = _payload(
+        _run("gaps", "--store", str(journey["store"]), "--json", cwd=journey["checkout"])
+    )
+
+    asked = _run(
+        "ask",
+        "who signs off a refund above the threshold?",
+        "--escalate",
+        "--store",
+        str(journey["store"]),
+        "--json",
+        cwd=journey["checkout"],
+    )
+    assert asked.returncode == ExitCode.SUCCESS, asked.stderr
+    escalation_id = _payload(asked)["escalation_id"]
+
+    captured = _run(
+        "answer",
+        escalation_id,
+        "--text",
+        "The finance approver on duty signs off any refund above the threshold.",
+        "--uri",
+        uri,
+        "--audience",
+        AUDIENCE,
+        "--store",
+        str(journey["store"]),
+        "--json",
+        cwd=journey["checkout"],
+    )
+    assert captured.returncode == ExitCode.SUCCESS, captured.stderr
+    assert _payload(captured)["binding_ids"], "the capture bound nothing, so it covers nothing"
+
+    after = _payload(
+        _run("gaps", "--store", str(journey["store"]), "--json", cwd=journey["checkout"])
+    )
+    assert after["covered"] == before["covered"] + 1, (
+        "the captured answer was bound to a mapped identity and still did not cover it: "
+        f"{before['covered']} -> {after['covered']}"
+    )
+
+    payload = _pack(journey)
+    answers = next(section for section in payload["sections"] if section["section"] == "answers")
+    assert answers["revisions"] == 1, "the captured answer rendered into no section"
+    rendered = (journey["out"] / f"{AUDIENCE}.md").read_text(encoding="utf-8")
+    assert "The finance approver on duty" in rendered
+
+
 # -- demo lines 2-4: drafting, review, derived format ------------------------
 
 

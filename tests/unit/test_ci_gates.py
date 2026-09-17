@@ -776,6 +776,45 @@ class TestWorkflowsAreRunnable:
         missing = self.REQUIRED_JOBS - declared
         assert not missing, f"these gates are no longer declared in any workflow: {sorted(missing)}"
 
+    def test_every_event_guarded_job_admits_the_nightly_schedule(self) -> None:
+        """*Fails when* a job's event guard omits `schedule`, so it skips nightly.
+
+        *Matters because* `ci.yml` gained a `schedule:` trigger on 2026-09-17 to
+        observe two gates that go red with the source unchanged --
+        `conformance-matrix`, whose `ANTHROPIC_API_KEY` has already expired
+        silently once (N21), and `vuln-audit`, which answers to the CVE feed.
+        Three jobs guard themselves against fork and Dependabot pull requests
+        with an `github.event_name` disjunction, and **an event such a guard does
+        not name is an event the job skips**. A nightly run reporting twenty-five
+        green with `conformance-matrix` skipped reads exactly like a nightly run
+        that checked the key.
+
+        *No other instrument catches it because* `test_every_required_gate_is_
+        still_declared` asserts the job is *declared*, which a permanently
+        skipped job still is -- this is T1.10's defect, where `workflow_dispatch`
+        was added precisely to re-read the conformance matrix and skipped the job
+        that measures it. Found twice; pinned here so it is not found a third
+        time.
+        """
+        import yaml
+
+        document = yaml.safe_load((self.WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
+        triggers = document[True] if True in document else document["on"]
+        assert "schedule" in triggers, "ci.yml lost its nightly clock"
+
+        skipped: list[str] = []
+        for name, job in document.get("jobs", {}).items():
+            condition = str(job.get("if", ""))
+            if "github.event_name" not in condition:
+                continue
+            if "'schedule'" not in condition:
+                skipped.append(name)
+
+        assert not skipped, (
+            f"these jobs guard on github.event_name without admitting 'schedule', so the "
+            f"nightly run skips them while reporting success: {sorted(skipped)}"
+        )
+
     def test_golden_g0_has_no_soft_fail(self) -> None:
         """`golden-g0` must never acquire `continue-on-error`.
 

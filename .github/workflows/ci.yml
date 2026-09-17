@@ -27,6 +27,43 @@ on:
   # are unchanged.
   workflow_dispatch:
 
+  # **This workflow had no clock until 2026-09-17, and two of its gates need
+  # one.** `pull_request` and `push: [main]` make every gate here a function of
+  # somebody committing, so a tree that nobody touches is a tree nobody
+  # measures -- and two jobs go red on their own with the source unchanged:
+  #
+  # * `conformance-matrix` spends an `ANTHROPIC_API_KEY` that has **already
+  #   expired silently once** (N21, 2026-09-07), holding `main` at 27 of 28 and
+  #   blocking the release's §10.1 line 1. It was rotated, and nothing re-reads
+  #   it between pushes. `ci` last ran 2026-09-10; a key revoked on the 11th
+  #   would first be seen by whoever pushed next -- most likely the release.
+  # * `vuln-audit` runs `pip-audit` over the resolved tree, and a CVE published
+  #   tonight reds a tree nobody edited. That is the whole point of the job and
+  #   it can only fire on a clock.
+  #
+  # `bench.yml` and `licence-audit.yml` have always had one, which is why Build
+  # 0's fourteen-day condition had fourteen days of evidence; `adopt-plane`
+  # gained one in CR-91 after its soak counted merges instead of days. This is
+  # the same defect in the third repository, and the argument there is the
+  # argument here: a gate that runs when somebody commits reports on the commit,
+  # not on the world the artefact is published into.
+  #
+  # 04:41 UTC keeps it clear of `bench` (08:0x) and the plane's 03:17, so a red
+  # names one workflow rather than a shared runner minute.
+  #
+  # **Adding the trigger is half the change**, and the other half is T1.10's
+  # lesson repeated: `constants-sync`, `error-registry-sync` and
+  # `conformance-matrix` each guard themselves against fork and Dependabot pull
+  # requests with an event disjunction, and an event those three do not name is
+  # an event on which they **skip**. T1.10 found this with `workflow_dispatch`
+  # -- the dispatch existed precisely to re-read the conformance matrix and was
+  # skipping the job that measures it. A `schedule:` added without touching
+  # those guards would have been the same defect a third time, and a nightly run
+  # reporting 25 green with `conformance-matrix` skipped reads exactly like a
+  # nightly run that checked the key. All three now admit `schedule`.
+  schedule:
+    - cron: "41 4 * * *"
+
 permissions:
   contents: read
 
@@ -81,6 +118,7 @@ jobs:
         vars.ADOPT_PACK_REPOSITORY != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'schedule' ||
           github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&
@@ -119,6 +157,7 @@ jobs:
         vars.ADOPT_PACK_REPOSITORY != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'schedule' ||
           github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&
@@ -383,6 +422,7 @@ jobs:
         vars.ADOPT_CONFORMANCE_ADAPTERS != '' &&
         (
           github.event_name == 'push' ||
+          github.event_name == 'schedule' ||
           github.event_name == 'workflow_dispatch' ||
           (
             github.event_name == 'pull_request' &&

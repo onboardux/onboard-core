@@ -5,6 +5,31 @@
 # running `scripts/licence_gate.py` first and adding its row to
 # `licence-verifications.md` -- the gate fails on a dependency with no record.
 
+# **The toolchain is pinned like every other input, and this is the single
+# source for it.** `astral-sh/setup-uv` reads `[tool.uv] required-version`
+# from this file, so a workflow needs to name no version of its own.
+#
+# **The version is 0.9.5 because that is what builds the release.** Until
+# 2026-09-20 `release.yml` pinned `0.9.5` on all three of its jobs and nothing
+# else pinned anything -- so `ci.yml`, `bench.yml` and `licence-audit.yml`
+# resolved `latest`, which was 0.12.17 by then. The wheels that are signed and
+# attested were therefore built by one resolver and proven green by another,
+# three minor versions apart. CI now agrees with the release path rather than
+# the release path being dragged to whatever shipped that morning (N44).
+#
+# An **exact** specifier is load bearing twice over: setup-uv's
+# `ExactVersionResolver` returns without contacting the network, where a range
+# or `latest` fetches the version manifest from `raw.githubusercontent.com` on
+# the critical path of every job -- the fetch that took `scope-escape`, a
+# release blocker forever, red on the plane on 2026-09-13 forty-two seconds in,
+# before any test ran. And `uv` itself refuses to run when the binary on PATH
+# is a different version, so a developer machine cannot silently disagree.
+#
+# Bumping it is a deliberate PR: change this line, let CI prove the new version
+# green, and keep `uv.lock` and `release.yml`'s literals in the same change.
+[tool.uv]
+required-version = "==0.9.5"
+
 [tool.uv.workspace]
 members = ["packages/*"]
 

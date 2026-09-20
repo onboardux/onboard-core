@@ -1352,6 +1352,91 @@ class TestWorkflowsAreRunnable:
         release_run = "\n".join(str(step.get("run", "")) for step in github_release["steps"])
         assert "gh release create" in release_run and "--verify-tag" in release_run
 
+    def test_the_uv_toolchain_is_pinned_to_an_exact_version(self) -> None:
+        """*Fails when* `[tool.uv] required-version` goes missing or stops being exact.
+
+        *Matters because* `astral-sh/setup-uv` with no version resolves
+        **`latest`**, and that is the resolver which materializes every
+        dependency and builds the wheels `release.yml` then signs and attests.
+        Every Action here is pinned by SHA, every sync passes `--locked`, the
+        SBOM is derived from the locked runtime union and the build id is stamped
+        into the artifact -- none of which constrains the tool doing the
+        resolving.
+
+        **Exact is load bearing, not tidiness.** setup-uv's
+        `ExactVersionResolver` returns without contacting the network, while a
+        range or `latest` fetches the version manifest from
+        `raw.githubusercontent.com` on the critical path of every job. That fetch
+        is what took `scope-escape` -- a release blocker forever -- red on the
+        plane on 2026-09-13, forty-two seconds in, before any test ran (N44).
+
+        *No other instrument catches it because* a floating toolchain produces a
+        **green** build on whatever shipped that day. There is no red to
+        investigate, and the version appears nowhere but the run log.
+        """
+        import tomllib
+
+        pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        required = pyproject.get("tool", {}).get("uv", {}).get("required-version")
+        assert required, (
+            "pyproject.toml declares no `[tool.uv] required-version`, so every "
+            "`setup-uv` step resolves `latest` and the toolchain floats"
+        )
+        assert required.startswith("=="), (
+            f"`required-version = {required!r}` is not an exact pin. setup-uv "
+            "resolves a range through the network version manifest, which is the "
+            "fetch that took `scope-escape` red on 2026-09-13"
+        )
+
+    def test_every_workflow_pin_agrees_with_the_single_source(self) -> None:
+        """*Fails when* a `setup-uv` step names a uv version the pyproject does not.
+
+        *Matters because* this is the defect as it actually stood: `release.yml`
+        pinned `0.9.5` on all three of its jobs and **nothing else pinned
+        anything**, so `ci.yml`'s twenty-seven call sites, `bench.yml` and
+        `licence-audit.yml` resolved `latest` -- 0.12.17 by 2026-09-20. The
+        wheels that get signed and attested were built by one resolver and proven
+        green by another, three minor versions apart, and no file in this
+        repository said so.
+
+        The literals in `release.yml` are kept rather than deleted: that workflow
+        is the highest-stakes one here, and an explicit pin checked against the
+        single source is defence in depth. This test is what makes the two unable
+        to drift.
+
+        *No other instrument catches it because* both halves are green. A
+        floating job builds fine on whatever shipped that day and a pinned
+        release builds fine too -- the disagreement between them appears in no
+        output at all.
+        """
+        import tomllib
+
+        import yaml
+
+        pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        pin = pyproject["tool"]["uv"]["required-version"].removeprefix("==").strip()
+
+        disagreeing: list[str] = []
+        seen = 0
+        for path in sorted(self.WORKFLOWS.glob("*.yml")):
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            for job_name, job in (document.get("jobs") or {}).items():
+                for step in job.get("steps") or []:
+                    if "astral-sh/setup-uv" not in str(step.get("uses", "")):
+                        continue
+                    seen += 1
+                    version = str((step.get("with") or {}).get("version", "")).strip()
+                    if version and version != pin:
+                        disagreeing.append(f"{path.name}:{job_name} names {version!r}")
+
+        assert seen, "no `setup-uv` step was found at all -- this test lost its subject"
+        joined = "\n  ".join(disagreeing)
+        assert not disagreeing, (
+            f"`[tool.uv] required-version` pins uv {pin!r}, but these steps name "
+            "something else, so those jobs run a different resolver from the one "
+            f"that builds the release:\n  {joined}"
+        )
+
 
 @pytest.mark.unit
 class TestReleaseContext:

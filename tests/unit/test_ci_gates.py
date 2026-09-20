@@ -1352,6 +1352,129 @@ class TestWorkflowsAreRunnable:
         release_run = "\n".join(str(step.get("run", "")) for step in github_release["steps"])
         assert "gh release create" in release_run and "--verify-tag" in release_run
 
+    def test_the_uv_toolchain_is_pinned_to_an_exact_version(self) -> None:
+        """*Fails when* `[tool.uv] required-version` goes missing or stops being exact.
+
+        *Matters because* `astral-sh/setup-uv` with no version resolves
+        **`latest`**, and that is the resolver which materializes every
+        dependency and builds the wheels `release.yml` then signs and attests.
+        Every Action here is pinned by SHA, every sync passes `--locked`, the
+        SBOM is derived from the locked runtime union and the build id is stamped
+        into the artifact -- none of which constrains the tool doing the
+        resolving.
+
+        **Exact rather than a range keeps the resolution deterministic**: a range
+        is resolved against whatever the version manifest lists that day, so
+        `>=0.9.5,<0.10` would float again inside its own bounds while looking
+        strictly more permissive.
+
+        **It does not avoid the network, and an earlier version of this docstring
+        claimed it did.** setup-uv resolves an exact version locally, but its
+        download path calls `getArtifact(...)` and fetches the manifest to find
+        the artifact URL regardless -- measured at 27 fetches in a green core run
+        after this pin landed. N44's availability half is therefore still open;
+        this pin closes its reproducibility half, which is the one that reaches
+        the published artifact.
+
+        *No other instrument catches it because* a floating toolchain produces a
+        **green** build on whatever shipped that day. There is no red to
+        investigate, and the version appears nowhere but the run log.
+        """
+        import tomllib
+
+        pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        required = pyproject.get("tool", {}).get("uv", {}).get("required-version")
+        assert required, (
+            "pyproject.toml declares no `[tool.uv] required-version`, so every "
+            "`setup-uv` step resolves `latest` and the toolchain floats"
+        )
+        assert required.startswith("=="), (
+            f"`required-version = {required!r}` is not an exact pin, so the "
+            "toolchain floats again inside the range's bounds and CI stops "
+            "agreeing with the resolver that builds the release"
+        )
+
+    def test_every_setup_uv_step_can_actually_find_the_pin(self) -> None:
+        """*Fails when* a job's `setup-uv` cannot reach the version this repo pins.
+
+        *Matters because* declaring `[tool.uv] required-version` is only half a
+        fix: `setup-uv` looks for `./pyproject.toml` **relative to the workspace
+        root**, and three jobs here -- `lint`, `constants-sync` and
+        `error-registry-sync` -- check this repository out into `adopt-core/`
+        because they also need the pack beside it. For those, auto-discovery
+        finds nothing, falls back to `latest`, and then `uv` itself refuses the
+        sync: *"Required uv version `==0.9.5` does not match the running version
+        `0.12.17`"*. Twenty-five jobs went green and those three went red.
+
+        **That is the shape of the defect this whole change is about**, one
+        layer in: a control that is correct everywhere except at the point that
+        feeds it. So the rule is not "a version is declared somewhere" but *can
+        this step, with this job's checkout layout, resolve it*.
+
+        *No other instrument catches it because* a job that resolves the wrong
+        uv is not obviously wrong -- it installs a working tool and either passes
+        or fails for a reason that names a version rather than a layout.
+        """
+        import tomllib
+
+        import yaml
+
+        pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        pin = pyproject["tool"]["uv"]["required-version"].removeprefix("==").strip()
+
+        unreachable: list[str] = []
+        seen = 0
+        for path in sorted(self.WORKFLOWS.glob("*.yml")):
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+            for job_name, job in (document.get("jobs") or {}).items():
+                steps = job.get("steps") or []
+
+                # Where this job puts *this* repository. A checkout naming a
+                # different `repository:` is a sibling and never carries our pin.
+                checkout_at = ""
+                for step in steps:
+                    if "actions/checkout" not in str(step.get("uses", "")):
+                        continue
+                    with_block = step.get("with") or {}
+                    if with_block.get("repository"):
+                        continue
+                    checkout_at = str(with_block.get("path", "")).strip()
+                    break
+
+                expected_file = f"{checkout_at}/pyproject.toml" if checkout_at else "pyproject.toml"
+
+                for step in steps:
+                    if "astral-sh/setup-uv" not in str(step.get("uses", "")):
+                        continue
+                    seen += 1
+                    with_block = step.get("with") or {}
+                    version = str(with_block.get("version", "")).strip()
+                    version_file = str(with_block.get("version-file", "")).strip()
+                    where = f"{path.name}:{job_name}"
+
+                    if version:
+                        if version != pin:
+                            unreachable.append(f"{where} names uv {version!r}, not {pin!r}")
+                        continue
+                    if version_file:
+                        if version_file != expected_file:
+                            unreachable.append(
+                                f"{where} reads {version_file!r} but this job checks the "
+                                f"repository out at {checkout_at or '<root>'!r}, so the pin "
+                                f"is at {expected_file!r}"
+                            )
+                        continue
+                    if checkout_at:
+                        unreachable.append(
+                            f"{where} relies on auto-discovery, but this job checks the "
+                            f"repository out at {checkout_at!r}, so setup-uv finds no "
+                            f"pyproject.toml at the workspace root and falls back to `latest`"
+                        )
+
+        assert seen, "no `setup-uv` step was found at all -- this test lost its subject"
+        joined = "\n  ".join(unreachable)
+        assert not unreachable, f"these steps cannot resolve the pinned uv {pin!r}:\n  {joined}"
+
 
 @pytest.mark.unit
 class TestReleaseContext:

@@ -5,6 +5,40 @@
 # running `scripts/licence_gate.py` first and adding its row to
 # `licence-verifications.md` -- the gate fails on a dependency with no record.
 
+# **The toolchain is pinned like every other input, and this is the single
+# source for it.** `astral-sh/setup-uv` reads `[tool.uv] required-version`
+# from this file, so a workflow needs to name no version of its own.
+#
+# **The version is 0.9.5 because that is what builds the release.** Until
+# 2026-09-20 `release.yml` pinned `0.9.5` on all three of its jobs and nothing
+# else pinned anything -- so `ci.yml`, `bench.yml` and `licence-audit.yml`
+# resolved `latest`, which was 0.12.17 by then. The wheels that are signed and
+# attested were therefore built by one resolver and proven green by another,
+# three minor versions apart. CI now agrees with the release path rather than
+# the release path being dragged to whatever shipped that morning (N44).
+#
+# An **exact** specifier keeps the resolution deterministic: a range is resolved
+# against whatever the manifest lists that day, so `>=0.9.5,<0.10` would quietly
+# float again inside its bounds. And `uv` itself refuses to run when the binary
+# on PATH is a different version, so a developer machine cannot silently
+# disagree either.
+#
+# **It does not remove the network fetch, and an earlier draft of this comment
+# said it did.** setup-uv resolves an exact version locally, but its *download*
+# path calls `getArtifact(...)`, which fetches
+# `raw.githubusercontent.com/astral-sh/versions` to find the artifact URL --
+# unconditionally, however the version was resolved. Measured after the fix: 27
+# manifest fetches in a green core run, 7 in the plane's. So the availability
+# half of N44 is still open -- the fetch that took `scope-escape`, a release
+# blocker forever, red on 2026-09-13 remains on every job's critical path. What
+# this pin fixes is the *reproducibility* half, which is the one that touches
+# the published artifact.
+#
+# Bumping it is a deliberate PR: change this line, let CI prove the new version
+# green, and keep `uv.lock` and `release.yml`'s literals in the same change.
+[tool.uv]
+required-version = "==0.9.5"
+
 [tool.uv.workspace]
 members = ["packages/*"]
 

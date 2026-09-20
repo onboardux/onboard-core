@@ -1388,26 +1388,26 @@ class TestWorkflowsAreRunnable:
             "fetch that took `scope-escape` red on 2026-09-13"
         )
 
-    def test_every_workflow_pin_agrees_with_the_single_source(self) -> None:
-        """*Fails when* a `setup-uv` step names a uv version the pyproject does not.
+    def test_every_setup_uv_step_can_actually_find_the_pin(self) -> None:
+        """*Fails when* a job's `setup-uv` cannot reach the version this repo pins.
 
-        *Matters because* this is the defect as it actually stood: `release.yml`
-        pinned `0.9.5` on all three of its jobs and **nothing else pinned
-        anything**, so `ci.yml`'s twenty-seven call sites, `bench.yml` and
-        `licence-audit.yml` resolved `latest` -- 0.12.17 by 2026-09-20. The
-        wheels that get signed and attested were built by one resolver and proven
-        green by another, three minor versions apart, and no file in this
-        repository said so.
+        *Matters because* declaring `[tool.uv] required-version` is only half a
+        fix: `setup-uv` looks for `./pyproject.toml` **relative to the workspace
+        root**, and three jobs here -- `lint`, `constants-sync` and
+        `error-registry-sync` -- check this repository out into `adopt-core/`
+        because they also need the pack beside it. For those, auto-discovery
+        finds nothing, falls back to `latest`, and then `uv` itself refuses the
+        sync: *"Required uv version `==0.9.5` does not match the running version
+        `0.12.17`"*. Twenty-five jobs went green and those three went red.
 
-        The literals in `release.yml` are kept rather than deleted: that workflow
-        is the highest-stakes one here, and an explicit pin checked against the
-        single source is defence in depth. This test is what makes the two unable
-        to drift.
+        **That is the shape of the defect this whole change is about**, one
+        layer in: a control that is correct everywhere except at the point that
+        feeds it. So the rule is not "a version is declared somewhere" but *can
+        this step, with this job's checkout layout, resolve it*.
 
-        *No other instrument catches it because* both halves are green. A
-        floating job builds fine on whatever shipped that day and a pinned
-        release builds fine too -- the disagreement between them appears in no
-        output at all.
+        *No other instrument catches it because* a job that resolves the wrong
+        uv is not obviously wrong -- it installs a working tool and either passes
+        or fails for a reason that names a version rather than a layout.
         """
         import tomllib
 
@@ -1416,26 +1416,58 @@ class TestWorkflowsAreRunnable:
         pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         pin = pyproject["tool"]["uv"]["required-version"].removeprefix("==").strip()
 
-        disagreeing: list[str] = []
+        unreachable: list[str] = []
         seen = 0
         for path in sorted(self.WORKFLOWS.glob("*.yml")):
             document = yaml.safe_load(path.read_text(encoding="utf-8"))
             for job_name, job in (document.get("jobs") or {}).items():
-                for step in job.get("steps") or []:
+                steps = job.get("steps") or []
+
+                # Where this job puts *this* repository. A checkout naming a
+                # different `repository:` is a sibling and never carries our pin.
+                checkout_at = ""
+                for step in steps:
+                    if "actions/checkout" not in str(step.get("uses", "")):
+                        continue
+                    with_block = step.get("with") or {}
+                    if with_block.get("repository"):
+                        continue
+                    checkout_at = str(with_block.get("path", "")).strip()
+                    break
+
+                expected_file = f"{checkout_at}/pyproject.toml" if checkout_at else "pyproject.toml"
+
+                for step in steps:
                     if "astral-sh/setup-uv" not in str(step.get("uses", "")):
                         continue
                     seen += 1
-                    version = str((step.get("with") or {}).get("version", "")).strip()
-                    if version and version != pin:
-                        disagreeing.append(f"{path.name}:{job_name} names {version!r}")
+                    with_block = step.get("with") or {}
+                    version = str(with_block.get("version", "")).strip()
+                    version_file = str(with_block.get("version-file", "")).strip()
+                    where = f"{path.name}:{job_name}"
+
+                    if version:
+                        if version != pin:
+                            unreachable.append(f"{where} names uv {version!r}, not {pin!r}")
+                        continue
+                    if version_file:
+                        if version_file != expected_file:
+                            unreachable.append(
+                                f"{where} reads {version_file!r} but this job checks the "
+                                f"repository out at {checkout_at or '<root>'!r}, so the pin "
+                                f"is at {expected_file!r}"
+                            )
+                        continue
+                    if checkout_at:
+                        unreachable.append(
+                            f"{where} relies on auto-discovery, but this job checks the "
+                            f"repository out at {checkout_at!r}, so setup-uv finds no "
+                            f"pyproject.toml at the workspace root and falls back to `latest`"
+                        )
 
         assert seen, "no `setup-uv` step was found at all -- this test lost its subject"
-        joined = "\n  ".join(disagreeing)
-        assert not disagreeing, (
-            f"`[tool.uv] required-version` pins uv {pin!r}, but these steps name "
-            "something else, so those jobs run a different resolver from the one "
-            f"that builds the release:\n  {joined}"
-        )
+        joined = "\n  ".join(unreachable)
+        assert not unreachable, f"these steps cannot resolve the pinned uv {pin!r}:\n  {joined}"
 
 
 @pytest.mark.unit

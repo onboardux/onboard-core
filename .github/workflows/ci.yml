@@ -87,6 +87,7 @@ jobs:
           path: adopt-core
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
+          version-file: adopt-core/pyproject.toml
           enable-cache: true
       - name: Sync
         working-directory: adopt-core
@@ -143,6 +144,8 @@ jobs:
           token: ${{ secrets.ADOPT_PACK_TOKEN }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version-file: adopt-core/pyproject.toml
       - working-directory: adopt-core
         run: uv sync --all-packages
       - name: Constants table matches both modules
@@ -178,6 +181,8 @@ jobs:
           token: ${{ secrets.ADOPT_PACK_TOKEN }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version-file: adopt-core/pyproject.toml
       - working-directory: adopt-core
         run: uv sync --all-packages
       - name: Contracts §13 matches the error module, both directions

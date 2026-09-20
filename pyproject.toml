@@ -17,13 +17,22 @@
 # three minor versions apart. CI now agrees with the release path rather than
 # the release path being dragged to whatever shipped that morning (N44).
 #
-# An **exact** specifier is load bearing twice over: setup-uv's
-# `ExactVersionResolver` returns without contacting the network, where a range
-# or `latest` fetches the version manifest from `raw.githubusercontent.com` on
-# the critical path of every job -- the fetch that took `scope-escape`, a
-# release blocker forever, red on the plane on 2026-09-13 forty-two seconds in,
-# before any test ran. And `uv` itself refuses to run when the binary on PATH
-# is a different version, so a developer machine cannot silently disagree.
+# An **exact** specifier keeps the resolution deterministic: a range is resolved
+# against whatever the manifest lists that day, so `>=0.9.5,<0.10` would quietly
+# float again inside its bounds. And `uv` itself refuses to run when the binary
+# on PATH is a different version, so a developer machine cannot silently
+# disagree either.
+#
+# **It does not remove the network fetch, and an earlier draft of this comment
+# said it did.** setup-uv resolves an exact version locally, but its *download*
+# path calls `getArtifact(...)`, which fetches
+# `raw.githubusercontent.com/astral-sh/versions` to find the artifact URL --
+# unconditionally, however the version was resolved. Measured after the fix: 27
+# manifest fetches in a green core run, 7 in the plane's. So the availability
+# half of N44 is still open -- the fetch that took `scope-escape`, a release
+# blocker forever, red on 2026-09-13 remains on every job's critical path. What
+# this pin fixes is the *reproducibility* half, which is the one that touches
+# the published artifact.
 #
 # Bumping it is a deliberate PR: change this line, let CI prove the new version
 # green, and keep `uv.lock` and `release.yml`'s literals in the same change.

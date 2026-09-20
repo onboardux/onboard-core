@@ -1363,12 +1363,18 @@ class TestWorkflowsAreRunnable:
         into the artifact -- none of which constrains the tool doing the
         resolving.
 
-        **Exact is load bearing, not tidiness.** setup-uv's
-        `ExactVersionResolver` returns without contacting the network, while a
-        range or `latest` fetches the version manifest from
-        `raw.githubusercontent.com` on the critical path of every job. That fetch
-        is what took `scope-escape` -- a release blocker forever -- red on the
-        plane on 2026-09-13, forty-two seconds in, before any test ran (N44).
+        **Exact rather than a range keeps the resolution deterministic**: a range
+        is resolved against whatever the version manifest lists that day, so
+        `>=0.9.5,<0.10` would float again inside its own bounds while looking
+        strictly more permissive.
+
+        **It does not avoid the network, and an earlier version of this docstring
+        claimed it did.** setup-uv resolves an exact version locally, but its
+        download path calls `getArtifact(...)` and fetches the manifest to find
+        the artifact URL regardless -- measured at 27 fetches in a green core run
+        after this pin landed. N44's availability half is therefore still open;
+        this pin closes its reproducibility half, which is the one that reaches
+        the published artifact.
 
         *No other instrument catches it because* a floating toolchain produces a
         **green** build on whatever shipped that day. There is no red to
@@ -1383,9 +1389,9 @@ class TestWorkflowsAreRunnable:
             "`setup-uv` step resolves `latest` and the toolchain floats"
         )
         assert required.startswith("=="), (
-            f"`required-version = {required!r}` is not an exact pin. setup-uv "
-            "resolves a range through the network version manifest, which is the "
-            "fetch that took `scope-escape` red on 2026-09-13"
+            f"`required-version = {required!r}` is not an exact pin, so the "
+            "toolchain floats again inside the range's bounds and CI stops "
+            "agreeing with the resolver that builds the release"
         )
 
     def test_every_setup_uv_step_can_actually_find_the_pin(self) -> None:

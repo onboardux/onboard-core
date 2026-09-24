@@ -45,6 +45,19 @@ ActorOption = Annotated[
     str | None,
     typer.Option("--actor", help="Who is running this. Recorded on every revision written."),
 ]
+UnverifiedOption = Annotated[
+    bool,
+    typer.Option(
+        "--unverified",
+        help=(
+            "Land these documents unverified, each queued for a person to confirm in "
+            "`adopt review`. Use it for text nobody has vouched for -- anything an agent "
+            "wrote or helped write. Until confirmed it counts toward no coverage, serves "
+            "no answer and reaches no pack. Its name-match suggestions are held back "
+            "(`suggestions_deferred`) and queued by the next ingest of the confirmed text."
+        ),
+    ),
+]
 StoreOption = Annotated[Path | None, typer.Option("--store", help="Store path override.")]
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 
@@ -54,6 +67,7 @@ def ingest(
     scope: ScopeOption = None,
     audience: AudienceOption = None,
     actor: ActorOption = None,
+    unverified: UnverifiedOption = False,
     store: StoreOption = None,
     json_output: JsonOption = False,
 ) -> None:
@@ -85,6 +99,7 @@ def ingest(
             bound_pairs=bound_pairs(handle),
             presented_revisions=presented_revisions(handle),
             actor_id=actor,
+            unverified=unverified,
         )
         payload = _ingest_payload(report)
     finally:
@@ -104,6 +119,13 @@ def _ingest_payload(report: Any) -> dict[str, Any]:
         "suggestions": report.suggestions,
         "review_batch": report.review_batch_id,
         "review_items": list(report.review_item_ids),
+        # Additive (`--unverified`): what this run wrote unverified, and the
+        # batch a person confirms it in. Present on every run so the envelope
+        # is one shape whichever way the flag was set.
+        "unverified": report.unverified,
+        "verification_batch": report.verification_batch_id,
+        "verification_items": list(report.verification_item_ids),
+        "suggestions_deferred": report.suggestions_deferred,
         "unknown_audiences": list(report.unknown_audiences),
         "ingested": [
             {

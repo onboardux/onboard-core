@@ -1,0 +1,38 @@
+# Expected identities -- the recall floor for <firm/engagement/system/environment>
+#
+# One canonical identity URI per line; blank lines and lines starting with # are
+# ignored. `adopt map --check-expected <this file> --json` exits 4 and names
+# every URI that is not in the map.
+#
+# Keep this file in the engagement workspace, NEVER inside the client's
+# repository: `adopt map` would read it as part of the system.
+#
+# Build every URI with the CLI -- never encode one by hand:
+#   adopt identity build --scope <f/e/s/env> --kind endpoint --key 'POST /v1/orders' --json
+#   adopt identity build --scope <f/e/s/env> --kind config_key --namespace env --key DATABASE_URL --json
+#
+# What belongs here: the 20-40 things a new owner would ask about first, as an
+# engineer would name them from memory -- INCLUDING ones you expected and did not
+# find in `adopt map --report`. A miss is a finding: record it, never delete it
+# to make the check pass.
+#
+# One example per common kind (scope acme/platform/orders-api/prod):
+#
+# endpoint            onboard-v1://acme/platform/orders-api/prod/endpoint/-/POST%20%2Fv1%2Forders
+# db_field            onboard-v1://acme/platform/orders-api/prod/db_field/Order/total
+# config_key (env)    onboard-v1://acme/platform/orders-api/prod/config_key/env/DATABASE_URL
+# job (CI workflow)   onboard-v1://acme/platform/orders-api/prod/job/ci/Deploy%20Production
+# dependency          onboard-v1://acme/platform/orders-api/prod/metadata_component/dependency%3Apypi/fastapi
+# prompt file         onboard-v1://acme/platform/orders-api/prod/prompt/-/instructions.md
+# model pin           onboard-v1://acme/platform/orders-api/prod/model_pin/openai/gpt-5.4-nano
+# agent graph node    onboard-v1://acme/platform/orders-api/prod/symbol/agent_graph/agent/support_agent
+
+# --- The endpoints a new owner asks about first --------------------------------
+
+# --- The persisted shape -------------------------------------------------------
+
+# --- What it needs from the environment to start -------------------------------
+
+# --- How it is built, deployed and scheduled -----------------------------------
+
+# --- Prompts, tools and models (ai systems) ------------------------------------

@@ -1,0 +1,35 @@
+# A read-only HTTP probe. Copy into the engagement workspace (../<system>-adopt/probes/),
+# never into the client's repository, and fill in every <placeholder>.
+#
+#   adopt probe manifest validate <file> --json   # shape only
+#   adopt probe run <file> --json                 # executes, stores nothing
+#   adopt probe add <file> --json                 # store it
+#
+# Every host a step reaches must be in network.allow -- the runner refuses
+# anything else at connection time (PROBE_HOST_UNDECLARED, exit 3).
+probe_id: <short-stable-id>
+safe_path: sandbox                      # mock | sandbox | shadow -- agree it with a person
+network:
+  deny_by_default: true                 # required
+  allow: ["<host[:port]>"]              # exactly the hosts the steps below address
+http_methods:
+  allow: [GET]                          # read-only unless a person gives a reason
+side_effect_policy: prohibited          # prohibited | compensating | declared
+runtime: { max_seconds: 30, max_memory_mb: 256, max_requests: 10 }
+cost: { max_model_calls: 0, max_tokens: 0 }
+output: { retain_raw: false, redaction_policy: pii-default }
+cleanup: { required: true }             # must be true
+exercises:                              # what a drift here would contradict
+  - "<identity URI from `adopt identity build`>"
+diff_method: exact                      # the only method built today
+secret_refs: ["env:<ENV_VAR_NAME>"]     # names only; the value never enters the file
+steps:
+  - kind: http
+    method: GET
+    url: "https://<host>/<path>"
+    headers:
+      Authorization: "Bearer {{secret.<ENV_VAR_NAME>}}"
+    expect:
+      status: 200
+      json_fields: ["<field>", "<field>"]
+      latency_under_ms: 2000

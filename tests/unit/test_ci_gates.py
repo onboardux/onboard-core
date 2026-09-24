@@ -706,6 +706,11 @@ class TestWorkflowsAreRunnable:
             "pack-journey",
             "probe-journey",
             "refresh-journey",
+            # `skills-sync` keeps the agent plugin (`plugins/adopt/`) true to
+            # the CLI it drives. It is the only instrument that sees a skill
+            # telling an agent to run a flag that no longer exists -- and that
+            # failure happens on a client's machine, not here.
+            "skills-sync",
         }
     )
 

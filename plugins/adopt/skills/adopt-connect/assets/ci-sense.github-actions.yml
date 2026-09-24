@@ -1,0 +1,63 @@
+# Continuous sensing for an operated system: the client's CI observes the
+# repository and posts attribute digests (never source) to the Onboard control
+# plane, which classifies them against the canon it holds.
+#
+# Propose this to the client as a pull request to THEIR repository, as
+# .github/workflows/adopt-sense.yml. Fill in the three <placeholders>; the plane
+# operator supplies the URL, the system id and a `sense`-scoped token, which the
+# client stores as the repository secret ADOPT_PLANE_TOKEN.
+name: adopt-sense
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci-sense:
+    name: Observe this repository into the control plane
+    runs-on: ubuntu-latest
+    env:
+      ADOPT_STORE_PATH: ${{ github.workspace }}/.adopt/store.db
+      ADOPT_PLANE_URL: <https://plane.example.com>
+      ADOPT_PLANE_SYSTEM: <sys_...>
+      # The variable that NAMES the token variable. It holds no secret.
+      ADOPT_PLANE_TOKEN_ENV: ADOPT_PLANE_TOKEN
+      ADOPT_PLANE_TOKEN: ${{ secrets.ADOPT_PLANE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # The published CLI, in a throwaway environment. ubuntu-latest's python3
+      # is 3.12, which is what adopt-cli requires. Pin a floor, not a guess.
+      - name: Install adopt
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/adopt"
+          "$RUNNER_TEMP/adopt/bin/pip" install --quiet --disable-pip-version-check "adopt-cli>=0.4.1"
+          "$RUNNER_TEMP/adopt/bin/adopt" version --json
+
+      # The store and its boundary. The scope must be the tenant's exactly -- the
+      # plane refuses a payload that claims a different one -- and the three
+      # answers are the ones the engagement negotiated at `adopt init`, copied
+      # verbatim. answers.json goes OUTSIDE the checkout, or the walk would read
+      # it as part of the system.
+      - name: Declare the boundary
+        run: |
+          set -euo pipefail
+          printf '%s' '<the engagement answers.json, e.g. {"artifact_access": true, "deploy_signal": true, "safe_interaction": false}>' \
+            > "$RUNNER_TEMP/answers.json"
+          "$RUNNER_TEMP/adopt/bin/adopt" init . \
+            --scope <firm/engagement/system/environment> \
+            --answers "$RUNNER_TEMP/answers.json" --json
+
+      # --run-id is the idempotency key: the SAME id on a re-run of this pipeline
+      # records liveness without writing twice. Exit 0 on findings by design; add
+      # --strict only if the client wants stale documentation to fail the build,
+      # and --no-probes to keep this job from opening any socket toward their
+      # system.
+      - name: Sense
+        run: |
+          "$RUNNER_TEMP/adopt/bin/adopt" ci-sense . --run-id "${{ github.run_id }}" --json

@@ -43,6 +43,9 @@ ignore = [
 # Gate scripts and the CLI are the two places that legitimately write to stdout.
 "scripts/**" = ["T20", "S603", "S607"]
 "tools/**" = ["T20"]
+# The agent-skill plugin's bundled helpers run on an FDE's machine: they print a
+# report for the agent to read and drive the installed `adopt` as a subprocess.
+"plugins/**" = ["T20", "S603", "S607"]
 "packages/adopt-cli/**" = ["T20"]
 # A benchmark harness reports to stdout and drives `psql` as a subprocess; it is
 # a measurement tool, not library code, and is never linked into the wheel.

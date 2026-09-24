@@ -1,0 +1,35 @@
+# A behavioural probe for an AI system: one HTTP call to the client's endpoint,
+# and one model interaction recorded verbatim. Copy into the engagement
+# workspace, never into the client's repository.
+#
+# The prompt step runs through adopt's model seam under this probe's own `cost`
+# budget, so it needs a configured adapter and `--allow-network` on
+# `adopt probe run` / `adopt refresh` -- egress, which needs a person's yes.
+# The reply is recorded as an observation and never becomes knowledge.
+probe_id: <short-stable-id>
+safe_path: shadow                       # mock | sandbox | shadow
+network:
+  deny_by_default: true
+  allow: ["<host[:port]>"]
+http_methods:
+  allow: [POST]                         # the client's chat endpoint takes a POST; no side effects
+side_effect_policy: prohibited
+runtime: { max_seconds: 60, max_memory_mb: 256, max_requests: 5 }
+cost: { max_model_calls: 2, max_tokens: 8000 }
+output: { retain_raw: false, redaction_policy: pii-default }
+cleanup: { required: true }
+exercises:
+  - "<prompt or endpoint URI from `adopt identity build`>"
+diff_method: exact
+steps:
+  - kind: http
+    method: POST
+    url: "https://<host>/<chat-path>"
+    body: { "message": "<a fixed, representative question>" }
+    expect:
+      status: 200
+      json_fields: ["<answer field>"]
+  - kind: prompt
+    input: "<the same representative question, asked directly>"
+    expect:
+      min_similarity: 0.9

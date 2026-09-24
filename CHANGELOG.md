@@ -31,6 +31,13 @@ it, a removed or retyped column is a rejected pull request.
   `unverified`, `verification_batch`, `verification_items` and
   `suggestions_deferred` on every run. No schema change, no new error code, no
   new constant.
+- **The `adopt` agent plugin** (`plugins/adopt/`, installable with
+  `/plugin marketplace add onboardux/onboard-core` then
+  `/plugin install adopt@onboardux`): seven skills that drive the published CLI
+  on a client engagement, with a preflight check, a safe runner that refuses
+  output inside the mapped tree, and command tables generated from the CLI.
+  `scripts/gen_skills.py --check` (CI job `skills-sync`) fails when a skill names
+  a command or flag the CLI lacks, and the plugin's version is the CLI's.
 
 ## [0.4.1] — 2026-09-10
 

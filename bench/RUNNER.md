@@ -86,6 +86,37 @@ A benchmark green on a bigger machine tells us nothing about the constant.
    so it stops being re-decided. No change to `ci_ratchet.py`: the rule is about
    *whose reading is authoritative*, and the script only ever sees one.
 
+## The label is a pool, not a machine *(N49, 2026-09-24)*
+
+`ubuntu-24.04` names an image and a size, and GitHub fills it from whatever
+hardware it has. The thirty nightly `bench` runs from 2026-08-30 to 2026-09-24
+landed on **six** CPU models: AMD EPYC 7763, 9V74 and 9V45; Intel Xeon Platinum
+8573C and 8370C; and, first seen on 2026-09-24, Intel Xeon 6973P-C. Nobody
+recorded a decision to change any of them, so rule 3 cannot hold by itself: the
+class it guards moves under the label.
+
+For six of the seven budgets that has not mattered. For **N3 it does**, because
+every store open commits a `schema_meta` row and so pays for an `fsync`, and a
+disk's `fsync` latency varies far more across hosts than a CPU's speed does:
+
+| Run | Commit | Host CPU | N3 p95 |
+|---|---|---|---|
+| `35838133142` (09-23) | `e284dc2` | AMD EPYC 7763 | 2.4 ms |
+| `35975553123` attempt 1 (09-24) | `e284dc2` | Intel Xeon 6973P-C | **225.8 ms — breached** |
+| `35975553123` attempt 2 (09-24) | `e284dc2` | AMD EPYC 7763 | 2.5 ms |
+| `34327704754` (09-09) | `fbc3e3a` | Intel Xeon Platinum 8573C | 65.5 ms |
+
+Same commit, 90× apart. Rule 2's first question has a clear answer, and it is
+**no, the code did not regress**. The harness could not say so at the time
+because it printed one number. `store_bench` now also prints the samples' spread
+and the host's own `fsync` floor from the same directory, so the next breach
+carries its own diagnosis. **What the gate should do on a slow-disk host is an
+owner decision and has not been taken.** The options, not ranked here: keep
+failing and triage by the floor; judge N3 net of the floor; re-measure once on a
+breach; or move `bench` to a runner whose hardware is actually fixed —
+self-hosted, since GitHub's larger runners are pools too — which rule 3 would
+then have to record.
+
 ## What is still open
 
 **What is open is a re-measurement, not a ratification.** PRD Q6 is closed and

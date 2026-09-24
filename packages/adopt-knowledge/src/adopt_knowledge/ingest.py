@@ -24,6 +24,30 @@ are the opposite case and land `unverified`. Getting this backwards in either
 direction breaks something real: mark ingest unverified and `adopt gaps`
 reports a documented system as entirely uncovered; mark harvest verified and
 mined guesses become canon nobody agreed to.
+
+**`--unverified` is the door for text nobody has vouched for** -- above all,
+anything a coding agent wrote or helped write. D2's premise is that a document
+is a human's own shipped prose, and an agent that writes a Markdown file and
+ingests it breaks the premise while every row still looks correct: the revision
+lands `verified` and `artifact_observed`, `recompute_coverage` counts it, and
+`adopt ask` serves it as KNOWN. Nothing downstream can tell. So the operator
+says so at the door, and the run then writes exactly what Build 4's drafting
+writes for authored text -- `human_confirmed` authority (authored, never
+observed), `unverified`, `human` provenance citing the path -- and queues every
+revision it wrote in an `ingest-unverified:` batch, whose confirmation appends
+the `verified` revision a person agreed to. Until then the document counts
+toward no coverage, serves no answer and reaches no pack.
+
+**An unverified document is asked one question at a time.** Its name-match
+suggestions are not queued in the same run: "is this text true?" comes first,
+and "which identities is it about?" is asked by the next ingest of the confirmed
+document. Structural matches still bind at once, as they always do -- the
+evidence for them is structural whoever wrote the text, and a binding to
+unverified knowledge counts toward nothing until the knowledge is confirmed.
+The residual is harvest's: the revisions commit one document per unit and the
+batch commits after them, so a run that dies between the two leaves revisions
+no queue entry names, and a re-run of the unchanged document does not queue
+them again.
 """
 
 from collections.abc import Mapping, Sequence
@@ -39,6 +63,7 @@ from adopt_scope import Scope
 
 __all__ = [
     "INGEST_EXTRACTOR_VERSION",
+    "UNVERIFIED_BATCH_PREFIX",
     "DocumentOutcome",
     "IngestReport",
     "StoredDocument",
@@ -71,6 +96,19 @@ _EXTRACTOR_FOR_TIER: Final[Mapping[str, str]] = {
 _INGEST_AUTHORITY: Final[AuthorityClass] = "artifact_observed"
 _INGEST_VERIFICATION: Final[Verification] = "verified"
 _INGEST_SOURCE_TYPE: Final[SourceType] = "human"
+
+#: `--unverified`: authored, not observed, and nobody has agreed with it yet --
+#: `drafting.DRAFT_AUTHORITY`'s pair, for `drafting`'s reason. `artifact_observed`
+#: is a claim about where text was read from, and for text an agent wrote it
+#: would be the one false field every later reader trusts.
+_UNVERIFIED_AUTHORITY: Final[AuthorityClass] = "human_confirmed"
+_UNVERIFIED_VERIFICATION: Final[Verification] = "unverified"
+
+#: The `review_batch.batch_key` prefix an `--unverified` run stamps. Declared
+#: here, where it is produced, and imported by `review` -- which imports this
+#: module already -- so the queue's vocabulary and the producer's spelling are
+#: one value rather than two strings that agree today.
+UNVERIFIED_BATCH_PREFIX: Final[str] = "ingest-unverified"
 
 CREATED: Final[str] = "created"
 UPDATED: Final[str] = "updated"
@@ -110,6 +148,18 @@ class IngestReport:
     review_batch_id: str | None = None
     review_item_ids: tuple[str, ...] = ()
     unknown_audiences: tuple[str, ...] = ()
+    #: Whether this run wrote its revisions `unverified` (`--unverified`).
+    unverified: bool = False
+    #: The `ingest-unverified:` batch holding every revision an unverified run
+    #: wrote -- a second batch beside the suggestion one, because it asks a
+    #: different question and confirming it does a different thing.
+    verification_batch_id: str | None = None
+    verification_item_ids: tuple[str, ...] = ()
+    #: Name-match suggestions found on revisions this run wrote unverified, and
+    #: therefore **not** queued: they are asked about the confirmed text, by the
+    #: next ingest of it. Reported so a reader of the envelope sees a count that
+    #: is waiting, not a count that vanished.
+    suggestions_deferred: int = 0
 
     @property
     def created(self) -> int:
@@ -145,6 +195,7 @@ def run_ingest(
     bound_pairs: frozenset[tuple[str, str]] = frozenset(),
     presented_revisions: frozenset[str] = frozenset(),
     actor_id: str | None = None,
+    unverified: bool = False,
 ) -> IngestReport:
     """Ingest documents, bind structurally, queue the rest.
 
@@ -171,14 +222,22 @@ def run_ingest(
             back thirty-nine sound documents because the fortieth was unreadable
             is not atomicity anybody asked for.
         actor_id: Recorded on every revision this run writes.
+        unverified: Write every revision `unverified` with authored authority,
+            and queue each one for a person to confirm. See the module docstring.
 
     Returns:
         An `IngestReport`. **One review batch per run**, not one per document:
         v6.1 §6 B6 makes coalescing the queue's defining property, and a
-        reviewer who ingested forty files should sit down once.
+        reviewer who ingested forty files should sit down once. An unverified
+        run can open a second, one per question: the suggestion batch for
+        documents it left unchanged, the verification batch for what it wrote.
     """
-    report = IngestReport(unknown_audiences=unknown_audiences(documents))
+    report = IngestReport(
+        unknown_audiences=unknown_audiences(documents),
+        unverified=unverified,
+    )
     pending_review: list[tuple[str, str | None]] = []
+    pending_verification: list[tuple[str, str | None]] = []
 
     for document in documents:
         with unit.transaction():
@@ -191,8 +250,13 @@ def run_ingest(
                 bindings=bindings,
                 bound_pairs=bound_pairs,
                 actor_id=actor_id,
+                unverified=unverified,
             )
         report.outcomes.append(outcome)
+        wrote_unverified = unverified and outcome.status in (CREATED, UPDATED)
+        if wrote_unverified:
+            pending_verification.append((outcome.item_id, outcome.revision_id))
+            report.suggestions_deferred += len(outcome.suggested)
         # Queue a document's suggestions once per *revision*. Idempotence of the
         # write path is not enough here and the difference is worth stating: a
         # re-ingest of an unchanged tree writes no knowledge and no bindings,
@@ -201,8 +265,31 @@ def run_ingest(
         # queue a reviewer stops opening. Keying on the revision means a
         # document whose *text* changed is presented again, which is the case
         # where there is genuinely something new to look at.
-        if outcome.suggested and outcome.revision_id not in presented_revisions:
+        #
+        # A revision this run wrote unverified is presented for verification
+        # instead, and its suggestions wait for the confirmed revision: the
+        # next ingest sees that one unpresented and asks about it then.
+        if (
+            outcome.suggested
+            and not wrote_unverified
+            and outcome.revision_id not in presented_revisions
+        ):
             pending_review.append((outcome.item_id, outcome.revision_id))
+
+    if pending_verification:
+        # Its own unit and its own batch, for the suggestion batch's reasons.
+        with unit.transaction():
+            batch_id, item_ids = reviews.open_batch(
+                system_id=str(scope.system.id) if scope.system is not None else "",
+                batch_key=(
+                    f"{UNVERIFIED_BATCH_PREFIX}:"
+                    f"{len(pending_verification)}-of-{len(report.outcomes)}"
+                ),
+                items=pending_verification,
+                owner_actor_id=actor_id,
+            )
+        report.verification_batch_id = batch_id
+        report.verification_item_ids = item_ids
 
     if pending_review:
         # Its own unit: the batch coalesces the whole run (v6.1 B6), so it
@@ -226,6 +313,7 @@ def run_ingest(
         unchanged=report.unchanged,
         bindings=report.bindings_created,
         suggestions=report.suggestions,
+        unverified=len(report.verification_item_ids),
     )
     return report
 
@@ -252,15 +340,18 @@ def _ingest_one(
     bindings: BindingWriter,
     bound_pairs: frozenset[tuple[str, str]],
     actor_id: str | None,
+    unverified: bool,
 ) -> DocumentOutcome:
+    authority = _UNVERIFIED_AUTHORITY if unverified else _INGEST_AUTHORITY
+    verification = _UNVERIFIED_VERIFICATION if unverified else _INGEST_VERIFICATION
     if stored is None:
         item_id, revision_id = knowledge.record(
             scope=scope,
             kind=document.kind,
             title=document.title,
             body_md=document.body_md,
-            authority_class=_INGEST_AUTHORITY,
-            verification=_INGEST_VERIFICATION,
+            authority_class=authority,
+            verification=verification,
             source_version=document.digest,
             actor_id=actor_id,
         )
@@ -278,8 +369,8 @@ def _ingest_one(
             item_id=stored.item_id,
             expected_head_id=stored.head_revision_id,
             body_md=document.body_md,
-            authority_class=_INGEST_AUTHORITY,
-            verification=_INGEST_VERIFICATION,
+            authority_class=authority,
+            verification=verification,
             source_version=document.digest,
             actor_id=actor_id,
         )

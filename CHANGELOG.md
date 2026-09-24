@@ -38,6 +38,8 @@ it, a removed or retyped column is a rejected pull request.
   output inside the mapped tree, and command tables generated from the CLI.
   `scripts/gen_skills.py --check` (CI job `skills-sync`) fails when a skill names
   a command or flag the CLI lacks, and the plugin's version is the CLI's.
+- **Contributor skills** under `.claude/skills/` (`adopt-dev` and six
+  specialists) for changing this repository, held to the same command lint.
 
 ## [0.4.1] — 2026-09-10
 

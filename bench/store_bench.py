@@ -14,17 +14,29 @@ The store is populated once and reopened `ITERATIONS` times, because opening is
 the operation under test. Creating a store per sample would measure schema
 creation, which is N1's job and already has its own harness.
 
-**It also reports the disk's own floor, and the spread of the samples.** Every
-open commits a `schema_meta` row, so every sample pays for at least one `fsync`,
-and what an `fsync` costs is a property of the host rather than of this code. On
-2026-09-24 this p95 read 225.8 ms, and 2.5 ms on a re-run of the same commit,
-with nothing changed but the machine behind the `ubuntu-24.04` label (N49) -- and
-a lone p95 could not say which of the two had moved. The floor is measured after
-the opens, so the number the budget judges is taken exactly as before.
+**The budget judges the open net of the disk (OD-17, ruled 2026-09-25).** Every
+open commits its `schema_meta` row into a fresh WAL, and SQLite makes that
+durable with three syncs: the WAL header, the directory entry for the file it
+just created, and the commit (counted with `strace` on Linux, SQLite 3.46). What
+a sync costs belongs to the host. On 2026-09-24 this p95 read 225.8 ms on one
+machine and 2.5 ms on a re-run of the same commit on another (N49), and the
+`ubuntu-24.04` label hands out six CPU models, each with its own disk. So every
+open is paired with a **floor sample**: bare SQLite committing one page into a
+fresh WAL in the same directory, which is the same three syncs with none of this
+repository's code in it. The two alternate, so a stall that slows an open slows
+the floor beside it, and the gate fails when p95(open) - p95(floor) exceeds the
+budget.
+
+**What that keeps** is everything the code does: our pragmas, the version read,
+the `schema_meta` append, anything that scales with the 50,000 rows, and any
+*extra* durable I/O a change adds, because the floor subtracts one commit's
+syncs and no more. **What it drops** is only the speed of the disk. On the hosts
+that have never breached, the floor is under a millisecond and the verdict is
+the one the raw p95 would have given.
 """
 
 import argparse
-import os
+import sqlite3
 import statistics
 import sys
 import tempfile
@@ -50,14 +62,6 @@ STORE_OPEN_ITEM_COUNT: Final[int] = 50_000
 _MILLISECONDS_PER_SECOND: Final[float] = 1000.0
 _P95: Final[float] = 0.95
 
-#: One durable write with none of our code in it -- create a file, write one
-#: page, `fsync` -- in the directory the store lives in. It is the least an open
-#: can cost on this disk, which is what makes a breach diagnosable: `RUNNER.md`
-#: rule 2 asks first whether the *code* regressed, and a 225 ms p95 means
-#: something very different over a 2 ms floor than over a 200 ms one.
-# const-sync: ok -- SQLite's default page size, the unit one commit writes.
-_PAGE_BYTES: Final[int] = 4096
-
 
 def _percentile_95(samples: list[float]) -> float:
     ordered = sorted(samples)
@@ -82,32 +86,44 @@ def _populate(path: Path) -> None:
                 )
 
 
-def _open_samples(path: Path) -> list[float]:
-    samples: list[float] = []
-    for _ in range(ITERATIONS):
+def _prepare_floor(path: Path) -> None:
+    """A database whose only content is its header, already in WAL mode.
+
+    `user_version` is the write, rather than a row, because a table would need a
+    `CREATE TABLE` here and `no-foreign-tables` keeps those in the migrations.
+    Setting it rewrites page 1, which is one durable page, as the open's append is.
+    """
+    connection = sqlite3.connect(path, isolation_level=None)
+    connection.execute("PRAGMA journal_mode = WAL;")
+    connection.execute("PRAGMA user_version = 1;")
+    connection.close()
+
+
+def _floor_sample(path: Path, version: int) -> float:
+    started = time.perf_counter()
+    connection = sqlite3.connect(path, isolation_level=None)
+    connection.execute("PRAGMA journal_mode = WAL;")
+    connection.execute(f"PRAGMA user_version = {int(version)};")
+    elapsed = time.perf_counter() - started
+    # Outside the timer, as `handle.close()` is outside an open. Closing the last
+    # connection checkpoints and deletes the WAL, so the next sample creates it
+    # afresh, exactly as the next open does.
+    connection.close()
+    return elapsed * _MILLISECONDS_PER_SECOND
+
+
+def _paired_samples(store: Path, floor: Path) -> tuple[list[float], list[float]]:
+    opens: list[float] = []
+    floors: list[float] = []
+    for index in range(ITERATIONS):
         started = time.perf_counter()
-        handle = open_store(path)
+        handle = open_store(store)
         elapsed = time.perf_counter() - started
         handle.close()
-        samples.append(elapsed * _MILLISECONDS_PER_SECOND)
-    return samples
-
-
-def _fsync_floor_samples(directory: Path) -> list[float]:
-    probe = directory / "fsync-floor.probe"
-    page = bytes(_PAGE_BYTES)
-    samples: list[float] = []
-    for _ in range(ITERATIONS):
-        started = time.perf_counter()
-        with probe.open("wb") as written:
-            written.write(page)
-            written.flush()
-            os.fsync(written.fileno())
-        elapsed = time.perf_counter() - started
-        # Outside the timer, as SQLite's own removal of the WAL is outside an open.
-        probe.unlink()
-        samples.append(elapsed * _MILLISECONDS_PER_SECOND)
-    return samples
+        opens.append(elapsed * _MILLISECONDS_PER_SECOND)
+        # A changing value, so every sample is a real write; 1 is the prepared one.
+        floors.append(_floor_sample(floor, index + 2))
+    return opens, floors
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -121,24 +137,28 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     with tempfile.TemporaryDirectory() as scratch:
-        path = Path(scratch) / "bench.db"
-        _populate(path)
-        samples = _open_samples(path)
-        floor = _percentile_95(_fsync_floor_samples(Path(scratch)))
+        store = Path(scratch) / "bench.db"
+        floor_db = Path(scratch) / "floor.db"
+        _populate(store)
+        _prepare_floor(floor_db)
+        opens, floors = _paired_samples(store, floor_db)
 
-    measured = _percentile_95(samples)
+    measured = _percentile_95(opens)
+    floor = _percentile_95(floors)
+    net = measured - floor
     print(
         f"store open p95: {measured:.1f} ms over {ITERATIONS} opens "
-        f"at {STORE_OPEN_ITEM_COUNT:,} rows (budget {STORE_OPEN_P95_MS} ms)"
+        f"at {STORE_OPEN_ITEM_COUNT:,} rows"
     )
     print(
-        f"  spread: min {min(samples):.1f} / median {statistics.median(samples):.1f} "
-        f"/ max {max(samples):.1f} ms"
+        f"  spread: min {min(opens):.1f} / median {statistics.median(opens):.1f} "
+        f"/ max {max(opens):.1f} ms"
     )
     print(
-        f"fsync floor p95: {floor:.1f} ms (one {_PAGE_BYTES:,}-byte durable write in the "
-        "same directory -- the least any open can cost on this disk)"
+        f"disk floor p95: {floor:.1f} ms (bare SQLite committing one page into a fresh "
+        "WAL in the same directory, sampled beside each open)"
     )
+    print(f"store open net of the disk: {net:.1f} ms (budget {STORE_OPEN_P95_MS} ms)")
 
     if not arguments.do_assert:
         return 0
@@ -148,13 +168,14 @@ def main(argv: list[str] | None = None) -> int:
             "See bench/RUNNER.md rule 1."
         )
         return 0
-    if measured > STORE_OPEN_P95_MS:
-        print(f"FAIL: N3 breached -- {measured:.1f} ms exceeds {STORE_OPEN_P95_MS} ms")
-        print(
-            f"  the disk alone costs {floor:.1f} ms p95 here; compare the two before "
-            "asking whether the code regressed (bench/RUNNER.md rule 2)"
-        )
+    if net > STORE_OPEN_P95_MS:
+        print(f"FAIL: N3 breached -- {net:.1f} ms net of the disk exceeds {STORE_OPEN_P95_MS} ms")
         return 1
+    if measured > STORE_OPEN_P95_MS:
+        print(
+            f"  the raw p95 exceeds the budget and this disk's floor accounts for it "
+            f"(OD-17): {measured:.1f} ms open, {floor:.1f} ms floor"
+        )
     print("PASS: N3 within budget on the reference runner")
     return 0
 

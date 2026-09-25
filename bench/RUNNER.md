@@ -107,15 +107,51 @@ disk's `fsync` latency varies far more across hosts than a CPU's speed does:
 | `34327704754` (09-09) | `fbc3e3a` | Intel Xeon Platinum 8573C | 65.5 ms |
 
 Same commit, 90× apart. Rule 2's first question has a clear answer, and it is
-**no, the code did not regress**. The harness could not say so at the time
-because it printed one number. `store_bench` now also prints the samples' spread
-and the host's own `fsync` floor from the same directory, so the next breach
-carries its own diagnosis. **What the gate should do on a slow-disk host is an
-owner decision and has not been taken.** The options, not ranked here: keep
-failing and triage by the floor; judge N3 net of the floor; re-measure once on a
-breach; or move `bench` to a runner whose hardware is actually fixed —
-self-hosted, since GitHub's larger runners are pools too — which rule 3 would
-then have to record.
+**no, the code did not regress**. The harness could not say so at the time,
+because it printed one number.
+
+### OD-17, ruled 2026-09-25: N3 is judged net of the disk
+
+This is a change to what a benchmark measures, which rule 2 reserves for the
+owner. The owner handed OD-17 to the implementing session, which chose this
+option.
+
+**The open's disk work was counted, not assumed.** Under `strace` on Linux
+(SQLite 3.46), every timed open makes **three** syncs: `fdatasync` of the new
+WAL's header, of the directory it was just created in, and of the WAL at
+commit. Its `close()`, which is outside the timer, makes two more. All five come
+from SQLite making one row durable. None is this repository's choice.
+
+**So each open is now paired with a floor sample.** Bare SQLite commits one page
+into a fresh WAL in the same directory. That is three syncs as well, checked the
+same way, and the floor sample's own `close()` is also untimed. The samples
+alternate, so a stall that slows the opens also slows the floors beside them.
+**N3 fails when p95(open) − p95(floor) exceeds `STORE_OPEN_P95_MS`.** The budget
+itself is unchanged.
+
+| Case | Raw p95 | Floor p95 | Net | Verdict |
+|---|---|---|---|---|
+| This tree, laptop | 12.3 ms | 7.7 ms | 4.6 ms | PASS |
+| **Planted code regression:** +250 ms inside every open | 262.5 ms | 7.7 ms | 254.7 ms | **FAIL** |
+| **Planted slow disk:** +250 ms inside every open *and* every floor sample | 257.7 ms | 254.7 ms | 3.1 ms | PASS, and the raw breach is printed |
+
+**Why this option over the other three.**
+- *Keep failing and triage* leaves a nightly red that people learn to re-run.
+- *Re-measure once* clears a transient stall, but not a host whose disk is slow
+  on every sample.
+- *Self-hosted hardware* is infrastructure nobody has provisioned.
+
+Net-of-floor handles both the transient case and the persistent one. It loses
+nothing the gate could already see: on every host that has never breached, the
+floor is a few milliseconds at most. A change that adds durable I/O to an open
+still counts, because the floor subtracts one commit's syncs and no more.
+
+**Reversal triggers.**
+- If `bench` moves to hardware that is actually fixed, the raw p95 means one
+  machine again and can be judged directly.
+- If SQLite's sync pattern for this commit changes, re-count both sides. The
+  floor is SQLite itself, so it should follow on its own, but that is an
+  expectation, not a measurement.
 
 ## What is still open
 

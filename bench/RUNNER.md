@@ -86,6 +86,73 @@ A benchmark green on a bigger machine tells us nothing about the constant.
    so it stops being re-decided. No change to `ci_ratchet.py`: the rule is about
    *whose reading is authoritative*, and the script only ever sees one.
 
+## The label is a pool, not a machine *(N49, 2026-09-24)*
+
+`ubuntu-24.04` names an image and a size, and GitHub fills it from whatever
+hardware it has. The thirty nightly `bench` runs from 2026-08-30 to 2026-09-24
+landed on **six** CPU models: AMD EPYC 7763, 9V74 and 9V45; Intel Xeon Platinum
+8573C and 8370C; and, first seen on 2026-09-24, Intel Xeon 6973P-C. Nobody
+recorded a decision to change any of them, so rule 3 cannot hold by itself: the
+class it guards moves under the label.
+
+For six of the seven budgets that has not mattered. For **N3 it does**, because
+every store open commits a `schema_meta` row and so pays for an `fsync`, and a
+disk's `fsync` latency varies far more across hosts than a CPU's speed does:
+
+| Run | Commit | Host CPU | N3 p95 |
+|---|---|---|---|
+| `35838133142` (09-23) | `e284dc2` | AMD EPYC 7763 | 2.4 ms |
+| `35975553123` attempt 1 (09-24) | `e284dc2` | Intel Xeon 6973P-C | **225.8 ms — breached** |
+| `35975553123` attempt 2 (09-24) | `e284dc2` | AMD EPYC 7763 | 2.5 ms |
+| `34327704754` (09-09) | `fbc3e3a` | Intel Xeon Platinum 8573C | 65.5 ms |
+
+Same commit, 90× apart. Rule 2's first question has a clear answer, and it is
+**no, the code did not regress**. The harness could not say so at the time,
+because it printed one number.
+
+### OD-17, ruled 2026-09-25: N3 is judged net of the disk
+
+This is a change to what a benchmark measures, which rule 2 reserves for the
+owner. The owner handed OD-17 to the implementing session, which chose this
+option.
+
+**The open's disk work was counted, not assumed.** Under `strace` on Linux
+(SQLite 3.46), every timed open makes **three** syncs: `fdatasync` of the new
+WAL's header, of the directory it was just created in, and of the WAL at
+commit. Its `close()`, which is outside the timer, makes two more. All five come
+from SQLite making one row durable. None is this repository's choice.
+
+**So each open is now paired with a floor sample.** Bare SQLite commits one page
+into a fresh WAL in the same directory. That is three syncs as well, checked the
+same way, and the floor sample's own `close()` is also untimed. The samples
+alternate, so a stall that slows the opens also slows the floors beside them.
+**N3 fails when p95(open) − p95(floor) exceeds `STORE_OPEN_P95_MS`.** The budget
+itself is unchanged.
+
+| Case | Raw p95 | Floor p95 | Net | Verdict |
+|---|---|---|---|---|
+| This tree, laptop | 12.3 ms | 7.7 ms | 4.6 ms | PASS |
+| **Planted code regression:** +250 ms inside every open | 262.5 ms | 7.7 ms | 254.7 ms | **FAIL** |
+| **Planted slow disk:** +250 ms inside every open *and* every floor sample | 257.7 ms | 254.7 ms | 3.1 ms | PASS, and the raw breach is printed |
+
+**Why this option over the other three.**
+- *Keep failing and triage* leaves a nightly red that people learn to re-run.
+- *Re-measure once* clears a transient stall, but not a host whose disk is slow
+  on every sample.
+- *Self-hosted hardware* is infrastructure nobody has provisioned.
+
+Net-of-floor handles both the transient case and the persistent one. It loses
+nothing the gate could already see: on every host that has never breached, the
+floor is a few milliseconds at most. A change that adds durable I/O to an open
+still counts, because the floor subtracts one commit's syncs and no more.
+
+**Reversal triggers.**
+- If `bench` moves to hardware that is actually fixed, the raw p95 means one
+  machine again and can be judged directly.
+- If SQLite's sync pattern for this commit changes, re-count both sides. The
+  floor is SQLite itself, so it should follow on its own, but that is an
+  expectation, not a measurement.
+
 ## What is still open
 
 **What is open is a re-measurement, not a ratification.** PRD Q6 is closed and

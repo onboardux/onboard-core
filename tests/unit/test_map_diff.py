@@ -276,6 +276,65 @@ def test_an_extractor_upgrade_rebaselines_instead_of_reporting_a_change() -> Non
     assert outcome.rebaselines[0].digest == "sha256:zzz"
 
 
+_ENV_KEY = f"{_BASE}/config_key/env/DATABASE_URL"
+
+
+@pytest.mark.parametrize(
+    ("recorded_by", "recorded_digest", "rebaselined"),
+    [
+        # What `map` records: the first extractor to see the referent.
+        ("generic.env_vars", "sha256:template", True),
+        # What a 0.4.1 `refresh` re-recorded: the last one.
+        ("generic.settings_class", "sha256:settings", False),
+    ],
+)
+def test_a_referent_two_extractors_see_is_compared_within_the_one_that_recorded_it(
+    recorded_by: str, recorded_digest: str, rebaselined: bool
+) -> None:
+    """*Fails when* a stored digest is compared with another extractor's
+    sighting of the same referent. *Matters because* each extractor digests only
+    its own attributes, so the first `refresh` after `map` reported every key
+    declared in both `.env.example` and a settings class as SEMANTICS_CHANGED and
+    staled every note bound to it, on a tree nobody had touched. *No other
+    instrument catches it* because no journey fixture declares a key twice."""
+    outcome = compute(
+        stored=[_stored(_ENV_KEY, digest=recorded_digest, extractor=recorded_by)],
+        observed=[
+            _observed(_ENV_KEY, digest="sha256:template", extractor="generic.env_vars"),
+            _observed(_ENV_KEY, digest="sha256:settings", extractor="generic.settings_class"),
+        ],
+        moves=MoveOutcome(),
+        ran_extractors=["generic.env_vars", "generic.settings_class"],
+    )
+
+    assert outcome.changes == ()
+    # Re-recorded, never judged: the next run compares the sighting this diff keeps.
+    assert [(r.extractor, r.digest) for r in outcome.rebaselines] == (
+        [("generic.settings_class", "sha256:settings")] if rebaselined else []
+    )
+
+
+def test_a_change_the_recording_extractor_sees_is_still_semantics_changed() -> None:
+    """*Fails when* comparing within one extractor hides a real edit. *Matters
+    because* the fix above must narrow what is compared, not stop comparing."""
+    outcome = compute(
+        stored=[_stored(_ENV_KEY, digest="sha256:template", extractor="generic.env_vars")],
+        observed=[
+            _observed(_ENV_KEY, digest="sha256:template-2", extractor="generic.env_vars"),
+            _observed(_ENV_KEY, digest="sha256:settings", extractor="generic.settings_class"),
+        ],
+        moves=MoveOutcome(),
+        ran_extractors=["generic.env_vars", "generic.settings_class"],
+    )
+
+    assert _classes(outcome) == [CLASS_SEMANTICS]
+    # The kept sighting is what gets recorded, so the next run is like-for-like.
+    assert (outcome.changes[0].extractor, outcome.changes[0].digest) == (
+        "generic.settings_class",
+        "sha256:settings",
+    )
+
+
 def test_two_unknown_versions_still_compare() -> None:
     """*Fails when* the fence fires on a store whose revisions predate version
     recording. *Matters because* it would re-baseline on every run and never

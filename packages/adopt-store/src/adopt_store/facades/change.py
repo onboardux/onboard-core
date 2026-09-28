@@ -33,6 +33,7 @@ from adopt_model import Binding, ChangeEvent, Classification
 from adopt_model._enums import ChangeSource, FreshnessState
 from adopt_obs import Clock, SystemClock, get_logger, new_id, truncate_to_millisecond
 from adopt_store.facades.records import ChangeRecords
+from adopt_store.revisions import INITIAL_BINDING_FRESHNESS
 
 __all__ = ["CLASSIFIER_LABEL", "CLASSIFIER_TRAINING_CATEGORIES", "ChangeFacade", "ClassifiedChange"]
 
@@ -262,6 +263,26 @@ class ChangeFacade:
         if freshened:
             _log.info("change.reaffirmed", bindings=len(freshened))
         return tuple(freshened)
+
+    def restart_bindings(self, binding_ids: Sequence[str]) -> tuple[str, ...]:
+        """Return revived bindings to the freshness a new binding starts with.
+
+        `BindingFacade.reactivate`'s other half. A superseded or retired link
+        keeps whatever freshness it had when it was set aside -- usually `stale`,
+        since a change is what set it aside -- and a person who binds the pair
+        again is making a new assertion, not inheriting that verdict. Left
+        stale, the revived link would stale its item with no queue entry that
+        could ever clear it.
+        """
+        updated_at = self._now()
+        restarted = sorted(set(binding_ids))
+
+        with self._records.transaction():
+            for binding_id in restarted:
+                self._records.set_binding_freshness(
+                    binding_id, INITIAL_BINDING_FRESHNESS, updated_at=updated_at
+                )
+        return tuple(restarted)
 
     def classifications_in(self, batch_key: str) -> tuple[Classification, ...]:
         """Every classification of one refresh run. The review surface's read."""

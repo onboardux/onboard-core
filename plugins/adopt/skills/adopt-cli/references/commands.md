@@ -14,7 +14,7 @@ Every command of the CLI these skills were generated against: **44 runnable comm
 | `adopt agent check` | Construct one adapter, or refuse with the reason. Raises `AGENT_ADAPTER_UNKNOWN` (usage, exit `2`) for an unregistered id or when none is configured, and `AGENT_OFFLINE_ADAPTER_DENIED` (policy, exit `3`) for a hosted adapter offline. The envelope and the exit code are `adopt_cli.main`'s doing, so this command does not restate the mapping. |
 | `adopt answer` | Bank a human's answer as confirmed knowledge and resolve the question. |
 | `adopt ask` | Answer from the store: KNOWN with citations, STALE with the cause, or UNKNOWN. |
-| `adopt bind` | Bind a knowledge item to an identity by hand. For the links no heuristic finds. A binding made here is human-justified by construction, which is the same standing a confirmed suggestion has. |
+| `adopt bind` | Bind a knowledge item to an identity by hand. For the links no heuristic finds. A binding made here is human-justified by construction, which is the same standing a confirmed suggestion has. **A pair bound before is revived, not refused.** One item and one identity have one binding for ever, so a link a `rebind` superseded or a retirement withdrew cannot be created again -- and until this path existed, nothing could restore it. Binding such a pair appends an `active` revision to its chain and restarts its freshness, and the payload says `reactivated`. A pair that is live already is still refused. |
 | `adopt boundary` | Negotiate the observability boundary and report what it permits. |
 | `adopt ci-sense` | Observe this repository and post the observation to the control plane. |
 | `adopt coverage recompute` | Evaluate the six inputs of contracts §6 for every identity in scope. **`--scope` exists because this command is the remedy for an alarm, and the remedy has to be reachable.** `COVERAGE_CACHE_DISAGREEMENT` fires on every `adopt gaps` and `adopt pack` once a binding is confirmed, and clearing it needs this verb -- which took a system **id** that no verb printed. `store info` reports counts, `store doctor` reports findings, and the only command that ever surfaced a system id was `adopt handover start`, which opens a handover event as a side effect. An operator was left reading the SQLite file by hand to silence an alarm the product raised at them, so the scope string they typed into `adopt init` is now accepted here too. |
@@ -125,7 +125,7 @@ adopt ask QUESTION [OPTIONS]
 
 ## `adopt bind`
 
-Bind a knowledge item to an identity by hand. For the links no heuristic finds. A binding made here is human-justified by construction, which is the same standing a confirmed suggestion has.
+Bind a knowledge item to an identity by hand. For the links no heuristic finds. A binding made here is human-justified by construction, which is the same standing a confirmed suggestion has. **A pair bound before is revived, not refused.** One item and one identity have one binding for ever, so a link a `rebind` superseded or a retirement withdrew cannot be created again -- and until this path existed, nothing could restore it. Binding such a pair appends an `active` revision to its chain and restarts its freshness, and the payload says `reactivated`. A pair that is live already is still refused.
 
 ```shell
 adopt bind KNOWLEDGE_ID URI [OPTIONS]

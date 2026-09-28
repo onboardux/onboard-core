@@ -140,7 +140,9 @@ class ChangeEntry:
 
 @dataclass(frozen=True, slots=True)
 class Rebaseline:
-    """A referent whose extractor version changed: re-recorded, never judged."""
+    """A referent whose recorded digest came from a different instrument than the
+    one this run keeps -- another extractor version, or another extractor:
+    re-recorded, never judged."""
 
     uri: str
     identity_id: str
@@ -218,7 +220,16 @@ def compute(
         (class, URI), so two runs over one tree produce the same batch order and
         a reviewer's queue does not reshuffle between sessions.
     """
-    seen = {entry.uri: entry for entry in observed}
+    # Every sighting of a URI, in the order the extractors produced them. Two
+    # extractors can observe one referent -- a key a `.env.example` declares and a
+    # settings class reads -- and each digests only its own attributes, so their
+    # digests differ by construction. The last sighting is the one this diff keeps
+    # and records; a stored digest is compared with the sighting by the extractor
+    # that recorded it (`_counterpart`).
+    sightings: dict[str, list[ObservedIdentity]] = {}
+    for sighting in observed:
+        sightings.setdefault(sighting.uri, []).append(sighting)
+    seen = {uri: found[-1] for uri, found in sightings.items()}
     stored_by_uri = {entry.uri: entry for entry in stored}
     delta = file_delta if file_delta is not None else FileDelta(available=False)
 
@@ -293,9 +304,14 @@ def compute(
             )
             continue
 
-        if _versions_differ(entry.extractor_version, arrival.extractor_version):
+        counterpart = _counterpart(sightings[entry.uri], entry.extractor)
+        if counterpart is None or _versions_differ(
+            entry.extractor_version, counterpart.extractor_version
+        ):
             # The fence. Every digest differs across an upgrade by construction,
-            # so this is the one comparison that must never be made.
+            # so this is the one comparison that must never be made -- and the
+            # same holds across extractors: the extractor that recorded this
+            # referent did not see it this run, and another one did.
             rebaselines.append(
                 Rebaseline(
                     uri=entry.uri,
@@ -309,7 +325,28 @@ def compute(
             )
             continue
 
-        if arrival.digest != entry.digest:
+        if counterpart.digest == entry.digest and counterpart is not arrival:
+            # Unchanged, but recorded from a sighting this diff does not keep:
+            # `map` records the first extractor to see a referent, and this diff
+            # keeps the last. Re-record the kept one, so the next run compares
+            # like with like. Comparing across the two instead reported every key
+            # declared in both `.env.example` and a settings class as
+            # SEMANTICS_CHANGED on the first refresh after `map`, staling every
+            # note bound to it over an edit nobody made.
+            rebaselines.append(
+                Rebaseline(
+                    uri=entry.uri,
+                    identity_id=entry.identity_id,
+                    from_version=entry.extractor_version,
+                    to_version=arrival.extractor_version,
+                    digest=arrival.digest,
+                    extractor=arrival.extractor,
+                    source_path=arrival.source_path,
+                )
+            )
+            continue
+
+        if counterpart.digest != entry.digest:
             changes.append(
                 ChangeEntry(
                     uri=entry.uri,
@@ -391,6 +428,27 @@ def compute(
         ambiguous=moves.ambiguous,
         render_only_available=delta.available,
     )
+
+
+def _counterpart(
+    found: Sequence[ObservedIdentity], extractor: str | None
+) -> ObservedIdentity | None:
+    """This run's sighting to compare a stored digest with: the one by the
+    extractor that recorded it, or `None` when that extractor did not see the
+    referent this run.
+
+    A digest covers only the attributes its extractor extracts, so two
+    extractors' digests of one referent never agree -- comparing across them
+    reports a change on every run where the recorded and the kept sighting come
+    from different extractors. A store that names no extractor compares with the
+    kept sighting, as it always has.
+    """
+    if extractor is None:
+        return found[-1]
+    for sighting in reversed(found):
+        if sighting.extractor == extractor:
+            return sighting
+    return None
 
 
 def _versions_differ(stored: str | None, observed: str | None) -> bool:

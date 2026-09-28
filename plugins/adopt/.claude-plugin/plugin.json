@@ -1,0 +1,15 @@
+{
+  "name": "adopt",
+  "displayName": "adopt",
+  "version": "0.4.1",
+  "description": "Skills for driving the published adopt CLI on a client engagement: onboard a repository, capture and serve knowledge, baseline behaviour, triage drift, run a verified handover, and connect to an Onboard control plane. The CLI does the work; these skills supply the judgement it deliberately leaves to a person.",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/onboardux/onboard-core",
+  "keywords": [
+    "adopt",
+    "handover",
+    "knowledge",
+    "fde",
+    "onboarding"
+  ]
+}

@@ -1,0 +1,39 @@
+# The verification checklist -- `adopt handover verify --checklist THIS`.
+#
+# Save a copy in the engagement workspace (../<system>-adopt/handover/), never in
+# the client's repository.
+#
+# The delivering FDE writes the TASKS before the session; the receiving team
+# fills in the OUTCOMES during it. An agent may help draft tasks. It never
+# records an outcome nobody reported: every `outcome` below comes from what a
+# person on the receiving team actually did.
+#
+# Tasks are realistic things the new owners must be able to do using ONLY the
+# pack and `adopt ask` -- no Slack, no tapping the FDE on the shoulder. Three to
+# six is the usual size. A task somebody needed help with is `fail`; that is a
+# finding about the pack, not about the person, and it becomes an open question
+# you can answer in the room with `adopt answer`.
+
+# Which pack the tasks were performed against. Optional; per-task `audience`
+# overrides it.
+audience: client_ops
+
+tasks:
+  # id           short, stable, unique; keys the recorded outcome
+  # task         what they were asked to do; becomes the question text if it failed
+  # outcome      pass | fail | skipped -- nothing else is accepted
+  # uri          optional; the identity the task is about, so a later answer binds in one step
+  # note         optional; what actually went wrong
+  # performed_by optional; who did the task -- never who failed it
+
+  - id: <explain-something>
+    task: "<Explain why ... using only the pack>"
+    outcome: <pass|fail|skipped>
+    performed_by: <name>
+
+  - id: <operate-something>
+    task: "<Do ... using only the pack and `adopt ask`>"
+    outcome: <pass|fail|skipped>
+    uri: "<identity URI, optional>"
+    note: "<what went wrong, if it did>"
+    performed_by: <name>

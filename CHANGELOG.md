@@ -13,7 +13,33 @@ it, a removed or retyped column is a rejected pull request.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`adopt ingest --unverified`** — the door for text nobody has vouched for,
+  above all anything a coding agent wrote or helped write. Ingest's default
+  lands a document `verified` and `artifact_observed`, which is right for prose a
+  human already shipped and wrong for an agent's summary: ingesting one turned
+  the agent's own words into canon that `adopt gaps` counted and `adopt ask`
+  served as KNOWN, with every row well formed. With the flag, each revision
+  lands `unverified` with authored authority — exactly what `adopt draft` writes
+  — and is queued in an `ingest-unverified:` review batch; `adopt review
+  --confirm` appends the verified revision. Until then the document counts toward
+  no coverage, serves no answer and reaches no pack. Its name-match suggestions
+  are asked by the next ingest of the confirmed text, so each queue entry asks
+  one question; the envelope's `suggestions_deferred` counts what is waiting.
+  **Additive:** the default is unchanged, and the ingest envelope gains
+  `unverified`, `verification_batch`, `verification_items` and
+  `suggestions_deferred` on every run. No schema change, no new error code, no
+  new constant.
+- **The `adopt` agent plugin** (`plugins/adopt/`, installable with
+  `/plugin marketplace add onboardux/onboard-core` then
+  `/plugin install adopt@onboardux`): seven skills that drive the published CLI
+  on a client engagement, with a preflight check, a safe runner that refuses
+  output inside the mapped tree, and command tables generated from the CLI.
+  `scripts/gen_skills.py --check` (CI job `skills-sync`) fails when a skill names
+  a command or flag the CLI lacks, and the plugin's version is the CLI's.
+- **Contributor skills** under `.claude/skills/` (`adopt-dev` and six
+  specialists) for changing this repository, held to the same command lint.
 
 ## [0.4.1] — 2026-09-10
 

@@ -45,6 +45,19 @@ ActorOption = Annotated[
     str | None,
     typer.Option("--actor", help="Who is running this. Recorded on every revision written."),
 ]
+UnverifiedOption = Annotated[
+    bool,
+    typer.Option(
+        "--unverified",
+        help=(
+            "Land these documents unverified, each queued for a person to confirm in "
+            "`adopt review`. Use it for text nobody has vouched for -- anything an agent "
+            "wrote or helped write. Until confirmed it counts toward no coverage, serves "
+            "no answer and reaches no pack. Its name-match suggestions are held back "
+            "(`suggestions_deferred`) and queued by the next ingest of the confirmed text."
+        ),
+    ),
+]
 StoreOption = Annotated[Path | None, typer.Option("--store", help="Store path override.")]
 JsonOption = Annotated[bool, typer.Option("--json", help="Emit the strict JSON envelope only.")]
 
@@ -54,6 +67,7 @@ def ingest(
     scope: ScopeOption = None,
     audience: AudienceOption = None,
     actor: ActorOption = None,
+    unverified: UnverifiedOption = False,
     store: StoreOption = None,
     json_output: JsonOption = False,
 ) -> None:
@@ -65,6 +79,7 @@ def ingest(
         bound_pairs,
         identity_views,
         presented_revisions,
+        presented_texts,
         stored_documents,
     )
     from adopt_cli.commands._map_support import resolve_scope
@@ -84,7 +99,9 @@ def ingest(
             unit=StoreUnitOfWork(handle),
             bound_pairs=bound_pairs(handle),
             presented_revisions=presented_revisions(handle),
+            presented_texts=presented_texts(handle),
             actor_id=actor,
+            unverified=unverified,
         )
         payload = _ingest_payload(report)
     finally:
@@ -104,6 +121,13 @@ def _ingest_payload(report: Any) -> dict[str, Any]:
         "suggestions": report.suggestions,
         "review_batch": report.review_batch_id,
         "review_items": list(report.review_item_ids),
+        # Additive (`--unverified`): what this run wrote unverified, and the
+        # batch a person confirms it in. Present on every run so the envelope
+        # is one shape whichever way the flag was set.
+        "unverified": report.unverified,
+        "verification_batch": report.verification_batch_id,
+        "verification_items": list(report.verification_item_ids),
+        "suggestions_deferred": report.suggestions_deferred,
         "unknown_audiences": list(report.unknown_audiences),
         "ingested": [
             {
@@ -283,10 +307,17 @@ def bind(
 
     For the links no heuristic finds. A binding made here is human-justified by
     construction, which is the same standing a confirmed suggestion has.
+
+    **A pair bound before is revived, not refused.** One item and one identity
+    have one binding for ever, so a link a `rebind` superseded or a retirement
+    withdrew cannot be created again -- and until this path existed, nothing
+    could restore it. Binding such a pair appends an `active` revision to its
+    chain and restarts its freshness, and the payload says `reactivated`. A pair
+    that is live already is still refused.
     """
     from adopt_knowledge.ingest import EXTRACTOR_MANUAL, INGEST_EXTRACTOR_VERSION
 
-    from adopt_cli.commands._knowledge_support import resolve_identity
+    from adopt_cli.commands._knowledge_support import StoreUnitOfWork, resolve_identity
     from adopt_obs import AdoptError, ErrorCode
 
     handle = open_configured_store(store, read_only=False, verb="bind")
@@ -307,21 +338,49 @@ def bind(
                 hint="Run `adopt map` first. A moved identity's old URI still resolves, so "
                 "this is genuine absence rather than a stale address.",
             )
-        binding_id, revision_id = handle.bindings().bind(
-            item_id=knowledge_id,
-            identity_id=identity.id,
-            is_load_bearing=not not_load_bearing,
-            extractor=EXTRACTOR_MANUAL,
-            extractor_version=INGEST_EXTRACTOR_VERSION,
-            actor_id=actor,
+        bindings = handle.bindings()
+        earlier = next(
+            (row for row in bindings.for_identity(identity.id) if row.item_id == knowledge_id),
+            None,
         )
+        head_status = (
+            None
+            if earlier is None
+            else handle.freshness_records().head_binding_statuses([earlier.id]).get(earlier.id)
+        )
+        if earlier is not None and head_status in _REVIVABLE_BINDING_STATUSES:
+            with StoreUnitOfWork(handle).transaction():
+                revision_id = bindings.reactivate(
+                    binding_id=earlier.id,
+                    expected_head_id=earlier.current_revision_id,
+                    extractor=EXTRACTOR_MANUAL,
+                    extractor_version=INGEST_EXTRACTOR_VERSION,
+                    actor_id=actor,
+                )
+                handle.changes().restart_bindings([earlier.id])
+            binding_id = earlier.id
+            # The pair's row keeps the load-bearing flag it was created with;
+            # report what is true of it rather than what was asked for.
+            is_load_bearing = bool(earlier.is_load_bearing)
+        else:
+            # A new pair, or the facade's refusal of one that is live already.
+            binding_id, revision_id = bindings.bind(
+                item_id=knowledge_id,
+                identity_id=identity.id,
+                is_load_bearing=not not_load_bearing,
+                extractor=EXTRACTOR_MANUAL,
+                extractor_version=INGEST_EXTRACTOR_VERSION,
+                actor_id=actor,
+            )
+            is_load_bearing = not not_load_bearing
         payload = {
             "binding": binding_id,
             "revision": revision_id,
             "item": knowledge_id,
             "identity": identity.id,
             "uri": identity.uri,
-            "is_load_bearing": not not_load_bearing,
+            "is_load_bearing": is_load_bearing,
+            "reactivated": earlier is not None and head_status in _REVIVABLE_BINDING_STATUSES,
             # Stated because the alias is silent otherwise: binding to a moved
             # identity's old address is correct and surprising, and the operator
             # should see which referent they actually bound.
@@ -331,6 +390,11 @@ def bind(
         handle.close()
 
     emit(payload, as_json=json_output, title="adopt bind")
+
+
+#: A binding head a person may take up again: replaced by a `rebind`, or
+#: withdrawn. `active` is absent on purpose -- that pair is bound already.
+_REVIVABLE_BINDING_STATUSES: Final[frozenset[str]] = frozenset({"moved", "retired"})
 
 
 AckOption = Annotated[
@@ -543,10 +607,19 @@ def _parse_until(value: str | None) -> _dt.datetime | None:
 def _gaps_payload(
     result: Any, ranked: tuple[Any, ...], dispositions: dict[str, Any]
 ) -> dict[str, Any]:
+    from adopt_knowledge import is_live
+
+    # Counted over live referents, the population the gap list is drawn from,
+    # so `uncovered` is the length of `gaps`. `not_active` is what was set
+    # aside, so the numbers still reconcile with `adopt coverage recompute`.
+    evaluated = () if result is None else tuple(result.identities)
+    live = [row for row in evaluated if is_live(row)]
+    covered = sum(1 for row in live if row.covered)
     return {
-        "identities": 0 if result is None else len(result.identities),
-        "covered": 0 if result is None else result.covered,
-        "uncovered": 0 if result is None else result.uncovered,
+        "identities": len(live),
+        "covered": covered,
+        "uncovered": len(live) - covered,
+        "not_active": len(evaluated) - len(live),
         "gaps": [
             {
                 "kind": gap.kind,
@@ -949,6 +1022,7 @@ def _resolve_change(
             target_identity_id=target_id,
             target_uri=target_uri,
             actor_id=actor,
+            freshener=handle.changes(),
         )
     else:
         outcome = confirm_current_item(

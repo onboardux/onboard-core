@@ -1,0 +1,258 @@
+{
+  "_generated": "scripts/gen_skills.py -- do not edit by hand",
+  "cli_version": "0.4.1",
+  "commands": {
+    "agent": {
+      "group": true,
+      "json": false
+    },
+    "agent adapters": {
+      "group": false,
+      "json": true
+    },
+    "agent check": {
+      "group": false,
+      "json": true
+    },
+    "answer": {
+      "group": false,
+      "json": true
+    },
+    "ask": {
+      "group": false,
+      "json": true
+    },
+    "bind": {
+      "group": false,
+      "json": true
+    },
+    "boundary": {
+      "group": false,
+      "json": true
+    },
+    "ci-sense": {
+      "group": false,
+      "json": true
+    },
+    "coverage": {
+      "group": true,
+      "json": false
+    },
+    "coverage recompute": {
+      "group": false,
+      "json": true
+    },
+    "detect": {
+      "group": false,
+      "json": true
+    },
+    "doctor": {
+      "group": false,
+      "json": true
+    },
+    "draft": {
+      "group": false,
+      "json": true
+    },
+    "envelope": {
+      "group": true,
+      "json": false
+    },
+    "envelope validate": {
+      "group": false,
+      "json": true
+    },
+    "export": {
+      "group": false,
+      "json": true
+    },
+    "freshness": {
+      "group": true,
+      "json": false
+    },
+    "freshness resolve": {
+      "group": false,
+      "json": true
+    },
+    "gaps": {
+      "group": false,
+      "json": true
+    },
+    "handover": {
+      "group": true,
+      "json": false
+    },
+    "handover close": {
+      "group": false,
+      "json": true
+    },
+    "handover elicit": {
+      "group": false,
+      "json": true
+    },
+    "handover pack": {
+      "group": false,
+      "json": true
+    },
+    "handover snapshot": {
+      "group": false,
+      "json": true
+    },
+    "handover start": {
+      "group": false,
+      "json": true
+    },
+    "handover status": {
+      "group": false,
+      "json": true
+    },
+    "handover verify": {
+      "group": false,
+      "json": true
+    },
+    "harvest": {
+      "group": false,
+      "json": true
+    },
+    "identity": {
+      "group": true,
+      "json": false
+    },
+    "identity build": {
+      "group": false,
+      "json": true
+    },
+    "identity parse": {
+      "group": false,
+      "json": true
+    },
+    "identity validate": {
+      "group": false,
+      "json": true
+    },
+    "import": {
+      "group": false,
+      "json": true
+    },
+    "ingest": {
+      "group": false,
+      "json": true
+    },
+    "init": {
+      "group": false,
+      "json": true
+    },
+    "map": {
+      "group": false,
+      "json": true
+    },
+    "pack": {
+      "group": false,
+      "json": true
+    },
+    "probe": {
+      "group": true,
+      "json": false
+    },
+    "probe add": {
+      "group": false,
+      "json": true
+    },
+    "probe baseline": {
+      "group": false,
+      "json": true
+    },
+    "probe diff": {
+      "group": false,
+      "json": true
+    },
+    "probe manifest": {
+      "group": true,
+      "json": false
+    },
+    "probe manifest validate": {
+      "group": false,
+      "json": true
+    },
+    "probe run": {
+      "group": false,
+      "json": true
+    },
+    "pull": {
+      "group": false,
+      "json": true
+    },
+    "refresh": {
+      "group": false,
+      "json": true
+    },
+    "review": {
+      "group": false,
+      "json": true
+    },
+    "serve": {
+      "group": false,
+      "json": false
+    },
+    "store": {
+      "group": true,
+      "json": false
+    },
+    "store doctor": {
+      "group": false,
+      "json": true
+    },
+    "store info": {
+      "group": false,
+      "json": true
+    },
+    "store migrate": {
+      "group": false,
+      "json": true
+    },
+    "version": {
+      "group": false,
+      "json": true
+    }
+  },
+  "features": {
+    "ingest_unverified": [
+      "ingest",
+      "--unverified"
+    ]
+  },
+  "root_options": [
+    "--allow-network"
+  ],
+  "top_level_commands": [
+    "agent",
+    "answer",
+    "ask",
+    "bind",
+    "boundary",
+    "ci-sense",
+    "coverage",
+    "detect",
+    "doctor",
+    "draft",
+    "envelope",
+    "export",
+    "freshness",
+    "gaps",
+    "handover",
+    "harvest",
+    "identity",
+    "import",
+    "ingest",
+    "init",
+    "map",
+    "pack",
+    "probe",
+    "pull",
+    "refresh",
+    "review",
+    "serve",
+    "store",
+    "version"
+  ]
+}

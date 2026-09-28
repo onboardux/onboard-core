@@ -101,7 +101,9 @@ jobs:
         # `bench/` is included because it is real code that opens databases and
         # drives subprocesses. A benchmark harness that is not type-checked is
         # where a measurement quietly starts measuring the wrong thing.
-        run: uv run mypy --strict packages/ scripts/ tools/ bench/
+        # `plugins/` holds the agent plugin's bundled scripts, which run on an
+        # FDE's machine against a client engagement.
+        run: uv run mypy --strict packages/ scripts/ tools/ bench/ plugins/
       - name: Import contracts
         working-directory: adopt-core
         run: uv run lint-imports --config importlinter.ini
@@ -268,6 +270,25 @@ jobs:
         run: uv run python scripts/first_party_deps.py --self-test
       - name: Every first-party import is declared by the manifest
         run: uv run python scripts/first_party_deps.py --check
+
+  skills-sync:
+    name: skills-sync (the agent plugin matches the CLI it drives)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - run: uv sync --all-packages
+      # `plugins/adopt/` tells agents which commands and flags to run on a real
+      # client engagement. A skill naming a flag the CLI does not have is an
+      # agent that fails on the client's machine, and prose does not fail CI --
+      # so the command tables are generated from the CLI, every `adopt ...` a
+      # skill shows is resolved against it, and the plugin's version is the
+      # CLI's. The self-test plants each kind of drift and requires the check
+      # to name it.
+      - name: Prove the gate still rejects
+        run: uv run python scripts/gen_skills.py --self-test
+      - name: The skills match the CLI
+        run: uv run python scripts/gen_skills.py --check
 
   no-destructive-sql:
     name: no-destructive-sql (the store never loses data)

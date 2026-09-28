@@ -1,0 +1,14 @@
+{
+  "name": "onboardux",
+  "owner": {
+    "name": "onboardux"
+  },
+  "plugins": [
+    {
+      "name": "adopt",
+      "source": "./plugins/adopt",
+      "description": "Skills for driving the published adopt CLI on a client engagement: onboard a repository, capture and serve knowledge, baseline behaviour, triage drift, run a verified handover, and connect to an Onboard control plane.",
+      "version": "0.4.1"
+    }
+  ]
+}

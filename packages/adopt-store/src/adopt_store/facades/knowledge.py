@@ -681,8 +681,9 @@ class BindingFacade:
             raise AdoptError(
                 ErrorCode.REVISION_CHAIN_FORK,
                 message=f"{item_id} is already bound to {identity_id} as {existing.id}",
-                hint="Append a revision to the existing binding instead. One pair has one "
-                "binding, and its history is the chain.",
+                hint="One pair has one binding, and its history is the chain. A live pair "
+                "is bound already; one whose link was superseded or retired is revived "
+                "by `adopt bind`, which appends an active revision to it.",
             )
 
         created = self._now()
@@ -782,6 +783,40 @@ class BindingFacade:
             parent_id=binding_id,
             draft=BindingRevisionDraft(status=_BINDING_SUPERSEDED),
             expected_head_id=self._writer.current_head(binding_id),
+            actor_id=actor_id,
+        )
+
+    def reactivate(
+        self,
+        *,
+        binding_id: str,
+        expected_head_id: str | None,
+        extractor: str | None = None,
+        extractor_version: str | None = None,
+        confidence: float | None = None,
+        actor_id: str | None = None,
+    ) -> str:
+        """Append an `active` revision to a link that was superseded or retired.
+
+        **The pair's one binding, taken up again -- never a second one.**
+        `idx_binding_pair` is UNIQUE, so a person who binds an item to an
+        identity it was bound to before cannot create a new row, and before this
+        method there was no way back: a link a `rebind` had marked `moved`, or a
+        retirement had withdrawn, stayed that way for ever. The chain keeps every
+        revision it had; the new head says a person asserted the link again.
+
+        The caller decides that the head is not already `active` -- it holds the
+        status read -- and passes the head it saw, so a link that changed in
+        between refuses with ``REVISION_CHAIN_FORK`` rather than forking.
+        """
+        return self._writer.append_revision(
+            parent_id=binding_id,
+            draft=BindingRevisionDraft(
+                extractor=extractor,
+                extractor_version=extractor_version,
+                confidence=confidence,
+            ),
+            expected_head_id=expected_head_id,
             actor_id=actor_id,
         )
 

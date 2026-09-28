@@ -360,9 +360,14 @@ def opening_position(handle: Any, *, system: ResolvedSystem, now: _dt.datetime) 
     accumulated before it (v6.1 §6's sales-motion note), and a closure that
     cannot say where it started cannot say what it added.
     """
+    from adopt_knowledge import is_live
+
     coverage = _coverage(handle, system)
-    identities = len(coverage.identities)
-    covered = sum(1 for row in coverage.identities if row.covered)
+    # Live referents only, as `adopt gaps` counts them: a retired identity is
+    # not part of the system being handed over.
+    live = [row for row in coverage.identities if is_live(row)]
+    identities = len(live)
+    covered = sum(1 for row in live if row.covered)
 
     confirmed = 0
     unverified = 0

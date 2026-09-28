@@ -143,6 +143,13 @@ def test_an_unverified_revision_never_serves_as_known() -> None:
 
 
 def test_fresh_beats_stale_when_both_are_servable() -> None:
+    """*Fails when* the stale match beside a KNOWN answer is dropped, or served
+    as part of it. *Matters because* retrieval ranks the stale passage first
+    here: a document on exactly the question, stale since its referent was
+    renamed, disappeared behind a fresh one that shared two words -- measured,
+    the runbook on rotating a credential behind two unrelated decisions. *No
+    other instrument catches it because* the KNOWN answer is correct as far as
+    it goes; only what it omits is wrong."""
     answer = compose(
         [
             _resolved("rev_stale", "ki_1", state="stale", rule="load_bearing_identity_dead"),
@@ -154,6 +161,13 @@ def test_fresh_beats_stale_when_both_are_servable() -> None:
 
     assert answer.branch == KNOWN
     assert [citation.revision_id for citation in answer.citations] == ["rev_fresh"]
+    assert [(c.revision_id, c.deciding_rule) for c in answer.stale_matches] == [
+        ("rev_stale", "load_bearing_identity_dead")
+    ]
+    # A stale passage's body is content like any other: out under metadata-only.
+    sent = sendable_payload(answer, include_content=False)
+    assert sent["stale_matches"][0]["revision_id"] == "rev_stale"
+    assert "body_md" not in repr(sent)
 
 
 def test_nothing_retrieved_is_unknown() -> None:

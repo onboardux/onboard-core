@@ -139,6 +139,15 @@ class Answer:
     #: send an operator to different places: write the answer, or go confirm the
     #: draft that already says it.
     withheld: tuple[str, ...] = ()
+    #: Verified passages that matched but are **stale**, beside a KNOWN answer.
+    #: KNOWN serves only fresh passages, so without this a stale document on
+    #: exactly the question vanished behind a fresh one that merely shared two
+    #: words with it -- measured: "how do I rotate the carrier API token?"
+    #: answered KNOWN from two unrelated decisions while the runbook that said
+    #: how, stale since the credential was renamed, went unmentioned. Each entry
+    #: carries its `deciding_rule`. Never the answer, never on a STALE branch
+    #: (whose citations these would be), and never on an UNKNOWN one.
+    stale_matches: tuple[Citation, ...] = ()
 
     def __post_init__(self) -> None:
         if self.branch == UNKNOWN and self.citations:
@@ -147,6 +156,8 @@ class Answer:
             raise ValueError(f"a {self.branch.upper()} answer must cite at least one revision")
         if (self.cause is None) == (self.branch == STALE):
             raise ValueError("cause is set exactly when the branch is STALE")
+        if self.stale_matches and self.branch != KNOWN:
+            raise ValueError("stale matches accompany a KNOWN answer, and only a KNOWN one")
 
 
 def compose(resolved: Sequence[Resolved], verified_revision_ids: Set[str], question: str) -> Answer:
@@ -163,9 +174,10 @@ def compose(resolved: Sequence[Resolved], verified_revision_ids: Set[str], quest
 
     Returns:
         KNOWN if any resolved candidate is verified and carries no staleness
-        signal; otherwise STALE if any is verified and has gone out of date;
-        otherwise UNKNOWN. `_SERVES_AS_KNOWN` records which states are which and
-        why `unverified` freshness is not staleness.
+        signal, with the verified stale ones reported beside it as
+        `stale_matches`; otherwise STALE if any is verified and has gone out of
+        date; otherwise UNKNOWN. `_SERVES_AS_KNOWN` records which states are
+        which and why `unverified` freshness is not staleness.
     """
     servable = [
         item for item in resolved if item.candidate.passage.revision_id in verified_revision_ids
@@ -183,6 +195,9 @@ def compose(resolved: Sequence[Resolved], verified_revision_ids: Set[str], quest
             branch=KNOWN,
             citations=tuple(_cite(item) for item in fresh),
             withheld=withheld,
+            stale_matches=tuple(
+                _cite(item) for item in servable if item.freshness.state not in _SERVES_AS_KNOWN
+            ),
         )
 
     if servable:

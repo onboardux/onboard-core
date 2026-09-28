@@ -36,7 +36,7 @@ import datetime as _dt
 from collections.abc import Mapping
 from typing import Any, Final
 
-from adopt_ask.branch import Answer
+from adopt_ask.branch import Answer, Citation
 from adopt_const import SCHEMA_VERSION
 from adopt_detect import METADATA_ONLY, BoundaryView
 from adopt_obs import AdoptError, ErrorCode
@@ -61,27 +61,34 @@ def sendable_payload(answer: Answer, *, include_content: bool) -> dict[str, Any]
     and omitting them is what makes a metadata-only answer honestly
     metadata-only rather than merely asserted to be.
     """
-    citations: list[dict[str, Any]] = []
-    for citation in answer.citations:
-        entry: dict[str, Any] = {
-            "revision_id": citation.revision_id,
-            "item_id": citation.item_id,
-            "identity_uris": list(citation.identity_uris),
-            "origin": citation.origin,
-            "freshness_state": citation.freshness_state,
-            "deciding_rule": citation.deciding_rule,
-        }
-        if include_content:
-            entry["title"] = citation.title
-            entry["body_md"] = citation.body_md
-        citations.append(entry)
+
+    def entries(cited: tuple[Citation, ...]) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for citation in cited:
+            entry: dict[str, Any] = {
+                "revision_id": citation.revision_id,
+                "item_id": citation.item_id,
+                "identity_uris": list(citation.identity_uris),
+                "origin": citation.origin,
+                "freshness_state": citation.freshness_state,
+                "deciding_rule": citation.deciding_rule,
+            }
+            if include_content:
+                entry["title"] = citation.title
+                entry["body_md"] = citation.body_md
+            rows.append(entry)
+        return rows
 
     payload: dict[str, Any] = {
         "branch": answer.branch,
         "citation_count": len(answer.citations),
         "withheld_count": len(answer.withheld),
-        "citations": citations,
+        "citations": entries(answer.citations),
     }
+    if answer.stale_matches:
+        # The same metadata/content split as the citations: a stale passage's
+        # body is content exactly as a fresh one's is.
+        payload["stale_matches"] = entries(answer.stale_matches)
     if answer.cause is not None:
         payload["cause"] = answer.cause
     if include_content:
@@ -199,6 +206,11 @@ def render(answer: Answer) -> str:
             grounds += "\n  bound to: " + ", ".join(citation.identity_uris)
         blocks.append(f"\n## {citation.title}\n{citation.body_md}\n{grounds}")
 
+    for citation in answer.stale_matches:
+        blocks.append(
+            f"\nAlso matched, but STALE ({citation.deciding_rule}): {citation.title} "
+            f"-- revision {citation.revision_id}. It may be the better answer once reviewed."
+        )
     if answer.withheld:
         blocks.append(f"\n{len(answer.withheld)} further revision(s) withheld as unverified.")
     return "\n".join(blocks)
@@ -217,22 +229,26 @@ def json_payload(answer: Answer) -> Mapping[str, Any]:
     the two would mean either an unreadable local answer or an egress payload
     shaped by what is convenient to print.
     """
+
+    def full(citation: Citation) -> dict[str, Any]:
+        return {
+            "revision_id": citation.revision_id,
+            "item_id": citation.item_id,
+            "title": citation.title,
+            "body_md": citation.body_md,
+            "identity_uris": list(citation.identity_uris),
+            "origin": citation.origin,
+            "freshness_state": citation.freshness_state,
+            "deciding_rule": citation.deciding_rule,
+        }
+
     return {
         "question": answer.question,
         "branch": answer.branch,
         "cause": answer.cause,
         "withheld": list(answer.withheld),
-        "citations": [
-            {
-                "revision_id": citation.revision_id,
-                "item_id": citation.item_id,
-                "title": citation.title,
-                "body_md": citation.body_md,
-                "identity_uris": list(citation.identity_uris),
-                "origin": citation.origin,
-                "freshness_state": citation.freshness_state,
-                "deciding_rule": citation.deciding_rule,
-            }
-            for citation in answer.citations
-        ],
+        "citations": [full(citation) for citation in answer.citations],
+        # Always present, empty when nothing stale matched, so a consumer can
+        # read it without a key check. Never part of the answer: see `Answer`.
+        "stale_matches": [full(citation) for citation in answer.stale_matches],
     }

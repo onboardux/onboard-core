@@ -10,6 +10,12 @@
 # Build every URI with the CLI -- never encode one by hand:
 #   adopt identity build --scope <f/e/s/env> --kind endpoint --key 'POST /v1/orders' --json
 #   adopt identity build --scope <f/e/s/env> --kind config_key --namespace env --key DATABASE_URL --json
+#   adopt identity build --scope <f/e/s/env> --kind prompt --key app --key prompts --key support.md --json
+#
+# A path is several key segments: repeat --key once per segment. A single
+# --key 'app/prompts/support.md' is ONE segment whose slashes are data, and it
+# builds a valid URI that never matches the map. Copy the segments of a mapped
+# neighbour from `adopt map --report`.
 #
 # What belongs here: the 20-40 things a new owner would ask about first, as an
 # engineer would name them from memory -- INCLUDING ones you expected and did not
@@ -24,6 +30,7 @@
 # job (CI workflow)   onboard-v1://acme/platform/orders-api/prod/job/ci/Deploy%20Production
 # dependency          onboard-v1://acme/platform/orders-api/prod/metadata_component/dependency%3Apypi/fastapi
 # prompt file         onboard-v1://acme/platform/orders-api/prod/prompt/-/instructions.md
+# prompt in a folder  onboard-v1://acme/platform/orders-api/prod/prompt/-/app/prompts/support.md
 # model pin           onboard-v1://acme/platform/orders-api/prod/model_pin/openai/gpt-5.4-nano
 # agent graph node    onboard-v1://acme/platform/orders-api/prod/symbol/agent_graph/agent/support_agent
 

@@ -111,8 +111,11 @@ adopt init . --scope northwind/acme-erp/orders-api/prod \
 ```
 
 Add `--archetype <a>` when step 1 needed a human decision. Report `tier`,
-`archetype_source` (`detected` or `declared`), and `unavailable_capabilities`,
-which names what this tier costs.
+`archetype_source` (`detected`, or `operator` when a person chose it), and
+`unavailable_capabilities`, which names what this tier costs. **Write the
+archetype and the answers into the workspace** if a person chose it: every later
+`init` for this system — the client's CI with `ci-sense` is one — fails with
+`DETECT_AMBIGUOUS` without the same `--archetype`.
 
 ## 5. Map
 
@@ -124,9 +127,20 @@ adopt map --report --json > ../orders-api-adopt/map-report.json
 Read `identities_seen`, `files_walked`, `files_unmapped` and each extractor's
 `status`. **Any failed extractor means exit `1`**, and every absence below it is
 unreliable evidence, so stop and report it. A high `files_unmapped` is not an
-error: the map states its own coverage rather than hiding it. For a mixed system
-whose archetype names only its dominant half, add packs:
-`adopt map . --packs generic,web,ai --json`.
+error: the map states its own coverage rather than hiding it.
+
+For a mixed system whose archetype names only its dominant half — a web API with
+an assistant endpoint, say — add packs, and **use the same packs on every command
+that walks from now on** (`adopt-cli` section 5), writing them into the workspace:
+
+```shell
+echo "generic,web,ai" > ../orders-api-adopt/packs.txt
+adopt map . --packs generic,web,ai --json
+adopt map --report --packs generic,web,ai --json > ../orders-api-adopt/map-report.json
+```
+
+A `--report` without them re-maps with the archetype's packs only and lists the
+rest as `absent`. Nothing is retired, but the report you read is wrong.
 
 Mapping is deterministic and idempotent: a second run over an unchanged tree
 writes nothing. It never writes to the repository and never executes it.
@@ -163,20 +177,33 @@ reason the list exists.
    ```
 
    Match the shapes the map already uses: open `map-report.json` and copy the
-   kind and namespace of a mapped neighbour. `assets/expected-identities.template.txt`
-   shows one example per common kind.
+   kind, namespace **and key segments** of a mapped neighbour.
+   `assets/expected-identities.template.txt` shows one example per common kind.
+   **Path-keyed kinds are multi-segment.** A prompt at `app/prompts/eta.md` is
+   the three segments `app`, `prompts`, `eta.md`, so repeat `--key`, once per
+   segment. One `--key 'app/prompts/eta.md'` is one segment whose slashes are
+   data. It builds a valid URI that never matches:
+
+   ```shell
+   adopt identity build --scope northwind/acme-erp/orders-api/prod \
+         --kind prompt --key app --key prompts --key eta.md --json
+   ```
 3. Show the list to the person. They add, remove and correct it. It records
    *their* expectations, not yours.
 4. Save it in the workspace, never in the repository, and check it:
 
    ```shell
-   adopt map --check-expected ../orders-api-adopt/expected-identities.txt --json
+   adopt map --check-expected ../orders-api-adopt/expected-identities.txt \
+         --packs generic,web,ai --json
    ```
 
 5. **Exit `4` names each miss, and a miss is a finding.** Either the URI is
    wrong (compare it with the nearest mapped identity using
-   `adopt identity parse <uri> --json`), or the extractors do not see that
-   referent. Report the second kind as a gap in the tool. Do not delete the entry
+   `adopt identity parse <uri> --json`: a `key` of one segment against the map's
+   three is the multi-segment mistake above), or the extractors do not see that
+   referent. On `0.4.1`, two misses of the second kind are known: a secret a CI
+   workflow reads (`${{ secrets.X }}`) is not a `config_key`, and a workflow's
+   individual jobs are not identities, only the workflow itself. Report the second kind as a gap in the tool. Do not delete the entry
    to make the check pass, and do not look for a way to create the identity by
    hand: there is none, deliberately.
 
@@ -222,10 +249,12 @@ first, if the person agrees. Every candidate is **unverified** and carries its
 commit evidence. None of it is knowledge until a person confirms it in
 `adopt review`.
 
-A long range harvests bot commits too ("Update release notes", dependency
-bumps): each becomes a candidate. Count them and present them to the person as
-likely rejections, together with the handful that look like real decisions. The
-rejecting is theirs.
+A commit becomes a candidate on any one signal: a message body, a merge, a
+revert, or touching a dependency manifest, a configuration file or an ADR
+directory. So a long range harvests bot commits too (dependency bumps, merge
+commits): count them and present them to the person as likely rejections, beside
+the handful that look like real decisions. The rejecting is theirs. A re-run over
+the same range adds nothing (`already_known`).
 
 ## 9. The first gaps
 

@@ -14,16 +14,40 @@ anything permanent.
 
 ## Install
 
-In Claude Code:
+**Always at user scope, never into a client's repository.** `adopt map` walks
+the repository, and anything in it — skill files, templates, notes — is read as
+part of the client's system, permanently. Measured: seven skills installed into
+a 21-file client repository became 259 extra identities on the next `map`, one
+for every key of `surface.json` and every template, in a store that deletes
+nothing.
+
+With the [skills CLI](https://github.com/vercel-labs/skills), from anywhere:
+
+```text
+npx skills add onboardux/onboard-core -g -a claude-code \
+    -s adopt-cli adopt-onboard adopt-capture adopt-probes adopt-watch adopt-handover adopt-connect
+```
+
+- **`-g` is the one flag that matters.** Without it the CLI installs at project
+  scope — `.agents/skills/`, `.claude/skills/` and a `skills-lock.json` in the
+  current directory — and it does so without asking when an agent runs it. If
+  that has happened in a client repository, undo it **before** the next
+  `adopt map`: `npx skills remove -s adopt-cli adopt-onboard adopt-capture
+  adopt-probes adopt-watch adopt-handover adopt-connect -y` (by name — `'*'`
+  would take the client's own skills too), then delete whatever `git status`
+  still shows as untracked from the install, typically `skills-lock.json`.
+- `-s` takes the names space-separated; a comma-separated list matches nothing.
+- `-a claude-code` limits the install to one agent; drop it to be asked.
+
+Or in Claude Code, as a plugin:
 
 ```text
 /plugin marketplace add onboardux/onboard-core
 /plugin install adopt@onboardux
 ```
 
-Install it at **user scope**, never by copying the skills into a client's
-repository: `adopt map` walks the repository, and anything in it — skill files,
-templates, notes — is read as part of the client's system, permanently.
+The `adopt-cli` skill's preflight refuses to report ready while these skills sit
+inside the work tree it is checking.
 
 The CLI itself is installed separately, with the person's agreement; the
 `adopt-cli` skill's preflight tells the agent how (`pip`/`uv`/`pipx`, or the

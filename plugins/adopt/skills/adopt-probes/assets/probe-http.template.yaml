@@ -33,3 +33,7 @@ steps:
       status: 200
       json_fields: ["<field>", "<field>"]
       latency_under_ms: 2000
+      # Default 0.92: a changed VALUE in the body is usually "within_threshold",
+      # not drift. 1.0 makes any change drift -- including timestamps and ids,
+      # so only on a response with no volatile fields. Agree it with a person.
+      # min_similarity: 1.0

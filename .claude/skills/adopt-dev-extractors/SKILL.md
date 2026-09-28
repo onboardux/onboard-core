@@ -1,6 +1,8 @@
 ---
 name: adopt-dev-extractors
 description: How adopt-map extracts identities and how Build 6 decides what changed — the Extractor protocol over a read-only SourceTree, archetype packs as modules, the key-scheme registry, the per-kind attribute digest and its extractor-version fence, loud extractor failures, move detection, the five-class change cascade, and curated recall lists. Use whenever adding or fixing an extractor, adding a pack for a new archetype or stack (Terraform, Django, dbt, low-code, …), changing what an identity's key or digest contains, or debugging a missed identity, a false SEMANTICS_CHANGED, a bogus BINDING_DEAD or a change storm in adopt-core.
+metadata:
+  internal: true
 ---
 
 # Extractors and the change cascade

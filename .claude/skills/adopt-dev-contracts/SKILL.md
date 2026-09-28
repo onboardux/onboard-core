@@ -1,6 +1,8 @@
 ---
 name: adopt-dev-contracts
 description: How to change any contract adopt-core publishes — a table, column or enum value (schema/canonical.yaml and its four generated targets), a constant (adopt_const), an error code (adopt_obs.errors), an id prefix, a CLI command, flag or JSON key, or a model prompt — so the gates pass and nothing already shipped breaks. Use whenever a change adds or alters persisted state, the export bundle, a tunable, an error, the command surface, or prompt text in adopt-core, including "add a column", "new error code", "add a --flag", "change the default", or a failing schema-check, schema-lint, constants-sync, error-registry-sync or skills-sync job.
+metadata:
+  internal: true
 ---
 
 # Changing a contract

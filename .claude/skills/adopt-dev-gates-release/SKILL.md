@@ -1,6 +1,8 @@
 ---
 name: adopt-dev-gates-release
 description: The CI gates adopt-core runs, how to run them exactly as CI does, the planted-violation discipline that proves each one can fail, the dependency licence policy, workspace distribution rules, the runtime ratchets, the packaged-artifact check, and how a release is cut (lockstep versions, the frozen distribution set, signed wheels and binaries, provenance). Use whenever adding or changing a gate, adding a dependency or a workspace package, a CI job fails, preparing or debugging a release, or asking "which checks must pass before I push" in adopt-core.
+metadata:
+  internal: true
 ---
 
 # Gates and release

@@ -17,8 +17,15 @@ Read `adopt-cli` first.
 ## 1. Refresh
 
 ```shell
-adopt refresh --json > ../orders-api-adopt/refresh.json
+adopt refresh --packs generic,web,ai --json > ../orders-api-adopt/refresh.json
 ```
+
+**Pass the packs the store was mapped with** (the workspace's `packs.txt`; omit
+`--packs` only if onboarding did). Without them, `refresh` runs the archetype's
+packs alone and lists every other identity under `exempt`: not dead, and **not
+checked either**. Measured: a reworded prompt on a web system mapped with the
+`ai` pack went unnoticed, and the README bound to it stayed fresh. Read `exempt`
+on every run, and say what it contains.
 
 | Exit | Means | Do |
 |---|---|---|
@@ -51,15 +58,31 @@ carries its causes:
 
 | Class | What happened | Usually |
 |---|---|---|
-| `BINDING_DEAD` | The identity the note is bound to is gone. | `retire` if the thing was removed on purpose; otherwise find where it went. |
-| `BINDING_MOVED` | The same referent under a new name or path; the alias was recorded. | `rebind` (the target defaults to the alias). |
-| `BINDING_INTACT_SEMANTICS_CHANGED` | Its extracted attributes changed: parameters, a type or default, a schedule, a prompt's wording. | Read the note against the change: still true, so `confirm-current`; no longer true, so a person corrects it. |
-| `UNBOUND_NEW` | A new identity no knowledge covers yet. | Nothing to resolve; it is a new gap. Hand it to `adopt-capture`. |
+| `BINDING_DEAD` | The identity the note is bound to is gone. | `retire` if the thing was removed on purpose; otherwise look for its successor among this run's `UNBOUND_NEW`. |
+| `BINDING_MOVED` | The same referent at a new address, with **byte-identical** extracted attributes (a file or class relocated); the alias was recorded. | `rebind` (the target defaults to the alias). |
+| `BINDING_INTACT_SEMANTICS_CHANGED` | Its extracted attributes changed: an endpoint's parameters, a settings key's type or whether it is required, a schedule, a prompt's wording. | Read the note against the change: still true, so `confirm-current`; no longer true, so a person corrects it. |
+| `UNBOUND_NEW` | A new identity no knowledge covers yet. | A new gap for `adopt-capture` — unless it is a dead referent's successor. |
 | `BINDING_INTACT_RENDER_ONLY` | Mapped territory changed, but no extracted attribute did: comments, formatting. | Informational. It never exits `4`. |
 
-Attribute digests are compared only within one extractor version. When the tool
-itself was upgraded, the report says the instrument changed and the system was
-not re-judged; do not read that as change in the client's system.
+**A rename is DEAD plus NEW, not MOVED.** An endpoint's path and a config key's
+name are part of what is extracted, so a renamed route or environment variable
+changes its attributes as well as its address and cannot pair. Measured: `POST
+/shipments/{id}/cancel` renamed to `/cancellation`, and `CARRIER_API_KEY` to
+`CARRIER_API_TOKEN`, each arrived as one `BINDING_DEAD` and one `UNBOUND_NEW` in
+the same run. Pair them for the person, and propose `rebind --to` the new URI.
+
+**What no attribute records, no refresh sees.** A settings default and a value
+in `.env.example` are not attributes. Measured: a cancel-approval threshold
+raised in both places exited `0` with no actionable change, while the runbook
+still gave the old number; it appeared only under `render_only`, beside every
+other key in the same file. When `render_only` names a configuration file, read
+the file's diff yourself and tell the person what moved. A probe, or a person,
+is the instrument for values.
+
+Attribute digests are compared only within one extractor and one extractor
+version. When the tool itself was upgraded, the report lists `rebaselined`
+entries and says the instrument changed and the system was not re-judged; do not
+read that as change in the client's system.
 
 For each entry, show the person the cause, the evidence and the note's text, and
 give your reading of which action fits. **The decision is theirs.**
@@ -81,6 +104,24 @@ adopt review --resolve <review-item> --action confirm-current --actor sam@client
 On a `BINDING_DEAD` or `BINDING_MOVED` cause, `confirm-current` reports that the
 item **stays STALE**. Confirming a note cannot revive the identity it is bound
 to. Rebind it or retire it instead.
+
+**An item with more than one cause: stop before `rebind`.** `rebind` re-points
+*every* load-bearing link to a referent that changed in this run onto the one
+`--to` target, including a link to one that is still alive (a
+`SEMANTICS_CHANGED` cause). Measured: an answer bound to the dead cancel route
+and to the live approval-threshold key came out bound to the new route alone,
+and `adopt bind` cannot put the threshold link back (`REVISION_CHAIN_FORK`, see
+`adopt-capture` section 6). So when an item's causes mix a dead or moved
+referent with a live one, lay out both costs and let the person choose:
+
+- `rebind --to <successor>`: the note follows the renamed referent and **loses
+  its binding to the live one**, which becomes a gap again; or
+- `confirm-current`: the live link returns to fresh, and the note **stays STALE**
+  on the dead one.
+
+**When the note is a client document that is now wrong,** the fix is theirs: they
+edit the document, and you re-run the same `adopt ingest` from the root, which
+records it as `updated`. Resolve the change item after that, not before.
 
 ## 4. Check the result
 

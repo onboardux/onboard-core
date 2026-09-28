@@ -24,18 +24,22 @@ three irreversible actions in section 6 before your first write.
 
 ## 1. Preflight, every session
 
-From this skill's directory, run the bundled checker. It is read-only and needs
-only Python 3.8 or newer:
+From the **client repository's root**, run the bundled checker by its path (it
+lives beside this file, under `scripts/`; with `npx skills add -g` that is
+`~/.claude/skills/adopt-cli/scripts/`). It is read-only and needs only Python 3.8
+or newer:
 
 ```shell
-python scripts/preflight.py --json
+python ~/.claude/skills/adopt-cli/scripts/preflight.py --json
 ```
 
-It reports whether `adopt` is installed, its version against this plugin's floor
-(`0.4.1`), whether the artifact carries release provenance (`build_id`), whether
-every command these skills use exists, which optional features the installed CLI
-has (for example `ingest --unverified`), and whether a store and a git work tree
-are present. `ready: false` names each problem.
+Run from anywhere else, its store and git checks look at the wrong directory and
+say nothing. It reports whether `adopt` is installed, its version against this
+plugin's floor (`0.4.1`), whether the artifact carries release provenance
+(`build_id`), whether every command these skills use exists, which optional
+features the installed CLI has (for example `ingest --unverified`), whether a
+store exists and `.adopt/` is hidden from git, and whether **these skills were
+installed inside the client's repository**. `ready: false` names each problem.
 
 | Result | Do |
 |---|---|
@@ -43,6 +47,7 @@ are present. `ready: false` names each problem.
 | version below `0.4.1` | Stop and say so. `0.4.0` crashes on nine `--help` pages and its captured answers never reach a pack. Upgrade with the same tool that installed it. |
 | `build_id` null | Fine in a source checkout; on anything installed from PyPI or a release it is worth reporting. |
 | a feature absent | Follow the fallback the relevant skill gives for it. Do not invent the flag. |
+| skills inside the work tree | **Stop before any `map`.** Someone ran `npx skills add` without `-g`. Seven skills in a 21-file repository became 259 identities, permanently. Tell the person; the fix is in the problem text. |
 
 No Python on the machine? `adopt version --json` and `adopt doctor --json` give
 the same facts by hand.
@@ -94,13 +99,16 @@ The bundled runner does it right on every platform, keeps the full envelope as a
 file, and prints a short summary you can read:
 
 ```shell
-python scripts/adopt_run.py --save ../orders-api-adopt/runs -- gaps
-python scripts/adopt_run.py -- map --report
+python ~/.claude/skills/adopt-cli/scripts/adopt_run.py --save ../orders-api-adopt/runs -- gaps
+python ~/.claude/skills/adopt-cli/scripts/adopt_run.py -- map --report
 ```
 
-It adds `--json` if you omitted it, saves stdout, and prints the exit code with
-its meaning, the error `code` and `hint` when there is one, and the top-level
-keys. Read the saved file for detail rather than re-running.
+Run it from the repository root, like `adopt` itself. It adds `--json` if you
+omitted it, saves stdout, and prints the exit code with its meaning, the error
+`code` and `hint` when there is one (or the parser's own words when there is no
+envelope), and the top-level keys. Read the saved file for detail rather than
+re-running. Parsing stderr yourself? Look for the `{"error": …}` object: log
+lines carry a `code` field too, and the first one is often not the error.
 
 ## 4. Exit codes — branch, never chain with `&&`
 
@@ -112,8 +120,9 @@ keys. Read the saved file for detail rather than re-running.
 | `3` | Policy refusal | It *would not*, by design. Report it; never route around it. |
 | `4` | Degraded success with findings | It worked **and** found something a human must see. Read the findings; continue. |
 
-Healthy runs of `refresh`, `probe diff`, `map --check-expected`, `doctor`,
-`coverage recompute --rebuild` and `handover verify` exit `4`. A typed failure
+`refresh`, `probe diff`, `map --check-expected`, `doctor`, `coverage recompute`
+and `handover verify` exit `4` whenever they found something — that is a
+successful run, not an error. A typed failure
 prints `{"error": {"code", "category", "message", "hint", "run_id"}}`; branch on
 `code`, read `hint` first — it usually names the fix. A parser error (unknown
 flag or command) exits `2` with plain text and no envelope: that is your
@@ -143,6 +152,14 @@ before they report.** From the repository root that is harmless, because mapping
 is idempotent. Anywhere else, it maps the wrong tree into the store: run from the
 workspace, one agent mapped its own work files and "moved" 24 identities. Run
 them from the root, or pass the path: `adopt map ../orders-api --report --json`.
+
+**One set of packs, on every command that walks.** No configuration remembers
+`--packs`: each run takes the archetype's packs unless told otherwise. If
+onboarding mapped with `--packs generic,web,ai`, pass exactly that to `map
+--report`, `map --check-expected`, `refresh` and `ci-sense` too, and write it in
+the workspace (`packs.txt`) so the next session does. Leave it off and the
+report calls the other pack's identities `absent`, and `refresh` lists them under
+`exempt`: **never checked**. Measured: a reworded prompt went unnoticed that way.
 
 **Needs an explicit yes from a person, every time:**
 

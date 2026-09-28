@@ -29,13 +29,18 @@ export ADOPT_PLANE_TOKEN=...                      # the token itself: from a sec
 verbs: their whole purpose is to reach that one host. With nothing configured
 they refuse with `PLANE_REMOTE_NOT_CONFIGURED` rather than writing locally.
 
-Tokens are scoped, and each should carry only what its job needs:
+Tokens are scoped, and each should carry only what its holder's job needs:
 
-| Job | Scope |
-|---|---|
-| `adopt pull` | `export` |
-| remote `adopt answer`, and `adopt review` with `--confirm` or `--resolve` | `confirm` (and `ask` to read the queue) |
-| `adopt ci-sense` in the client's CI | `sense` only |
+| Holder | What it runs | Scopes |
+|---|---|---|
+| the FDE's laptop | `adopt pull` (`export`), `adopt review` listing and escalation (`ask`), remote `adopt answer` and `review --confirm`/`--resolve` (`confirm`) | `export`, `ask`, `confirm` on **one** token |
+| the client's CI | `adopt ci-sense` | `sense` only |
+
+The laptop reads **one** token variable, so its jobs share one token: split
+across tokens, `pull` works and listing the queue then fails with
+`PLANE_AUTH_INVALID`, which covers every token failure, a missing scope
+included, and names none. Ask the operator for that set by name. A CI token with
+anything beyond `sense` is refused on sight.
 
 Never write a token into a repository, a workflow file, `.adopt/config.toml` or a
 chat. It lives in the environment, or in the CI's secret store.
@@ -51,8 +56,9 @@ adopt pull --json
 It fetches the tenant's bundle, **verifies every digest**, imports into a fresh
 file, and only then swaps it in atomically, writing a `<store>.replica.json`
 marker beside it. The replica you are asking questions of is untouched until a
-complete, verified copy is ready. Afterwards `ask`, `pack`, `gaps` and `review`
-(listing) run locally against canon.
+complete, verified copy is ready. Afterwards `ask`, `pack` and `gaps` run locally
+against that copy, while **`review` — listing included — goes to the plane**,
+because the queue is the plane's: its envelope carries `"remote": <url>`.
 
 - `PULL_TARGET_NOT_REPLICA`, exit `3`: the local store is not a replica of this
   system. Perhaps it is the field store holding canon nobody exported yet.
@@ -64,10 +70,14 @@ complete, verified copy is ready. Afterwards `ask`, `pack`, `gaps` and `review`
 
 ## 3. Capture in remote mode
 
-The commands do not change. `adopt answer <escalation> --text ... --actor ...`
-posts to the plane's confirm endpoint and lands in the tenant's canon; `pull`
-brings it back. Review resolutions behave the same way. Everything in
-`adopt-capture` about whose words these are applies unchanged.
+The commands do not change. `adopt ask ... --escalate` records the escalation on
+the plane (`routed_to_plane: true`); `adopt answer <escalation> --text ...
+--actor ...` posts to the plane's confirm endpoint and lands in the tenant's
+canon, with its approval and audit rows. **The local replica does not see it
+until the next `pull`**: `ask` answers `unknown` from the laptop right after the
+answer was banked, which is the replica being honest about its age, not a lost
+answer. Review resolutions behave the same way. Everything in `adopt-capture`
+about whose words these are applies unchanged.
 
 What refuses on a replica, by design: `adopt refresh` (`REFRESH_TARGET_IS_REPLICA`)
 and local writes (`STORE_TARGET_IS_REPLICA`). The plane runs the same
@@ -76,7 +86,7 @@ deterministic classification server-side, fed by `ci-sense`.
 ## 4. `adopt ci-sense` in the client's CI
 
 ```shell
-adopt ci-sense . --run-id "$GITHUB_RUN_ID" --json
+adopt ci-sense . --run-id "$GITHUB_RUN_ID" --packs generic,web,ai --json
 ```
 
 It walks and extracts exactly as `map` does, then posts **attribute and file
@@ -88,6 +98,11 @@ against canon. It writes nothing locally.
   `assets/ci-sense.github-actions.yml`. It installs the published CLI in a
   throwaway environment, creates the store with the tenant's exact scope (the
   plane refuses a payload claiming another scope), and posts.
+- **Fill in the archetype and packs from onboarding**, as well as the scope and
+  answers. The runner's `init` detects afresh, so a system whose archetype a
+  person had to choose fails there with `DETECT_AMBIGUOUS` on every run unless
+  the template passes the same `--archetype`. And `ci-sense` without the same
+  `--packs` never looks at the other pack's identities.
 - The token is a `sense`-scoped secret in the CI's secret store.
 - `--run-id` is the idempotency key. Reuse it across retries of one pipeline run
   so a retry records liveness without writing twice.

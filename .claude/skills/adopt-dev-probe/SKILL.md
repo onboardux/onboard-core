@@ -1,6 +1,8 @@
 ---
 name: adopt-dev-probe
 description: How adopt-probe works and what must stay true when changing it — probes as declarative data, the strict manifest parser, the single module allowed to open a probe socket (the probe-io import contract), the host allow-list checked at connection time, secrets by reference, budgets through the agent seam's meter, versioned baselines, same-revision-only diff, conflict rows against bound knowledge, and prompt steps recorded verbatim. Use whenever changing adopt_probe (manifest, runner, baseline, diff, conflict), adding a step kind or expectation, touching probe networking or secrets, or debugging PROBE_HOST_UNDECLARED, probe_changed or a baseline that drifts on its own.
+metadata:
+  internal: true
 ---
 
 # Probes

@@ -1,6 +1,8 @@
 ---
 name: adopt-dev
 description: Entry point for changing adopt-core's own source — which document or artifact is authoritative, where a change is allowed to live, the build-by-build map of packages, verbs, journeys and invariants, the per-change loop, and which adopt-dev-* skill owns the change. Use whenever implementing a feature, fixing a bug, adding a verb, flag, extractor pack, table, constant or error code, or reviewing a change in the adopt-core repository — "add a Terraform extractor", "make ask cite X", "why does this gate fail". Not for operating the CLI on a client engagement (that is the adopt plugin's adopt-cli skill).
+metadata:
+  internal: true
 ---
 
 # Changing adopt-core

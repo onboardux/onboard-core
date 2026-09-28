@@ -1,12 +1,15 @@
 """Preflight for the adopt skills: is the CLI here, new enough, and whole?
 
 Read-only. It runs `adopt version`, `adopt --help`, `adopt doctor` and one
-`--help` per optional feature, and asks git two questions. It installs nothing
-and writes nothing -- installing is the person's decision, not this script's.
+`--help` per optional feature, asks git where the work tree is and whether
+`.adopt/` is ignored, and looks for these skills inside that tree. It installs
+nothing and writes nothing -- installing is the person's decision, not this
+script's. Run it from the client repository's root, by path: the store and
+placement checks are about the directory it is run from.
 
-    python preflight.py            # human-readable
-    python preflight.py --json     # one JSON object on stdout
-    python preflight.py --adopt /path/to/adopt-linux-x86_64
+    python ~/.claude/skills/adopt-cli/scripts/preflight.py            # human-readable
+    python ~/.claude/skills/adopt-cli/scripts/preflight.py --json     # one JSON object
+    python ~/.claude/skills/adopt-cli/scripts/preflight.py --adopt /path/to/adopt-linux-x86_64
 
 Exit 0 when ready, 1 when not; `problems` names every reason.
 
@@ -58,6 +61,14 @@ def _version_tuple(text: str) -> tuple[int, ...]:
     """`0.4.1`, `0.4.2.dev3`, `0.5.0rc1` -> the leading numeric release."""
     match = re.match(r"(\d+)\.(\d+)\.(\d+)", text)
     return tuple(int(part) for part in match.groups()) if match else ()
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _load_surface() -> dict[str, Any]:
@@ -154,8 +165,37 @@ def check(adopt: str | None) -> dict[str, Any]:
     code, out, _ = _run(["git", "rev-parse", "--show-toplevel"], timeout=20)
     in_tree = code == 0
     report["git"] = {"work_tree": out.strip() if in_tree else None}
-    if in_tree:
-        ignored, _, _ = _run(["git", "check-ignore", "-q", ".adopt/store.db"], timeout=20)
+    if not in_tree:
+        warnings.append(
+            "not inside a git work tree, so the store and placement checks did not run. "
+            "Run preflight from the client repository's root, by the script's path."
+        )
+    else:
+        root = Path(out.strip()).resolve()
+        if Path.cwd().resolve() != root:
+            warnings.append(
+                f"run adopt from the repository root ({root}), not {Path.cwd()}: map, "
+                "refresh and ingest all resolve paths from where they are run."
+            )
+        # These skills inside the tree are mapped as the client's system: measured,
+        # seven skills became 259 identities on the next `map`, permanently.
+        inside = sorted(
+            str(path.relative_to(root))
+            for pattern in ("*/skills/adopt-*/SKILL.md", "*/*/skills/adopt-*/SKILL.md")
+            for path in root.glob(pattern)
+        )
+        if _inside(Path(__file__).resolve(), root) or inside:
+            report["git"]["skills_in_tree"] = inside or [str(Path(__file__).resolve())]
+            problems.append(
+                "the adopt skills are installed inside the client's repository "
+                f"({', '.join(report['git']['skills_in_tree'][:3])}); `adopt map` would read "
+                "them as the client's system, permanently. Remove them there by name "
+                "(`npx skills remove -s adopt-cli ... -y`), delete what the install left "
+                "untracked, and reinstall with `npx skills add ... -g`."
+            )
+        # Every file `adopt` writes under .adopt/, not only the database: a client's
+        # `*.db` rule hides store.db and still shows the WAL and the replica marker.
+        ignored, _, _ = _run(["git", "check-ignore", "-q", ".adopt/store.db-wal"], timeout=20)
         report["git"]["store_ignored"] = ignored == 0
         if ignored != 0:
             warnings.append(

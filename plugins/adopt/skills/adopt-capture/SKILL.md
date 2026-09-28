@@ -28,14 +28,36 @@ Exactly three branches:
 
 | `branch` | What you have | Report it as |
 |---|---|---|
-| `known` | Passages quoted verbatim, each with `revision_id`, `item_id`, `freshness_state` and the `deciding_rule` | The answer, **quoted**, with its `revision_id`. Never paraphrase it into something stronger than the source says. |
+| `known` | `citations`: whole documents, each with `revision_id`, `item_id`, `body_md`, `freshness_state` and the `deciding_rule` | The part of `body_md` that answers, **quoted**, with its `revision_id` — after checking that it does answer (below). Never paraphrase it into something stronger than the source says. |
 | `stale` | The prior answer **plus the cause** that made it stale | Stale, naming the cause. Never present it as current. `adopt freshness resolve --item <item_id> --json` explains the rule. |
 | `unknown` | Nothing in the store covers it | Unknown. Offer to escalate. **Never fill the gap with your own guess.** |
 
-`ask` is extractive: it quotes what the store holds and composes nothing. If
-you know something is documented and `ask` says unknown, check in this order:
-was it ingested (`adopt store info --json`), is it in this scope, is it confirmed
-(candidates and drafts never serve), and is the index current
+`ask` is extractive: it quotes what the store holds and composes nothing. **What
+decides the branch is lexical, and you have to know the rule to read it right.**
+A document "covers" a question when it contains at least two of the question's
+words, matched exactly after case-folding: no stemming, no synonyms, function
+words ignored. Three consequences, all measured:
+
+- **`known` is not "answered".** "What is the on-call escalation path for the
+  carrier sync?" came back `known`, citing a runbook that says only how to re-run
+  the sync: "carrier" and "sync" matched. Read each citation's `body_md`. If
+  none answers, say so ("the store has related text, not an answer") and offer to
+  escalate. Quote only the passage that answers; the citation is the whole
+  document.
+- **`unknown` can be vocabulary.** "Who owns the migrations?" was `unknown`
+  against an ADR saying "Migrations are owned by the platform team" (`owns` is
+  not `owned`); "Postgres" never matches "PostgreSQL". Before escalating a
+  question you have reason to think is documented, ask it **once** more in the
+  documents' own words. Once, not until something matches.
+- **A fresh match hides a stale one.** When any matching document is fresh, the
+  answer is `known` with only the fresh ones, and a stale document on exactly
+  this topic is not mentioned. If the citations miss the point and an open
+  `refresh` item in `adopt review` concerns the subject, the answer you want is
+  probably the stale one: say so, with its cause.
+
+If you know something is documented and `ask` still says unknown, check in this
+order: was it ingested (`adopt store info --json`), is it in this scope, is it
+confirmed (candidates and drafts never serve), and is the index current
 (`adopt ask "..." --reindex --json`).
 
 ## 2. Escalate an unknown
@@ -47,6 +69,10 @@ adopt ask "How do we rotate the orders API key?" --escalate --json
 This records the question **with its text** and returns an `escalation_id`.
 Passive question logging is off by default. Escalating is the explicit act that
 stores the text, so escalate only what the person agrees should be recorded.
+**Only an `unknown` escalates.** If the same words come back `known`, there is no
+`escalation_id` and nothing was recorded, even when the citations do not answer.
+Word the question so it is plainly about the missing fact, and check the envelope
+for the id before promising anyone an answer will be routed.
 
 ## 3. Bank a person's answer
 
@@ -113,7 +139,7 @@ population**, so say which one before asking the person to decide:
 
 | `source` | The person is asked | Confirming |
 |---|---|---|
-| `ingest` | "Is this document about this identity?" | creates the suggested binding(s) |
+| `ingest` | "Is this document about **each** of these identities?" | creates **every** suggested binding on the item |
 | `harvest` | "Is this commit a real decision worth keeping?" | appends a verified revision |
 | `draft` | "Is this drafted section true of the system?" | appends a verified revision |
 | `ingest-unverified` | "Is this document, which nobody vouched for, true?" | appends a verified revision |
@@ -139,6 +165,17 @@ adopt review --confirm-batch <review-batch> --actor sam@client.com --json
 - A name-match suggestion never binds until confirmed. That is the binding-honesty
   rule: a false binding makes a gap disappear and stales notes that never
   described the thing that changed.
+- **An `ingest` item is all or nothing.** Its suggestions are listed under
+  `suggestions` in the envelope, one row per URI with the matched words as
+  `evidence`, and `--confirm` binds every one. There is no per-suggestion confirm
+  and no unbind. Measured: a README's eleven suggestions included the `uvicorn`
+  dependency because the README's run command names it. When any suggestion is
+  wrong, show the person the list, `--reject` the item, and `adopt bind` the
+  right ones by hand on their say-so (section 6).
+- After a `refresh` item on a document is resolved with `confirm-current`, the
+  next `ingest` can queue that document's name-match suggestions again, including
+  ones the person already rejected. Say so, and reject them again. Do not
+  confirm them to clear the queue.
 
 ## 6. Bind by hand
 
@@ -151,6 +188,13 @@ adopt bind ki_01M2X6JY9RBBBSTC1SZ9P81DHN 'onboard-v1://northwind/acme-erp/orders
 Bindings are load-bearing by default: a change to the identity stales the note.
 Pass `--not-load-bearing` only when the person confirms that a change to it
 should not make the note suspect.
+
+One item and one identity have **one** binding, for ever: its history is its
+revisions. So `bind` refuses a pair that was ever bound — even one a `rebind`
+has since marked `moved` — with `REVISION_CHAIN_FORK`, exit `1`, category
+`integrity`. That is not store corruption, and nothing below it is unreliable,
+but on `0.4.1` no command re-activates the old link either. Report it; do not
+retry.
 
 ## 7. Gaps and their dispositions
 
@@ -170,9 +214,19 @@ adopt gaps --resolve <gap-key> --json
 adopt gaps --waive <gap-key> --until 2026-12-31 --note "deprecated in Q4" --json
 ```
 
-A waiver requires `--until`. A gap that recompute stops deriving disappears
-whatever its disposition says. `conflicts` in the same listing is confirmed
-knowledge that a probe has since seen contradicted; see `adopt-probes`.
+A `gap-key` is `<uri>|<environment>|<kind>`; copy it from the listing, never
+build it. A waiver requires `--until`. A gap that recompute stops deriving
+disappears whatever its disposition says: a key that was covered since your last
+listing answers `GAP_NOT_FOUND`, which is progress, not an error.
+
+A gap whose `reasons` is `identity_revision_not_active` is a referent `refresh`
+retired as dead. It stays in the listing and in the pack's gap table, and no
+knowledge can ever cover it. Offer the person a waiver that says so (`--note
+"retired by refresh: renamed to CARRIER_API_TOKEN"`) rather than chasing an
+answer for something that no longer exists.
+
+`conflicts` in the same listing is confirmed knowledge that a probe has since
+seen contradicted; see `adopt-probes`.
 
 ## 8. Coverage, and the alarm you should expect
 

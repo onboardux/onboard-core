@@ -229,6 +229,13 @@ def main() -> int:
         print(f"error.code: {error.get('code')}  category: {error.get('category')}")
         print(f"message: {error.get('message')}")
         print(f"hint: {error.get('hint')}")
+    elif code != 0:
+        # No envelope: a parser error (unknown flag or command) prints plain text,
+        # and that text is the only thing that says which argument was wrong.
+        said = [line.strip("│|+ -") for line in stderr.splitlines()]
+        said = [line.strip() for line in said if line.strip() and not line.startswith("{")]
+        for line in said[:6]:
+            print(f"stderr: {line}")
     try:
         payload = json.loads(stdout) if stdout.strip() else None
     except ValueError:

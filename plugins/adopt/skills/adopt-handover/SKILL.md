@@ -52,6 +52,13 @@ client will read there:
 Never hand-edit the Markdown to fix either one. Name them, and let the person
 decide on a covering note.
 
+**Read the gap table too.** It lists identities `refresh` retired as dead
+(`adopt gaps` gives their reason as `identity_revision_not_active`) beside real
+gaps, so a renamed environment variable appears there under its old name.
+Disposition them before the pack leaves (`adopt-capture` section 7), or tell the
+person which rows are referents that no longer exist. Contradictions a probe
+found are under **"Contradicted by observation"** at the end of that section.
+
 ## 2. Drafting what is missing (optional, uses a model)
 
 With no model, a pack renders explicit "no knowledge yet" gap sections, and that
@@ -127,13 +134,28 @@ verification session happens.
    adopt handover verify --checklist ../orders-api-adopt/handover/checklist.yaml --json
    ```
 
-5. **Snapshot** writes the acceptance bundle and a recorded digest that both
-   parties keep. The client can reproduce the digest themselves with `import`
-   then `export`.
+5. **Snapshot** writes the acceptance bundle and a recorded digest
+   (`bundle_digest`) that both parties keep.
 
    ```shell
    adopt handover snapshot --out ../orders-api-adopt/handover/acceptance --json
    ```
+
+   The client can check it with nothing but the bundle and the published CLI:
+   restore it into an empty store, export that store, and recompute the digest.
+   It covers the table files' own digests and nothing else, so it survives the
+   round trip; `manifest.json` does not hash the same, because it carries its
+   `written_at`. No command prints it, so give them this, run in an empty
+   directory:
+
+   ```shell
+   adopt import <path to bundle> --into check.db --json
+   adopt export reexport --store check.db --json
+   python -c "import hashlib,json; m=json.load(open('reexport/manifest.json')); p=sorted([t['name'], t['sha256']] for t in m['tables']); print(hashlib.sha256(json.dumps(p, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest())"
+   ```
+
+   The printed value equals `bundle_digest`. Measured: every one of 37 table
+   files came back byte-identical, and the digest matched.
 
 6. **Close** transfers ownership **and the open items with it**. Unanswered
    questions and unclosed gaps become the new owner's, by name, instead of

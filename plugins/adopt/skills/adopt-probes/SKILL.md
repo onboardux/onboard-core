@@ -55,7 +55,7 @@ the repository. The rules the validator and runner enforce:
 | `cleanup.required` | Must be `true`. |
 | `output` | `retain_raw` and `redaction_policy`. |
 | `exercises` | Identity URIs; build them with `adopt identity build`. |
-| `diff_method` | `exact`, the only method built today. |
+| `diff_method` | `exact`, the only method built today. It is exact about *unchanged*, not about *drift*: see "What counts as drift" below. |
 | `secret_refs` | `env:NAME` entries; steps use them as `{{secret.NAME}}`. Only declared refs may be interpolated, and secrets never appear in an observation. |
 | `steps` | `kind: http` (`method`, `url`, optional `headers`, `body`, `expect`) or `kind: prompt` (`input`, `expect`). |
 | `expect` | Only `status`, `json_fields`, `latency_under_ms` and `min_similarity`. Anything else is refused, because a mistyped key would be an invariant nobody checks. Anything absent is not checked. |
@@ -64,6 +64,31 @@ the repository. The rules the validator and runner enforce:
 A typo such as `exercise:` for `exercises:` is accepted silently, and the conflict
 link is lost. After `probe add`, check that the envelope echoes every URI you put
 under `exercises`.
+
+### What counts as drift
+
+A step's response is compared with the baseline's in three tiers:
+
+1. byte-identical: `unchanged`;
+2. a different status code, or a JSON field in `json_fields` that has gone:
+   `drift`;
+3. anything else: `drift` only if its text similarity falls below the step's
+   `expect.min_similarity`, which **defaults to `0.92`**; otherwise
+   `within_threshold`.
+
+So a single changed **value** in a JSON body is usually *not* drift. Measured: a
+shipment's `status` going from `in_transit` to `cancelled` scored `0.959`,
+`within_threshold`, and `probe diff` exited `0`. Agree with the person which
+steps are about values:
+
+- Where every value matters (a status, a price, a limit), set
+  `min_similarity: 1.0` on that step: any change is then `drift`.
+- But `1.0` also turns volatile fields into drift on every run: timestamps,
+  generated ids, anything stamped at start-up. Measured: a `created_at` set when
+  the sandbox started drifted after its restart. Probe an endpoint whose response
+  is stable, or accept the default and read `within_threshold` steps yourself.
+- Report `within_threshold` steps as changes that did not cross the line, with
+  their similarity. They are not nothing.
 
 ## 3. The authoring loop — stores nothing
 
@@ -120,6 +145,8 @@ adopt probe diff --json               # exit 0 clean, 4 on drift
 
 - **Exit `4`** is drift against a named baseline: the command worked and found
   something. Report each step's verdict and similarity.
+- **Exit `0` is not "identical".** Read each step's `verdict`: `within_threshold`
+  is a change below the step's `min_similarity` (section 2).
 - **`probe_changed`** is not drift: the probe file was edited, so the question
   changed. `diff` compares only same-revision runs and gives both revision ids.
   Re-baseline after an edit, with a yes, rather than reading it as a change in

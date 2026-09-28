@@ -3,9 +3,10 @@
 # plane, which classifies them against the canon it holds.
 #
 # Propose this to the client as a pull request to THEIR repository, as
-# .github/workflows/adopt-sense.yml. Fill in the three <placeholders>; the plane
+# .github/workflows/adopt-sense.yml. Fill in every <placeholder>: the plane
 # operator supplies the URL, the system id and a `sense`-scoped token, which the
-# client stores as the repository secret ADOPT_PLANE_TOKEN.
+# client stores as the repository secret ADOPT_PLANE_TOKEN; the scope, answers,
+# archetype and packs are the engagement's own, from its onboarding workspace.
 name: adopt-sense
 
 on:
@@ -43,7 +44,9 @@ jobs:
       # plane refuses a payload that claims a different one -- and the three
       # answers are the ones the engagement negotiated at `adopt init`, copied
       # verbatim. answers.json goes OUTSIDE the checkout, or the walk would read
-      # it as part of the system.
+      # it as part of the system. --archetype is the one recorded at onboarding:
+      # init detects afresh, and a system whose archetype a person had to choose
+      # fails here with DETECT_AMBIGUOUS on every run without it.
       - name: Declare the boundary
         run: |
           set -euo pipefail
@@ -51,13 +54,16 @@ jobs:
             > "$RUNNER_TEMP/answers.json"
           "$RUNNER_TEMP/adopt/bin/adopt" init . \
             --scope <firm/engagement/system/environment> \
+            --archetype <web|ai|platform|lowcode|data> \
             --answers "$RUNNER_TEMP/answers.json" --json
 
       # --run-id is the idempotency key: the SAME id on a re-run of this pipeline
       # records liveness without writing twice. Exit 0 on findings by design; add
       # --strict only if the client wants stale documentation to fail the build,
       # and --no-probes to keep this job from opening any socket toward their
-      # system.
+      # system. --packs is the set the engagement mapped with (its packs.txt):
+      # identities of a pack that does not run are never looked at.
       - name: Sense
         run: |
-          "$RUNNER_TEMP/adopt/bin/adopt" ci-sense . --run-id "${{ github.run_id }}" --json
+          "$RUNNER_TEMP/adopt/bin/adopt" ci-sense . --run-id "${{ github.run_id }}" \
+            --packs <generic,web,ai> --json

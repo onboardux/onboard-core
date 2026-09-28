@@ -1,6 +1,8 @@
 ---
 name: adopt-dev-substrate
 description: The Build 0 substrate of adopt-core and the rules its code enforces — canonical identity URIs, the firm/engagement/system/environment scope, append-only revision families, facades and the *Records port pattern, coverage as a function with an alarming cache, freshness resolution, byte-stable export/import, the runtime annex, and store doctor. Use whenever changing or re-implementing adopt-identity, adopt-scope, adopt-store, adopt-coverage, adopt-freshness or adopt-export, adding a storage-engine-specific capability, touching revisions or bindings at the store level, or debugging a coverage disagreement, a stale item, a REVISION_CHAIN_FORK or a round-trip that is not byte-identical.
+metadata:
+  internal: true
 ---
 
 # The substrate

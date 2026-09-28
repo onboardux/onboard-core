@@ -1,6 +1,8 @@
 ---
 name: adopt-dev-knowledge-serve
 description: How adopt-core turns documents, history and people into knowledge and serves it honestly — ingest and its verification rule, harvest candidates, the two-tier binding rule, the one review queue and its populations, ask's KNOWN/STALE/UNKNOWN branch welded to freshness, escalation and one-step capture, grounded synthesis and drafting that land unverified, audience packs with stamps and byte-stable Markdown, and the verified-handover state machine. Use whenever changing adopt-knowledge, adopt-ask or adopt-handover, adding a review population, a binding heuristic, a pack section or a handover step, or debugging a false binding, an answer served without its cause, a draft that reached canon, or a pack that looks more certain than its sources.
+metadata:
+  internal: true
 ---
 
 # Knowledge, serving and handover

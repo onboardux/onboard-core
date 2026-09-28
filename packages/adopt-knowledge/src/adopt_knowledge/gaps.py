@@ -25,14 +25,22 @@ from adopt_identity import parse_uri
 __all__ = [
     "GAP_KEY_SEPARATOR",
     "OPEN_DISPOSITION",
+    "REASON_REFERENT_GONE",
     "ConflictRow",
     "CoverageEntry",
     "Gap",
     "OpenConflict",
     "gap_key_for",
+    "is_live",
     "rank_conflicts",
     "rank_gaps",
 ]
+
+#: `adopt_coverage.REASON_IDENTITY_NOT_ACTIVE`, spelled here for the reason
+#: `CoverageEntry` is declared rather than imported. The recompute's input 1:
+#: the identity's head is not `active` -- `refresh` retired it as dead, or it
+#: moved and its coverage now belongs to the identity it aliases.
+REASON_REFERENT_GONE: Final[str] = "identity_revision_not_active"
 
 #: Separates the three parts of a `gap_key`. A pipe because it cannot occur in a
 #: canonical URI: every segment is percent-encoded by the builder, so a key can
@@ -116,12 +124,28 @@ def _kind_of(uri: str) -> str:
         return "?"
 
 
+def is_live(entry: CoverageEntry) -> bool:
+    """Whether the referent still exists, so that knowledge could ever cover it.
+
+    The recompute gives every identity a verdict, a dead one included -- input 1
+    is exactly "an active identity revision", and Build 0's contract is right to
+    keep it. What is wrong is treating that verdict as work: a retired
+    `CARRIER_API_KEY` sat in `adopt gaps`, in the pack's gap table and in the
+    counts for ever, an item nobody could close because there is nothing left
+    to write about. So the gap report, the pack and the handover count only
+    live referents, and say how many they set aside.
+    """
+    return REASON_REFERENT_GONE not in entry.reasons
+
+
 def rank_gaps(entries: Sequence[CoverageEntry]) -> tuple[Gap, ...]:
-    """Every uncovered identity, worst first.
+    """Every uncovered live identity, worst first.
 
     Covered identities are dropped rather than listed with an empty reason
     tuple: the report is the elicitation queue, and a queue that includes the
-    work already done is a queue people scroll past.
+    work already done is a queue people scroll past. Identities whose referent
+    is gone are dropped for the same reason from the other side: they are work
+    that can never be done (`is_live`).
     """
     gaps = [
         Gap(
@@ -131,7 +155,7 @@ def rank_gaps(entries: Sequence[CoverageEntry]) -> tuple[Gap, ...]:
             reasons=tuple(entry.reasons),
         )
         for entry in entries
-        if not entry.covered
+        if not entry.covered and is_live(entry)
     ]
     return tuple(sorted(gaps, key=lambda gap: (-gap.reason_count, gap.kind, gap.uri)))
 

@@ -194,6 +194,7 @@ def run_ingest(
     unit: UnitOfWork,
     bound_pairs: frozenset[tuple[str, str]] = frozenset(),
     presented_revisions: frozenset[str] = frozenset(),
+    presented_texts: frozenset[tuple[str, str]] = frozenset(),
     actor_id: str | None = None,
     unverified: bool = False,
 ) -> IngestReport:
@@ -212,6 +213,11 @@ def run_ingest(
         presented_revisions: Revision ids already carried by a `review_item`.
             **This is what makes the queue idempotent**, and it is not the same
             question as whether the knowledge changed -- see below.
+        presented_texts: `(item_id, document digest)` for every text whose
+            name-match suggestions a *suggestion* batch has already carried.
+            A revision id alone is not enough: `confirm-current` appends a
+            revision with the same text, and before this the next ingest
+            re-proposed suggestions the person had already rejected for it.
         unit: The transaction boundary. **One document is one unit**, not one
             run: an ingest that wrote a document's item, revision and provenance
             and then failed before its audience tag left a document a retry
@@ -269,10 +275,17 @@ def run_ingest(
         # A revision this run wrote unverified is presented for verification
         # instead, and its suggestions wait for the confirmed revision: the
         # next ingest sees that one unpresented and asks about it then.
+        #
+        # "A new revision" stands in for "new text", and one writer breaks the
+        # stand-in: `confirm-current` appends the same text as a new revision.
+        # So the text is checked too, against suggestion batches only -- a
+        # verification batch asked a different question, which is exactly why
+        # the confirmed revision above still gets its suggestions asked about.
         if (
             outcome.suggested
             and not wrote_unverified
             and outcome.revision_id not in presented_revisions
+            and (outcome.item_id, document.digest) not in presented_texts
         ):
             pending_review.append((outcome.item_id, outcome.revision_id))
 

@@ -79,6 +79,7 @@ def ingest(
         bound_pairs,
         identity_views,
         presented_revisions,
+        presented_texts,
         stored_documents,
     )
     from adopt_cli.commands._map_support import resolve_scope
@@ -98,6 +99,7 @@ def ingest(
             unit=StoreUnitOfWork(handle),
             bound_pairs=bound_pairs(handle),
             presented_revisions=presented_revisions(handle),
+            presented_texts=presented_texts(handle),
             actor_id=actor,
             unverified=unverified,
         )

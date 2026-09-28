@@ -35,6 +35,7 @@ from adopt_cli.commands._knowledge_support import (
     bound_pairs,
     pending_items,
     presented_revisions,
+    presented_texts,
     stored_documents,
 )
 from adopt_coverage import REASON_VERIFICATION_UNVERIFIED, recompute_coverage
@@ -73,6 +74,7 @@ def _ingest(
         unit=StoreUnitOfWork(store),
         bound_pairs=bound_pairs(store),
         presented_revisions=presented_revisions(store),
+        presented_texts=presented_texts(store),
         unverified=unverified,
     )
 

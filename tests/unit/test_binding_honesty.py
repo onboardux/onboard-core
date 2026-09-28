@@ -31,8 +31,15 @@ import pytest
 from adopt_knowledge import IdentityView, StoredDocument, match_document, run_ingest
 from adopt_knowledge.documents import Document, body_digest
 
-from adopt_cli.commands._knowledge_support import StoreUnitOfWork
+from adopt_cli.commands._knowledge_support import (
+    StoreUnitOfWork,
+    bound_pairs,
+    presented_revisions,
+    presented_texts,
+    stored_documents,
+)
 from adopt_scope import Scope
+from adopt_store import KnowledgeRevisionDraft
 from adopt_store.api import SqliteStoreHandle
 
 #: Every noun here is a real identity key in the seeded registry below **and** a
@@ -506,3 +513,54 @@ class TestIngestIdempotence:
         assert batches[0]["n"] == 1
         items = s4_store.backend.query("SELECT COUNT(*) AS n FROM review_item")
         assert items[0]["n"] == 1
+
+    def test_rejected_suggestions_stay_rejected_across_a_same_text_revision(
+        self,
+        s4_store: SqliteStoreHandle,
+        s4_scope: Scope,
+        noisy_registry: list[IdentityView],
+    ) -> None:
+        """*Fails when* a new revision of unchanged text re-proposes suggestions
+        a person rejected. *Matters because* `confirm-current` on a refresh item
+        appends exactly such a revision, and the next ingest put a README's
+        rejected name matches back in the queue -- measured on a client
+        repository; a rejection that does not stick trains a reviewer to confirm
+        to make the noise stop, which is the one outcome binding honesty exists
+        to prevent. *No other instrument catches it because* the queue's key was
+        the revision id, and the revision really is new."""
+
+        def ingest() -> None:
+            run_ingest(
+                [document],
+                scope=s4_scope,
+                identities=noisy_registry,
+                stored=stored_documents(s4_store, s4_scope),
+                knowledge=s4_store.items(),
+                bindings=s4_store.bindings(),
+                reviews=s4_store.governance(),
+                unit=StoreUnitOfWork(s4_store),
+                bound_pairs=bound_pairs(s4_store),
+                presented_revisions=presented_revisions(s4_store),
+                presented_texts=presented_texts(s4_store),
+            )
+
+        document = _document(NOISY_PROSE)
+        ingest()
+        (item,) = s4_store.backend.query("SELECT id, item_id FROM review_item")
+        s4_store.governance().resolve(review_item_id=str(item["id"]), resolution="rejected")
+        # What `confirm-current` appends: the same text, confirmed by a person.
+        s4_store.revisions().append_revision(
+            parent_id=str(item["item_id"]),
+            draft=KnowledgeRevisionDraft(
+                authority_class="human_confirmed",
+                body_md=NOISY_PROSE,
+                verification="verified",
+                source_version=document.digest,
+            ),
+            expected_head_id=s4_store.revisions().current_head(str(item["item_id"])),
+        )
+
+        ingest()
+
+        items = s4_store.backend.query("SELECT COUNT(*) AS n FROM review_item")
+        assert items[0]["n"] == 1, "the rejected suggestions came back"

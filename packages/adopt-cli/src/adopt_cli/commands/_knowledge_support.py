@@ -50,6 +50,7 @@ __all__ = [
     "identity_views",
     "pending_items",
     "presented_revisions",
+    "presented_texts",
     "rebind_target",
     "refresh_population",
     "resolve_identity",
@@ -324,6 +325,33 @@ def presented_revisions(handle: KnowledgeStoreView) -> frozenset[str]:
         row.proposed_revision_id
         for row in _rows(handle, "review_item", ReviewItem)
         if row.proposed_revision_id is not None
+    )
+
+
+def presented_texts(handle: KnowledgeStoreView) -> frozenset[tuple[str, str]]:
+    """`(item_id, document digest)` for every text an ingest suggestion batch carried.
+
+    `presented_revisions`' own rule -- "new text means a new revision" -- stated
+    the other way round, because one writer breaks it: `confirm-current`
+    appends a revision with the same text and the same digest, and the next
+    ingest used to re-propose every suggestion the reviewer had rejected for
+    that text. Suggestion batches only: a verification batch asked whether the
+    text is true, not what it is about.
+    """
+    suggestion_batches = {
+        row.id
+        for row in _rows(handle, "review_batch", ReviewBatch)
+        if source_of(row.batch_key) == SOURCE_INGEST
+    }
+    carried = {
+        row.proposed_revision_id
+        for row in _rows(handle, "review_item", ReviewItem)
+        if row.review_batch_id in suggestion_batches and row.proposed_revision_id is not None
+    }
+    return frozenset(
+        (row.item_id, row.source_version)
+        for row in _rows(handle, "knowledge_revision", KnowledgeRevision)
+        if row.id in carried and row.source_version is not None
     )
 
 

@@ -52,12 +52,14 @@ client will read there:
 Never hand-edit the Markdown to fix either one. Name them, and let the person
 decide on a covering note.
 
-**Read the gap table too.** It lists identities `refresh` retired as dead
-(`adopt gaps` gives their reason as `identity_revision_not_active`) beside real
-gaps, so a renamed environment variable appears there under its old name.
-Disposition them before the pack leaves (`adopt-capture` section 7), or tell the
-person which rows are referents that no longer exist. Contradictions a probe
-found are under **"Contradicted by observation"** at the end of that section.
+**Read the gap table too.** It lists live referents only: an identity `refresh`
+retired is not part of the system being handed over, and neither the inventory
+nor "covered N of M" counts it. On `0.4.1` the pack still lists retired
+identities beside real gaps, so a renamed environment variable appears under its
+old name: disposition those before the pack leaves (`adopt-capture` section 7),
+or tell the person which rows are referents that no longer exist. Contradictions
+a probe found are under **"Contradicted by observation"** at the end of that
+section.
 
 ## 2. Drafting what is missing (optional, uses a model)
 

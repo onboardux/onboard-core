@@ -49,11 +49,15 @@ words ignored. Three consequences, all measured:
   not `owned`); "Postgres" never matches "PostgreSQL". Before escalating a
   question you have reason to think is documented, ask it **once** more in the
   documents' own words. Once, not until something matches.
-- **A fresh match hides a stale one.** When any matching document is fresh, the
-  answer is `known` with only the fresh ones, and a stale document on exactly
-  this topic is not mentioned. If the citations miss the point and an open
-  `refresh` item in `adopt review` concerns the subject, the answer you want is
-  probably the stale one: say so, with its cause.
+- **A stale match travels beside a fresh answer, not in it.** When any matching
+  document is fresh, the answer is `known` with only the fresh ones as
+  `citations`, and a verified document that matched but is stale is listed
+  under `stale_matches`, each with its `deciding_rule`. When the citations miss
+  the point, the stale match is often the document actually about the
+  question: report it as stale, with its cause, and point at the open
+  `refresh` item. On `0.4.1` there is no `stale_matches`, and the stale
+  document is simply not mentioned: check the open `refresh` items in
+  `adopt review` for the subject yourself.
 
 If you know something is documented and `ask` still says unknown, check in this
 order: was it ingested (`adopt store info --json`), is it in this scope, is it
@@ -172,10 +176,11 @@ adopt review --confirm-batch <review-batch> --actor sam@client.com --json
   dependency because the README's run command names it. When any suggestion is
   wrong, show the person the list, `--reject` the item, and `adopt bind` the
   right ones by hand on their say-so (section 6).
-- After a `refresh` item on a document is resolved with `confirm-current`, the
-  next `ingest` can queue that document's name-match suggestions again, including
-  ones the person already rejected. Say so, and reject them again. Do not
-  confirm them to clear the queue.
+- A rejection holds for that text: re-ingesting the same document asks nothing
+  again, and only changed text is proposed afresh. On `0.4.1`, a
+  `confirm-current` on the document's `refresh` item made the next `ingest`
+  queue its rejected suggestions again. If that happens, say so and reject them
+  again. Never confirm them to clear the queue.
 
 ## 6. Bind by hand
 
@@ -190,11 +195,13 @@ Pass `--not-load-bearing` only when the person confirms that a change to it
 should not make the note suspect.
 
 One item and one identity have **one** binding, for ever: its history is its
-revisions. So `bind` refuses a pair that was ever bound — even one a `rebind`
-has since marked `moved` — with `REVISION_CHAIN_FORK`, exit `1`, category
-`integrity`. That is not store corruption, and nothing below it is unreliable,
-but on `0.4.1` no command re-activates the old link either. Report it; do not
-retry.
+revisions. Binding a pair whose link a `rebind` superseded or a retirement
+withdrew **revives** it with a new `active` revision, and the envelope says
+`"reactivated": true`, keeping the flag the pair was created with. A pair that
+is already live is refused with `REVISION_CHAIN_FORK`, exit `1`, category
+`integrity`: the link exists, the store is fine, and nothing below it is
+unreliable. Report it; do not retry. On `0.4.1` there is no revival, and every
+pair that was ever bound refuses that way.
 
 ## 7. Gaps and their dispositions
 
@@ -219,11 +226,14 @@ build it. A waiver requires `--until`. A gap that recompute stops deriving
 disappears whatever its disposition says: a key that was covered since your last
 listing answers `GAP_NOT_FOUND`, which is progress, not an error.
 
-A gap whose `reasons` is `identity_revision_not_active` is a referent `refresh`
-retired as dead. It stays in the listing and in the pack's gap table, and no
-knowledge can ever cover it. Offer the person a waiver that says so (`--note
-"retired by refresh: renamed to CARRIER_API_TOKEN"`) rather than chasing an
-answer for something that no longer exists.
+Referents that no longer exist (retired by `refresh` as dead, or moved) are not
+gaps: no knowledge could ever cover them. `adopt gaps`, the pack and the
+handover leave them out, and `not_active` in the envelope says how many were set
+aside, so the numbers reconcile with `adopt coverage recompute`, which still
+counts every identity. On `0.4.1` they are listed, with the reason
+`identity_revision_not_active`. Offer the person a waiver that says so
+(`--note "retired by refresh: renamed to CARRIER_API_TOKEN"`) rather than
+chasing an answer for something that no longer exists.
 
 `conflicts` in the same listing is confirmed knowledge that a probe has since
 seen contradicted; see `adopt-probes`.

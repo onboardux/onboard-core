@@ -98,26 +98,27 @@ adopt review --resolve <review-item> --action confirm-current --actor sam@client
 | Action | Store consequence |
 |---|---|
 | `retire` | Appends the item's terminal revision. It stops serving. There is no un-retire, so be sure. |
-| `rebind` | Appends a `moved` revision to each load-bearing link and binds the successor. `--to` defaults to the alias a `BINDING_MOVED` recorded; **for any other class it is required**, because a rebind without a recorded successor is a guess. |
+| `rebind` | Appends a `moved` revision to each load-bearing link to a dead or moved referent and binds the successor; a link to a referent that only changed is re-affirmed (`freshened_bindings`). `--to` defaults to the alias a `BINDING_MOVED` recorded; **for any other class it is required**, because a rebind without a recorded successor is a guess. |
 | `confirm-current` | Appends a `human_confirmed`/`verified` revision and returns the re-affirmed links to fresh. |
 
 On a `BINDING_DEAD` or `BINDING_MOVED` cause, `confirm-current` reports that the
 item **stays STALE**. Confirming a note cannot revive the identity it is bound
 to. Rebind it or retire it instead.
 
-**An item with more than one cause: stop before `rebind`.** `rebind` re-points
-*every* load-bearing link to a referent that changed in this run onto the one
-`--to` target, including a link to one that is still alive (a
-`SEMANTICS_CHANGED` cause). Measured: an answer bound to the dead cancel route
-and to the live approval-threshold key came out bound to the new route alone,
-and `adopt bind` cannot put the threshold link back (`REVISION_CHAIN_FORK`, see
-`adopt-capture` section 6). So when an item's causes mix a dead or moved
-referent with a live one, lay out both costs and let the person choose:
+**An item with more than one cause.** A refresh coalesces an item's causes, so
+a note bound to a renamed route and to a settings key whose type changed is one
+entry with one `--to`. `rebind` then replaces only the dead or moved link, and
+re-affirms the live one: the entry has one resolution, and the person is keeping
+the note with every cause in view. So show the person **every** cause before
+they choose `rebind`, not only the one `--to` answers. If the live change makes
+the note wrong, the note needs correcting, not rebinding.
 
-- `rebind --to <successor>`: the note follows the renamed referent and **loses
-  its binding to the live one**, which becomes a gap again; or
-- `confirm-current`: the live link returns to fresh, and the note **stays STALE**
-  on the dead one.
+**On `0.4.1` (preflight names the version), stop before a mixed `rebind`:** it
+re-points *every* changed link onto `--to`, including the live one, and `bind`
+cannot put that link back. Measured: an answer bound to the dead cancel route
+and the live threshold key came out bound to the new route alone. Lay out both
+costs and let the person choose: `rebind` (the note loses its live link) or
+`confirm-current` (it stays STALE on the dead one).
 
 **When the note is a client document that is now wrong,** the fix is theirs: they
 edit the document, and you re-run the same `adopt ingest` from the root, which

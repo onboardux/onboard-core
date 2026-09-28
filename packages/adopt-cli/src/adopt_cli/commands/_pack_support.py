@@ -130,19 +130,28 @@ def build_drafts(handle: Any, *, system_id: str, environment_id: str | None) -> 
 
 
 def build_identities(
-    handle: Any, *, system_id: str, environment_id: str | None, covered: frozenset[str]
+    handle: Any,
+    *,
+    system_id: str,
+    environment_id: str | None,
+    covered: frozenset[str],
+    live: frozenset[str],
 ) -> _Reader:
     """The inventory, with coverage taken from the recompute rather than the cache.
 
     `identity.covered_cache` is a cache that alarms rather than self-heals, and
     a pack must not be the thing that reads it: the recompute result the caller
-    already holds is the authority (Build 0's rule, unchanged).
+    already holds is the authority (Build 0's rule, unchanged). Only `live`
+    referents are listed: a pack describes the system as it is, and a retired
+    identity counted into "covered N of M" makes the handover read worse with
+    every rename (`adopt_knowledge.is_live`).
     """
     rows = [
         PackIdentity(uri=str(row.uri), kind=str(row.identity_kind), covered=str(row.id) in covered)
         for row in handle.pack_records().identities_in_scope(
             system_id=system_id, environment_id=environment_id
         )
+        if str(row.id) in live
     ]
     return _Reader(tuple(rows))
 
@@ -238,23 +247,24 @@ def assemble_pack(handle: Any, *, audience: str, system_id: str, environment_id:
     rendering it is a pure function and the caller may close the store first.
     """
     from adopt_handover import assemble
-    from adopt_knowledge import rank_gaps
+    from adopt_knowledge import is_live, rank_gaps
 
     from adopt_coverage import recompute_coverage
 
     coverage = recompute_coverage(handle.coverage_records(), system_id, environment_id)
     covered = frozenset(row.identity_id for row in coverage.identities if row.covered)
+    live = frozenset(row.identity_id for row in coverage.identities if is_live(row))
     ranked = rank_gaps(coverage.identities)
-    # Every identity the recompute evaluated, by URI. The conflict join needs
-    # it, and it is the same population the inventory renders -- so a conflict
-    # can never name an identity this pack does not list.
-    uris = {row.identity_id: row.uri for row in coverage.identities}
+    # Every live identity the recompute evaluated, by URI. The conflict join
+    # needs it, and it is the same population the inventory renders -- so a
+    # conflict can never name an identity this pack does not list.
+    uris = {row.identity_id: row.uri for row in coverage.identities if row.identity_id in live}
 
     return assemble(
         audience=audience,
         knowledge=build_knowledge(handle, system_id=system_id, environment_id=environment_id),
         identities=build_identities(
-            handle, system_id=system_id, environment_id=environment_id, covered=covered
+            handle, system_id=system_id, environment_id=environment_id, covered=covered, live=live
         ),
         freshness=FreshnessCache(handle),
         boundary=build_boundary(handle, system_id=system_id, environment_id=environment_id),

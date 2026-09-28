@@ -612,10 +612,19 @@ def _parse_until(value: str | None) -> _dt.datetime | None:
 def _gaps_payload(
     result: Any, ranked: tuple[Any, ...], dispositions: dict[str, Any]
 ) -> dict[str, Any]:
+    from adopt_knowledge import is_live
+
+    # Counted over live referents, the population the gap list is drawn from,
+    # so `uncovered` is the length of `gaps`. `not_active` is what was set
+    # aside, so the numbers still reconcile with `adopt coverage recompute`.
+    evaluated = () if result is None else tuple(result.identities)
+    live = [row for row in evaluated if is_live(row)]
+    covered = sum(1 for row in live if row.covered)
     return {
-        "identities": 0 if result is None else len(result.identities),
-        "covered": 0 if result is None else result.covered,
-        "uncovered": 0 if result is None else result.uncovered,
+        "identities": len(live),
+        "covered": covered,
+        "uncovered": len(live) - covered,
+        "not_active": len(evaluated) - len(live),
         "gaps": [
             {
                 "kind": gap.kind,

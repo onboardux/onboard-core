@@ -5,9 +5,10 @@ and once*. Each test names the defect it catches.
 """
 
 import pytest
-from adopt_knowledge import ChangeCause, Gap, coalesce_changes, rank_gaps
+from adopt_knowledge import REASON_REFERENT_GONE, ChangeCause, Gap, coalesce_changes, rank_gaps
 from adopt_knowledge.review import PendingItem
 
+from adopt_coverage import REASON_IDENTITY_NOT_ACTIVE
 from adopt_obs import AdoptError, ErrorCode
 from adopt_scope import Scope
 from adopt_store.api import SqliteStoreHandle
@@ -138,6 +139,29 @@ class TestGapRanking:
         ]
 
         assert [gap.uri.rsplit("/", 1)[-1] for gap in rank_gaps(entries)] == ["two"]
+
+    def test_a_referent_that_is_gone_is_not_listed(self) -> None:
+        """*Fails when* a retired identity stays in the elicitation queue.
+        *Matters because* it is work nobody can ever do: measured, a renamed
+        environment variable's old name sat in `adopt gaps`, in the pack's gap
+        table and in every count, uncoverable, until someone waived it by hand.
+        *No other instrument catches it because* the recompute's verdict for it
+        is correct -- uncovered, identity not active -- and only reading that
+        verdict as a gap is wrong."""
+        gone = (REASON_REFERENT_GONE, "no_live_binding")
+        entries = [
+            _Entry("onboard-v1://acme/platform/api/prod/config_key/env/OLD_KEY", False, gone),
+            _Entry(
+                "onboard-v1://acme/platform/api/prod/config_key/env/NEW_KEY",
+                False,
+                ("no_live_binding",),
+            ),
+        ]
+
+        assert [gap.uri.rsplit("/", 1)[-1] for gap in rank_gaps(entries)] == ["NEW_KEY"]
+        # Spelled structurally in `adopt_knowledge`; a rename in the recompute
+        # would otherwise switch this filter off without a sound.
+        assert REASON_REFERENT_GONE == REASON_IDENTITY_NOT_ACTIVE
 
     def test_the_worst_gaps_come_first_and_ties_are_stable(self) -> None:
         """*Fails when* ranking becomes input order. *Matters because* an FDE

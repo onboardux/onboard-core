@@ -1,6 +1,6 @@
 [project]
 name = "adopt-const"
-version = "0.4.2"
+version = "0.4.3"
 description = "Every tunable for adopt-core, and nothing else."
 requires-python = ">=3.12"
 license = "Apache-2.0"

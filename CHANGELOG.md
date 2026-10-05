@@ -13,6 +13,13 @@ it, a removed or retyped column is a rejected pull request.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.4.3] — 2026-10-05
+
+**The binaries carry their licence notices.** No schema change, no change to
+the wheels' code; the twenty distributions move in lockstep.
+
 ### Fixed
 
 - **The `adopt` binaries carry their third-party notices.** Each binary

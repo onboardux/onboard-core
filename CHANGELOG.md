@@ -13,6 +13,10 @@ it, a removed or retyped column is a rejected pull request.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.4.2] — 2026-10-05
+
 **Assurance correctness: the product never says "known", "fresh" or "passed"
 when that is not true.** Adopt is now sold as proof that a client could run a
 system without the people who built it, re-checked on every material change.

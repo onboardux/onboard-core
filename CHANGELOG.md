@@ -13,7 +13,18 @@ it, a removed or retyped column is a rejected pull request.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The `adopt` binaries carry their third-party notices.** Each binary
+  redistributes CPython, the native libraries it links and every runtime
+  dependency of `adopt-cli`, and their licences (PSF, Apache-2.0, MIT, BSD)
+  require the notice to travel with the copy. Until now none did: the `v0.4.1`
+  Windows binary's onefile payload held forty files and no licence text.
+  `THIRD_PARTY_NOTICES.txt` is now assembled per platform from the environment
+  the binary is packed from (`scripts/third_party_notices.py`, with static texts
+  in `third_party/notices/`) and embedded in every binary. It fails closed: a
+  runtime dependency with no licence file stops the build naming it. The wheels
+  are unaffected.
 
 ## [0.4.2] — 2026-10-05
 

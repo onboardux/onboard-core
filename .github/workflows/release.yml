@@ -341,6 +341,21 @@ jobs:
           sys.exit(1)
           PY
 
+      # The binary redistributes CPython, the native libraries it links and every
+      # runtime dependency, and each of their licences requires its notice to
+      # travel with the copy. Until 2026-10-01 none did: the v0.4.1 onefile
+      # payload held forty files and no licence text. Assembled from the
+      # environment the binary is packed from, so it names what the binary
+      # contains on *this* platform, and it fails closed on any gap.
+      - name: Assemble the third-party notices the binary must carry
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PY" scripts/third_party_notices.py --self-test
+          "$PY" scripts/third_party_notices.py \
+            --constraints runtime-constraints.txt \
+            --out THIRD_PARTY_NOTICES.txt
+
       - name: Pack
         shell: bash
         env:
@@ -390,6 +405,7 @@ jobs:
             --include-package-data=adopt_agent \
             --include-package-data=adopt_detect \
             --include-package-data=adopt_schema \
+            --include-data-files=THIRD_PARTY_NOTICES.txt=THIRD_PARTY_NOTICES.txt \
             "${metadata_flags[@]}" \
             --output-dir=packed \
             --output-filename=${{ matrix.artefact }} \

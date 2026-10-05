@@ -20,8 +20,14 @@ tasks:
   # `task`   — what they were asked to do. This becomes the question text if
   #            they could not do it, so write it as something answerable.
   # `outcome`— pass | fail | skipped. Nothing else is accepted.
-  # `uri`    — optional. The identity the task is about. Naming it means an
-  #            answer captured later binds to the right referent in one step.
+  # `uri`    — optional, but **name one on every task that passes**. It is the
+  #            identity the task exercised, and it is what lets the result go
+  #            stale: `adopt handover status` judges each passed task against
+  #            later change to that referent and reports it `invalidated` when
+  #            the endpoint, job or recipe it was performed against changes. A
+  #            passed task with no `uri` is reported `unanchored` -- never
+  #            valid -- because nothing can tell when it stopped being true.
+  #            On a failed task it binds a later `adopt answer` in one step.
   # `note`   — optional. What actually went wrong; it travels with the question.
   # `performed_by` — optional. Who did the task, for the audit answer to
   #            "who verified this". Never who failed it.
@@ -29,6 +35,7 @@ tasks:
   - id: explain-refund-approval
     task: "Explain why refunds require an approval step, using only the pack"
     outcome: pass
+    uri: "onboard-v1://northwind/acme-erp/orders-api/prod/endpoint/-/POST%20%2Fv1%2Frefunds"
     performed_by: bob
 
   - id: rotate-api-key

@@ -99,21 +99,26 @@ def test_the_branch_always_agrees_with_the_resolutions_it_was_handed(
     answer = compose(resolved, verified, "why?")
 
     servable = [item for item in resolved if item.candidate.passage.revision_id in verified]
-    known_worthy = [item for item in servable if item.freshness.state in _SERVABLE]
+    stale = [item for item in servable if item.freshness.state not in _SERVABLE]
 
-    if known_worthy:
+    if servable and not stale:
         assert answer.branch == KNOWN
-        assert {citation.revision_id for citation in answer.citations} == {
-            item.candidate.passage.revision_id for item in known_worthy
-        }
         assert answer.cause is None
     elif servable:
+        # A stale verified candidate makes the whole answer STALE and is never
+        # dropped (independence transcript T3c): the cause is the first stale
+        # candidate's rule, never a fresh one's `item_state`.
         assert answer.branch == STALE
-        assert answer.cause == servable[0].freshness.deciding_rule
-        assert answer.citations
+        assert answer.cause == stale[0].freshness.deciding_rule
     else:
         assert answer.branch == UNKNOWN
         assert answer.citations == ()
+
+    if servable:
+        # Every verified candidate is cited, whatever the branch.
+        assert {citation.revision_id for citation in answer.citations} == {
+            item.candidate.passage.revision_id for item in servable
+        }
 
     # Whatever the branch, every citation carries the state and rule of the
     # resolution for its own item -- never a default, never another item's.

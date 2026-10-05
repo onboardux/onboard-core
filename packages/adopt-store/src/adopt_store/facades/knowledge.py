@@ -406,15 +406,16 @@ class GovernanceFacade:
         Args:
             system_id: The system the question concerns.
             branch: Why it is escalating. Plan decision D3: an UNKNOWN escalates
-                as `ungrounded`, a STALE one as `stale`; `bug_report` is B7's.
+                as `ungrounded`, a STALE one as `stale`, and a KNOWN answer the
+                asker explicitly reports as wrong as `bug_report` (2026-10-05).
             question: The text, **only when the asker consented** (F2). The
                 `None` default is the whole of the privacy posture: this facade
                 cannot tell consent from habit, so a caller has to pass the text
                 deliberately, and the default records that a question was asked
                 without recording what it was.
-            prior_revision_id: The revision that was served stale, when the
-                escalation came from a STALE answer. Absent for UNKNOWN --
-                there is nothing prior to point at.
+            prior_revision_id: The revision that was served, when the
+                escalation came from a STALE answer or a disputed KNOWN one.
+                Absent for UNKNOWN -- there is nothing prior to point at.
             owner_actor_id: Who to route it to, when known. B7 fills this from
                 ownership assignments; locally it is whoever asked.
 

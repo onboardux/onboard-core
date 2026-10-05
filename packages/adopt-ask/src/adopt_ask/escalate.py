@@ -20,13 +20,14 @@ argument that a caller has to have decided to pass.
 composed and never instead of one: a STALE answer still serves its prior content
 and its cause, and escalating it asks for a fresher answer rather than
 withdrawing the one given. That is why `prior_revision_id` is populated for STALE
-and absent for UNKNOWN -- the branch decides which question is being asked.
+(and for a disputed KNOWN) and absent for UNKNOWN -- the branch decides which
+question is being asked.
 """
 
 from collections.abc import Callable
 from typing import Final, Protocol
 
-from adopt_ask.branch import STALE, UNKNOWN, Answer
+from adopt_ask.branch import KNOWN, STALE, UNKNOWN, Answer
 from adopt_model._enums import EscalationBranch
 
 __all__ = [
@@ -36,20 +37,31 @@ __all__ = [
     "consented",
     "escalate",
     "escalation_branch",
+    "may_dispute",
     "may_escalate",
 ]
 
-#: The branches an FDE can escalate from. A KNOWN answer is deliberately absent:
-#: the store answered, and recording a question it answered would fill the open
-#: queue with work nobody has. Disagreeing with a KNOWN answer is a *correction*,
-#: which is Build 6's review path, not an unanswered question.
+#: The branches an asker is *offered* escalation from. A KNOWN answer is
+#: deliberately absent: the store answered, and prompting to record a question it
+#: answered would fill the open queue with work nobody has.
 ESCALATABLE: Final[frozenset[str]] = frozenset({UNKNOWN, STALE})
 
-#: Plan decision D3. Two of the three `escalation_branch` values are reachable
-#: locally and the mapping is total over `ESCALATABLE`, so there is no fallback
-#: arm to pick a wrong-but-valid value. `bug_report` is B7's and is not written
-#: here at all.
-_BRANCH_FOR: Final[dict[str, EscalationBranch]] = {UNKNOWN: "ungrounded", STALE: "stale"}
+#: Plan decision D3, extended 2026-10-05. Total over the three branches, so there
+#: is no fallback arm to pick a wrong-but-valid value.
+#:
+#: **A KNOWN answer can be disputed, never by prompt and only by `--escalate`.**
+#: Until 2026-10-05 `adopt ask --escalate` on a KNOWN answer exited 0, recorded
+#: nothing and said nothing (independence transcript T2) -- so the receiving team
+#: in an exit drill, served a confidently wrong answer, had no way to put that in
+#: front of the owner. Saying "this answer is wrong" is a report against the
+#: knowledge, which is what `bug_report` (in the enum since v3, never written
+#: until now) names. The served revision travels as `prior_revision_id`, so
+#: whoever picks it up sees exactly what the asker was told.
+_BRANCH_FOR: Final[dict[str, EscalationBranch]] = {
+    UNKNOWN: "ungrounded",
+    STALE: "stale",
+    KNOWN: "bug_report",
+}
 
 
 class EscalationWriter(Protocol):
@@ -72,19 +84,23 @@ class EscalationWriter(Protocol):
 
 
 def may_escalate(answer: Answer) -> bool:
-    """Whether this answer is one an FDE can turn into an open question."""
+    """Whether this answer is one an asker is offered to turn into an open question."""
     return answer.branch in ESCALATABLE
+
+
+def may_dispute(answer: Answer) -> bool:
+    """Whether this answer is one an asker can explicitly report as wrong (KNOWN)."""
+    return answer.branch == KNOWN
 
 
 def escalation_branch(answer: Answer) -> EscalationBranch:
     """The `escalation_branch` value for `answer`'s branch (plan D3).
 
     Raises:
-        ValueError: For a KNOWN answer. Not an `AdoptError`: no operator input
-            reaches here -- `may_escalate` guards every call -- so a failure is
-            a caller bug rather than a runtime condition, and inventing a
-            schema-valid branch for it is how a queue fills with questions that
-            were answered.
+        ValueError: For a branch outside the mapping. Not an `AdoptError`: no
+            operator input reaches here, so a failure is a caller bug rather than
+            a runtime condition, and inventing a schema-valid branch for it is how
+            a queue fills with questions nobody asked.
     """
     mapped = _BRANCH_FOR.get(answer.branch)
     if mapped is None:
@@ -103,6 +119,11 @@ def consent_prompt(answer: Answer) -> str:
         return (
             "Record this as an open question, storing its text, so someone can "
             "refresh the answer above?"
+        )
+    if answer.branch == KNOWN:
+        return (
+            "Report the answer above as wrong, storing the question's text, so its "
+            "owner can correct it?"
         )
     return "Record this as an open question, storing its text, so someone can answer it?"
 
@@ -132,7 +153,11 @@ def consented(
 
     Returns:
         `True` only when a human chose it -- by flag or by answering the prompt.
+        A KNOWN answer is disputed **only by the flag**: nobody is prompted to
+        dispute every answer they are given.
     """
+    if may_dispute(answer):
+        return escalate_flag
     if not may_escalate(answer):
         return False
     if escalate_flag:
@@ -151,13 +176,13 @@ def escalate(writer: EscalationWriter, answer: Answer, *, system_id: str) -> str
     look like work and cannot be worked. The consent decision belongs one level
     up, where the flags and the terminal are.
 
-    `prior_revision_id` is the first citation of a STALE answer -- what the asker
-    was actually served, so whoever refreshes it can see what they are replacing.
-    An UNKNOWN carries none: there is nothing prior to point at, and pointing at
-    a withheld unverified revision would suggest the store served something it
-    refused to.
+    `prior_revision_id` is the first citation of a STALE or KNOWN answer -- what
+    the asker was actually served, so whoever refreshes or corrects it can see
+    what they are replacing. An UNKNOWN carries none: there is nothing prior to
+    point at, and pointing at a withheld unverified revision would suggest the
+    store served something it refused to.
     """
-    prior = answer.citations[0].revision_id if answer.branch == STALE else None
+    prior = answer.citations[0].revision_id if answer.branch in (STALE, KNOWN) else None
     return writer.open_escalation(
         system_id=system_id,
         branch=escalation_branch(answer),

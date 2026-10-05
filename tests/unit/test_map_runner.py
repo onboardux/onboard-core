@@ -135,6 +135,21 @@ def test_selecting_packs_for_an_unrecorded_archetype_is_refused_not_defaulted() 
 
 
 @pytest.mark.unit
+def test_the_ai_archetype_maps_the_api_its_agent_is_reached_through() -> None:
+    """*Fails when* `ai` stops selecting the web pack. *Matters because* an AI
+    service's endpoints are what its exit tests and recovery runbooks name, and
+    without the web pack `refresh` and `ci-sense` mark them exempt and miss a
+    route rename with exit 0 -- a false "still valid" on the claims an
+    independence drill relies on. *No other instrument catches it because* the
+    run without the web pack is a successful, plausible-looking run."""
+    available = {name: Pack(name=name, extractors=()) for name in ("generic", "web", "ai")}
+
+    selected = select_packs("ai", available=available)
+
+    assert [pack.name for pack in selected] == ["generic", "web", "ai"]
+
+
+@pytest.mark.unit
 def test_an_unknown_pack_name_is_refused_by_name() -> None:
     """*Fails when* `--packs typo` is silently ignored. *Matters because* the
     operator would believe they had mapped with a pack that never ran. *No other

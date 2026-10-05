@@ -213,6 +213,51 @@ def test_retrieve_cuts_at_the_limit(
     assert len(retrieve(search, "refunds approver policy", limit=2)) == 2
 
 
+_ASSISTANT_RUNBOOK = Passage(
+    revision_id="r1",
+    item_id="i1",
+    title="Operating the support assistant",
+    body_md="The assistant runs on the pinned model with the system prompt. It never promises "
+    "a refund; refund requests go to a human approver.",
+)
+_REFUND_RUNBOOK = Passage(
+    revision_id="r2",
+    item_id="i2",
+    title="Recovery runbook: refunds",
+    body_md="Refunds above the threshold need a finance approver. To replay a stuck refund "
+    "after a restore, re-POST it with the original order id.",
+)
+
+
+@pytest.mark.parametrize(
+    ("passage", "question", "covered"),
+    [
+        # Unanswerable, sharing two words: the independence transcript's T1 cases,
+        # which the two-word rule served as KNOWN.
+        (
+            _ASSISTANT_RUNBOOK,
+            "how do I rotate the database password for the support assistant?",
+            False,
+        ),
+        (_REFUND_RUNBOOK, "who is the finance approver on call this weekend?", False),
+        (_REFUND_RUNBOOK, "how do I restore the refund approval slack bot?", False),
+        # Answerable, and must stay so -- including across grammatical number.
+        (_REFUND_RUNBOOK, "how do I replay a stuck refund after a restore?", True),
+        (_ASSISTANT_RUNBOOK, "which system prompt does the support assistant use?", True),
+    ],
+)
+def test_covers_question_wants_most_of_the_question_not_two_of_its_words(
+    passage: Passage, question: str, covered: bool
+) -> None:
+    """*Fails when* two shared words are again enough to call a passage an answer,
+    or when the stricter rule starts refusing questions the passage does answer.
+    *Matters because* the first labels an irrelevant runbook KNOWN -- the one
+    claim an assurance product exists not to make -- and the second turns every
+    honest question into an escalation. *No other instrument catches it because*
+    both failures return a well-formed answer from real retrieval."""
+    assert covers_question(passage, content_terms(question)) is covered
+
+
 def test_covers_question_needs_every_term_when_the_question_has_one() -> None:
     """A one-word question cannot demand two, so it demands its one."""
     passage = Passage(revision_id="r", item_id="i", title="Refunds", body_md="About refunds.")

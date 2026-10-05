@@ -347,6 +347,75 @@ def test_the_whole_event_runs_and_every_step_is_recorded(journey: dict[str, Any]
     ) == [(4,)]
 
 
+ORDERS_URI = "onboard-v1://northwind/acme-erp/orders-api/prod/endpoint/-/POST%20%2Fv1%2Forders"
+
+ANCHORED_CHECKLIST = f"""audience: client_ops
+tasks:
+  - id: place-order
+    task: "Place a test order through the API from the pack alone"
+    outcome: pass
+    uri: "{ORDERS_URI}"
+    performed_by: bob
+  - id: find-approval
+    task: "Explain why refunds need approval, using only the pack"
+    outcome: pass
+    performed_by: bob
+  - id: rotate-key
+    task: "Rotate the orders API key using only the pack and adopt ask"
+    outcome: fail
+    performed_by: bob
+"""
+
+
+def test_a_change_after_close_invalidates_the_drilled_task_and_strict_status_says_so(
+    journey: dict[str, Any],
+) -> None:
+    """The independence claim, end to end: proof that says when it stopped being true.
+
+    *Fails when* a passed exit test survives a change to the referent it was
+    performed against, or when an unanchored task is counted valid. *Matters
+    because* until 2026-10-05 the drill record said "2 passed" forever: the
+    endpoint behind a passed task was renamed, its runbook went STALE, and
+    `handover status` and `acceptance.json` never moved (independence transcript
+    T8) -- an exit drill that cannot go stale is a certificate. *No other
+    instrument catches it because* every step of the event still succeeds; only
+    the judgement of the passed tasks against later change can be wrong.
+    """
+    journey["checklist"].write_text(ANCHORED_CHECKLIST, encoding="utf-8")
+    _through_snapshot(journey)
+    _handover(journey, "close", "--accepted-by", "bob", "--system", SYSTEM, "--actor", "alice")
+
+    before = _handover(journey, "status", "--system", SYSTEM, "--strict")["independence"]
+    assert (before["passed"], before["valid"], before["unanchored"]) == (2, 1, 1)
+    assert before["invalidated"] == 0
+
+    main = journey["checkout"] / "app" / "main.py"
+    main.write_text(
+        main.read_text(encoding="utf-8").replace("/v1/orders", "/v2/orders"), encoding="utf-8"
+    )
+    refreshed = _run(
+        "refresh",
+        ".",
+        "--no-probes",
+        "--store",
+        str(journey["store"]),
+        "--json",
+        cwd=journey["checkout"],
+    )
+    assert refreshed.returncode == ExitCode.DEGRADED_WITH_FINDINGS, refreshed.stderr
+
+    after = _handover(
+        journey, "status", "--system", SYSTEM, "--strict", expect=ExitCode.DEGRADED_WITH_FINDINGS
+    )["independence"]
+    by_id = {task["task_id"]: task for task in after["tasks"]}
+    assert by_id["place-order"]["status"] == "invalidated"
+    assert by_id["place-order"]["cause"] == "identity_dead"
+    assert by_id["place-order"]["since"] is not None
+    assert by_id["find-approval"]["status"] == "unanchored"
+    assert "rotate-key" not in by_id, "a failed task is not a passed task to invalidate"
+    assert after["summary"].startswith("0 of 2 exit tests")
+
+
 # -- the handover's packs are `adopt pack`'s packs --------------------------
 
 

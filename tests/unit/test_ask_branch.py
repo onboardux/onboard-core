@@ -142,18 +142,28 @@ def test_an_unverified_revision_never_serves_as_known() -> None:
     assert answer.withheld == ("rev_1",)
 
 
-def test_fresh_beats_stale_when_both_are_servable() -> None:
+def test_a_stale_candidate_is_never_hidden_behind_a_fresh_one() -> None:
+    """*Fails when* a fresh candidate silences a stale one. *Matters because* that
+    rule (the reverse of this test, until 2026-10-05) let a weakly matching fresh
+    runbook answer KNOWN while the relevant runbook that had just gone stale
+    vanished from the answer -- an assurance product hiding the one piece of
+    evidence it exists to surface (independence transcript T3c). *No other
+    instrument catches it because* the KNOWN answer was well-formed and cited."""
     answer = compose(
         [
-            _resolved("rev_stale", "ki_1", state="stale", rule="load_bearing_identity_dead"),
             _resolved("rev_fresh", "ki_2", state="fresh"),
+            _resolved("rev_stale", "ki_1", state="stale", rule="load_bearing_identity_dead"),
         ],
         {"rev_stale", "rev_fresh"},
         "why?",
     )
 
-    assert answer.branch == KNOWN
-    assert [citation.revision_id for citation in answer.citations] == ["rev_fresh"]
+    assert answer.branch == STALE
+    assert answer.cause == "load_bearing_identity_dead"
+    assert [(c.revision_id, c.freshness_state) for c in answer.citations] == [
+        ("rev_fresh", "fresh"),
+        ("rev_stale", "stale"),
+    ]
 
 
 def test_nothing_retrieved_is_unknown() -> None:

@@ -772,6 +772,35 @@ jobs:
       - name: The two honesty rules, by name
         run: uv run pytest tests/unit/test_handover_transfer.py -v
 
+  independence-journey:
+    name: independence-journey (the recoverability-assurance claim, end to end)
+    runs-on: ubuntu-24.04
+    # **The acceptance test of the 2026-10-05 pivot.** The product is now sold as
+    # proof that a client could run a system without the people who built it,
+    # re-checked on every material change. This job walks that claim on one
+    # AI-backed fixture, in engagement order: the `ai` archetype maps the API
+    # (T9), an unanswerable question stays UNKNOWN (T1), a disputed KNOWN answer
+    # reaches the owner (T2), the cold drill passes two exit tests (T7), a
+    # Dockerfile and a CI-step change invalidate exactly the drilled redeploy
+    # (T4a, T8), and a comment-only edit stales nothing (H5). Every step is a
+    # defect reproduced live before it was fixed.
+    #
+    # **A job of its own** because each link has a unit test, and the claim is
+    # only as true as their composition. A fixture built in the test, no clone,
+    # no network, no adapter -- so it runs on every PR.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages
+      - name: Give the runner a committer identity for the journey's own checkout
+        run: |
+          git config --global user.name "adopt ci"
+          git config --global user.email "ci@example.invalid"
+      - name: The independence-assurance journey, run literally
+        run: uv run pytest tests/e2e/test_independence_journey.py -v
+
   probe-journey:
     name: probe-journey (the v6.1 Build 5 demo, end to end)
     runs-on: ubuntu-24.04

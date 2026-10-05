@@ -13,11 +13,12 @@ dependency.
 """
 
 import ast
+import hashlib
 import json
 import re
 import tomllib
 from collections.abc import Iterator
-from typing import Final
+from typing import Any, Final
 
 import yaml
 
@@ -400,10 +401,21 @@ class CiWorkflowExtractor:
     A workflow is a scheduled/triggered job in every sense that matters to an
     FDE: it is how the system gets built, tested and deployed, and "what runs on
     merge" is one of the first questions a handover has to answer.
+
+    **`recipe_digest` is what makes a changed pipeline a changed referent**
+    (version `2`). Version `1` carried only the workflow name, its job names and
+    its triggers, so replacing `alembic upgrade head` with a different migration
+    command -- the step a redeploy runbook exists to describe -- was classified
+    `BINDING_INTACT_RENDER_ONLY` and the runbook stayed fresh. The digest covers
+    each job's `needs`, `runs-on` and steps (`run`, `uses`, `with`), taken from
+    the *parsed* document so a comment never reaches it, with whitespace inside
+    a `run` collapsed so re-indenting a script is not a change (H5). Step names
+    are left out: renaming a step changes nothing that runs. The digest, not the
+    commands, is what is kept, so no line of the client's pipeline is stored.
     """
 
     name = "generic.ci"
-    version = "1"
+    version = "2"
 
     def extract(self, tree: SourceTree) -> Iterator[Observation]:
         for entry in tree.files:
@@ -435,6 +447,7 @@ class CiWorkflowExtractor:
                     "name": workflow,
                     "jobs": job_names,
                     "triggers": _trigger_names(triggers),
+                    "recipe_digest": _ci_recipe_digest(jobs),
                 },
                 span=_whole_file(entry),
             )
@@ -447,11 +460,25 @@ class FilesOfInterestExtractor:
     list is deliberately short: its value is that everything on it is worth
     someone's attention, and that property is lost the moment it grows to
     include whatever happened to be present.
+
+    **Two kinds of file live on this list, and only one of them is a recipe.**
+    A README, a licence or a changelog says *that* something exists; a reworded
+    one changes no fact about the system, so those stay name-only. A Dockerfile,
+    a compose file, a Makefile or a Procfile *is* how the system is built and
+    started: replacing `python:3.12-slim` with `node:20-alpine` is the change a
+    redeploy runbook most needs to hear about, and until version `3` it was
+    classified `BINDING_INTACT_RENDER_ONLY` because the identity carried only
+    the file's name. Those four now carry `recipe_digest` -- a digest of their
+    *instructions*, with comments and blank lines dropped and whitespace
+    collapsed (compose is parsed, so YAML comments never reach it), which keeps
+    H5's promise that a comment-only edit manufactures no staleness. The digest
+    is stored, never the content.
     """
 
     name = "generic.files_of_interest"
     #: Bumped to `2` in S1.2: the attribute set lost `path`. See `extract`.
-    version = "2"
+    #: Bumped to `3`: build/deploy recipes gained `recipe_digest`. See the class.
+    version = "3"
 
     _WELL_KNOWN: Final[frozenset[str]] = frozenset(
         {
@@ -469,18 +496,31 @@ class FilesOfInterestExtractor:
         }
     )
 
+    #: The recipes among them: files whose instructions are how the system is
+    #: built or started. See the class docstring.
+    _RECIPES: Final[frozenset[str]] = frozenset(
+        {"Dockerfile", "docker-compose.yml", "docker-compose.yaml", "Makefile", "Procfile"}
+    )
+
     def extract(self, tree: SourceTree) -> Iterator[Observation]:
         for entry in tree.files:
             if entry.name not in self._WELL_KNOWN:
                 continue
+            attributes: dict[str, object] = {"name": entry.name}
+            if entry.name in self._RECIPES:
+                text = tree.text(entry)
+                if text is not None:
+                    attributes["recipe_digest"] = _recipe_digest(entry.name, text)
             yield Observation(
                 kind="metadata_component",
                 key=path_key(entry.path),
                 namespace=FILE_NAMESPACE,
-                # Deliberately **not** the file's content or its hash: this
-                # identity says "this repository has a README", and a reworded
-                # README is not a change to that fact. Content-bearing knowledge
-                # is Build 2's `adopt ingest`, not Build 1's inventory.
+                # Deliberately **not** the file's content: this identity says
+                # "this repository has a README", and a reworded README is not a
+                # change to that fact. Content-bearing knowledge is Build 2's
+                # `adopt ingest`, not Build 1's inventory. The exception is the
+                # recipes, which carry a digest of their instructions (class
+                # docstring) -- a digest, so the content still never lands here.
                 #
                 # **And deliberately not the path**, which this carried until
                 # S1.2. The path is where the referent sits, and `Observation`'s
@@ -492,9 +532,78 @@ class FilesOfInterestExtractor:
                 # keeps the old URI resolvable is never written. An extractor
                 # that puts location in its attributes silently opts its
                 # referents out of the one mechanism protecting them.
-                attributes={"name": entry.name},
+                attributes=attributes,
                 span=_whole_file(entry),
             )
+
+
+def _sha256_of(value: object) -> str:
+    """`sha256:<hex>` over a canonical JSON rendering of `value`."""
+    rendered = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
+    return "sha256:" + hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
+def _instruction_lines(text: str) -> list[str]:
+    """The lines that do something: comments and blank lines gone, spacing collapsed.
+
+    A line whose first non-blank character is `#` is a comment in a Dockerfile,
+    a Makefile and a Procfile alike. A trailing `# note` after an instruction is
+    deliberately *kept*: in a Makefile recipe it reaches the shell, and in a
+    Dockerfile `#` is only a comment at the start of a line -- so stripping it
+    would discard real arguments to keep a cosmetic edit quiet, which is the
+    wrong side to err on for a recovery claim.
+    """
+    lines: list[str] = []
+    for raw in text.splitlines():
+        line = " ".join(raw.split())
+        if not line or line.startswith("#"):
+            continue
+        lines.append(line)
+    return lines
+
+
+def _recipe_digest(name: str, text: str) -> str:
+    """The digest of a build/deploy recipe's instructions. See `FilesOfInterestExtractor`."""
+    if name.startswith("docker-compose."):
+        try:
+            document = yaml.safe_load(text)
+        except yaml.YAMLError:
+            document = None
+        if isinstance(document, dict):
+            return _sha256_of(document)
+    return _sha256_of(_instruction_lines(text))
+
+
+def _ci_recipe_digest(jobs: object) -> str:
+    """The digest of what a workflow's jobs actually run. See `CiWorkflowExtractor`."""
+    if not isinstance(jobs, dict):
+        return _sha256_of({})
+    recipe: dict[str, Any] = {}
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            recipe[str(job_name)] = {}
+            continue
+        needs: Any = job.get("needs")
+        steps: list[dict[str, Any]] = []
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            entry: dict[str, Any] = {}
+            if isinstance(step.get("run"), str):
+                entry["run"] = " ".join(str(step["run"]).split())
+            if step.get("uses") is not None:
+                entry["uses"] = str(step["uses"])
+            if isinstance(step.get("with"), dict):
+                entry["with"] = step["with"]
+            steps.append(entry)
+        recipe[str(job_name)] = {
+            "needs": sorted(str(n) for n in needs) if isinstance(needs, list) else needs,
+            "runs-on": job.get("runs-on"),
+            "steps": steps,
+        }
+    return _sha256_of(recipe)
 
 
 def _flatten(data: dict[str, object], prefix: str = "") -> Iterator[tuple[str, object]]:

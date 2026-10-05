@@ -16,7 +16,7 @@ reshuffling underneath them.
 """
 
 import datetime as _dt
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final, Protocol
 
@@ -29,6 +29,7 @@ __all__ = [
     "CoverageEntry",
     "Gap",
     "OpenConflict",
+    "contradicted_revisions",
     "gap_key_for",
     "rank_conflicts",
     "rank_gaps",
@@ -175,8 +176,50 @@ class ConflictRow(Protocol):
     def disposition(self) -> str: ...
 
 
+def _applies(row: ConflictRow, superseded: Collection[str]) -> bool:
+    """Whether a conflict still contradicts a claim anybody is making.
+
+    **Open, and against a revision that is still its item's head.** A conflict
+    cites the confirmed revision a drifted probe contradicted. Once a human
+    re-confirms or rewrites that item -- `adopt review --resolve ...
+    confirm-current` appends a new `human_confirmed` revision -- the claim the
+    probe contradicted is no longer the claim being made, so the conflict stops
+    applying *by derivation*, with no write to the conflict row (which has no
+    update path, so the plane's escape-coverage denominator does not move). The
+    row stays, as the record of what was once observed.
+    """
+    if str(row.disposition) != OPEN_DISPOSITION:
+        return False
+    return row.intent_revision_id is None or row.intent_revision_id not in superseded
+
+
+def contradicted_revisions(
+    rows: Sequence[ConflictRow], *, superseded: Collection[str] = frozenset()
+) -> frozenset[str]:
+    """The knowledge revisions a drifted probe currently contradicts.
+
+    Args:
+        rows: Every `conflict` row read from the store.
+        superseded: Revision ids that are no longer their item's head.
+
+    `adopt ask` serves a revision in this set as STALE with
+    `contradicted_by_observation`, so the moment `adopt probe run` records a
+    contradiction every surface agrees about it -- until 2026-10-05 the pack
+    listed the runbook as "Contradicted by observation" while `ask` served it
+    KNOWN and fresh (independence transcript T3a).
+    """
+    return frozenset(
+        str(row.intent_revision_id)
+        for row in rows
+        if row.intent_revision_id is not None and _applies(row, superseded)
+    )
+
+
 def rank_conflicts(
-    rows: Sequence[ConflictRow], uris: Mapping[str, str]
+    rows: Sequence[ConflictRow],
+    uris: Mapping[str, str],
+    *,
+    superseded: Collection[str] = frozenset(),
 ) -> tuple[OpenConflict, ...]:
     """Open conflicts, oldest first, for the identities in `uris`.
 
@@ -186,6 +229,8 @@ def rank_conflicts(
             conflict whose identity is **not** in this mapping is dropped: it
             belongs to another system or environment, and a report that listed
             it would be reporting on a scope nobody asked about.
+        superseded: Revision ids that are no longer their item's head. A
+            conflict against one of them no longer applies (`_applies`).
 
     Returns:
         Only `open` conflicts. A dispositioned one has been decided and is no
@@ -205,7 +250,7 @@ def rank_conflicts(
             detected_at=row.detected_at,
         )
         for row in rows
-        if str(row.disposition) == OPEN_DISPOSITION and row.identity_id in uris
+        if _applies(row, superseded) and row.identity_id in uris
     ]
     return tuple(
         sorted(

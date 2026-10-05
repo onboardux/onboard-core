@@ -141,9 +141,18 @@ class MapReport:
 #: platform, lowcode and data are pulled by a real engagement, never pushed).
 #: `generic` runs for every archetype -- config, dependencies and jobs exist in
 #: every system, whatever it is built from.
+#:
+#: **`ai` includes `web`.** An AI system that people depend on is reached through
+#: an API: the agent sits behind an endpoint, and the endpoint is what a recovery
+#: runbook and an exit test name. With `ai` mapping only `generic` + `ai`, an
+#: AI service's routes were never extracted -- and once a human had mapped them
+#: with `--packs`, every later `refresh` or `ci-sense` without the same flag
+#: marked them exempt ("pack not selected"), so a route rename went undetected
+#: with exit 0. The web pack on a repository with no web framework simply finds
+#: nothing, which costs one walk and claims nothing.
 PACKS_FOR_ARCHETYPE: Mapping[Archetype, tuple[str, ...]] = {
     "web": ("generic", "web"),
-    "ai": ("generic", "ai"),
+    "ai": ("generic", "web", "ai"),
     "platform": ("generic",),
     "lowcode": ("generic",),
     "data": ("generic",),

@@ -397,3 +397,69 @@ def test_a_ci_workflow_reports_its_triggers_despite_yaml_treating_on_as_true(
     assert len(found) == 1
     assert found[0].attributes["triggers"] == ["pull_request", "push"]
     assert found[0].attributes["jobs"] == ["test"]
+
+
+def _attributes_of(tmp_path: Path, extractor: object, files: dict[str, str]) -> dict[str, object]:
+    """The attributes of the single referent `extractor` finds in `files`."""
+    found = list(extractor.extract(_tree(tmp_path, files)))  # type: ignore[attr-defined]
+    assert len(found) == 1
+    return dict(found[0].attributes)
+
+
+_WORKFLOW = (
+    "name: deploy\non: push\njobs:\n"
+    "  migrate:\n    runs-on: ubuntu-latest\n    steps:\n"
+    "      - name: Migrate\n        run: alembic upgrade head\n"
+)
+
+
+@pytest.mark.unit
+def test_a_changed_pipeline_step_changes_the_ci_referent_and_a_comment_does_not(
+    tmp_path: Path,
+) -> None:
+    """*Fails when* the CI job identity stops covering what its steps run, or
+    starts covering comments. *Matters because* a redeploy runbook describes the
+    pipeline's steps: with only job names and triggers in the digest, replacing
+    the migration command was classified render-only and the runbook stayed
+    fresh (independence transcript T4a) -- while letting a comment through would
+    stale every runbook on every cosmetic edit (H5). *No other instrument catches
+    it because* both failures produce a well-formed identity; only the digest
+    input decides whether `refresh` sees a change."""
+    extractor = generic.CiWorkflowExtractor()
+    base = _attributes_of(tmp_path / "a", extractor, {".github/workflows/d.yml": _WORKFLOW})
+    cosmetic = _WORKFLOW.replace("name: Migrate", "name: Run migrations") + "# rollout notes\n"
+    material = _WORKFLOW.replace("alembic upgrade head", "python manage.py migrate")
+
+    assert _attributes_of(tmp_path / "b", extractor, {".github/workflows/d.yml": cosmetic}) == base
+    assert (
+        _attributes_of(tmp_path / "c", extractor, {".github/workflows/d.yml": material})[
+            "recipe_digest"
+        ]
+        != base["recipe_digest"]
+    )
+
+
+@pytest.mark.unit
+def test_a_changed_dockerfile_changes_its_referent_and_a_reworded_readme_does_not(
+    tmp_path: Path,
+) -> None:
+    """*Fails when* a Dockerfile's instructions stop reaching its identity, when a
+    comment starts reaching it, or when a README gains content in its digest.
+    *Matters because* moving a service from `python:3.12-slim` to `node:20-alpine`
+    left the redeploy runbook fresh (independence transcript T4a), yet a
+    reworded README is no change to any fact a runbook relies on. *No other
+    instrument catches it because* each wrong outcome is still a valid identity."""
+    extractor = generic.FilesOfInterestExtractor()
+    docker = "FROM python:3.12-slim\nRUN pip install -r requirements.txt\n"
+    base = _attributes_of(tmp_path / "a", extractor, {"Dockerfile": docker})
+    cosmetic = "# build image\n\nFROM   python:3.12-slim\nRUN pip install -r requirements.txt\n"
+    material = "FROM node:20-alpine\nRUN npm ci\n"
+
+    assert _attributes_of(tmp_path / "b", extractor, {"Dockerfile": cosmetic}) == base
+    assert (
+        _attributes_of(tmp_path / "c", extractor, {"Dockerfile": material})["recipe_digest"]
+        != base["recipe_digest"]
+    )
+    assert _attributes_of(tmp_path / "d", extractor, {"README.md": "# Orders\nNew words.\n"}) == {
+        "name": "README.md"
+    }

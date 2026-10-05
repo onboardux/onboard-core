@@ -317,6 +317,7 @@ def recompute_coverage(
     environment_id: str | None = None,
     *,
     clock: Clock | None = None,
+    compare_cache: bool = True,
 ) -> CoverageResult:
     """Evaluate coverage for every identity in scope. **The authority.**
 
@@ -328,6 +329,13 @@ def recompute_coverage(
         environment_id: One environment, or `None` for every environment of the
             system.
         clock: Injected clock; tests pass `ManualClock`.
+        compare_cache: `False` only for the rebuild that immediately follows a
+            command's *own* change to coverage, after that command checked the
+            cache agreed before it wrote (`adopt_cli.commands._coverage_support`).
+            The comparison is then meaningless -- the command just moved the
+            truth on purpose -- and an alarm for it would be the false page that
+            teaches an operator to ignore the real one. Every other caller keeps
+            the default, because the comparison is the alarm.
 
     Returns:
         Per-identity coverage plus a `disagreements` list against
@@ -385,7 +393,7 @@ def recompute_coverage(
             recomputed=verdict.covered,
         )
         for verdict in verdicts
-        if cached[verdict.identity_id] != verdict.covered
+        if compare_cache and cached[verdict.identity_id] != verdict.covered
     )
 
     if disagreements:

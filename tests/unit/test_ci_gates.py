@@ -693,6 +693,10 @@ class TestWorkflowsAreRunnable:
             # discovered by the other party, months later, with no way left to
             # establish what was actually handed over.
             "handover-journey",
+            # The 2026-10-05 pivot's acceptance test: the independence-assurance
+            # claim on one system, in engagement order. Named here for the reason
+            # every journey is -- a journey with no job is a claim nothing runs.
+            "independence-journey",
             # **The other four journeys, added by T1.9 -- and their absence was
             # the reason `refresh-journey` did not exist.** `ask-journey`,
             # `pack-journey` and `probe-journey` were live in `ci.yml` and named

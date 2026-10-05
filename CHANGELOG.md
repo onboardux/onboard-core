@@ -13,7 +13,63 @@ it, a removed or retyped column is a rejected pull request.
 
 ## [Unreleased]
 
-Nothing yet.
+**Assurance correctness: the product never says "known", "fresh" or "passed"
+when that is not true.** Adopt is now sold as proof that a client could run a
+system without the people who built it, re-checked on every material change.
+A live run on 2026-10-05 found nine ways the shipped CLI could say otherwise; all
+nine are fixed here. No schema change (schema stays at 4), no new error code,
+no new constant, no new dependency, no change to the twenty-distribution set.
+
+### Fixed
+
+- **A Dockerfile or CI-step change now invalidates the runbooks bound to it.**
+  `generic.files_of_interest` (now version 3) gives Dockerfile, compose,
+  Makefile and Procfile identities a `recipe_digest` of their normalised
+  instructions; `generic.ci` (now version 2) adds each job's `needs`, `runs-on`
+  and steps. Moving a service from `python:3.12-slim` to `node:20-alpine`, or
+  changing the migration command, was classified render-only and left the
+  redeploy runbook fresh. Comment-only and whitespace edits still produce no
+  finding (H5). The version bump rebaselines on the first `refresh`.
+- **The `ai` archetype maps the API its agent is reached through** (`generic`,
+  `web`, `ai`). Endpoints of an AI service were never extracted, and after a
+  one-off `map --packs` every later `refresh`/`ci-sense` marked them exempt, so a
+  route rename went undetected with exit 0.
+- **An unanswerable question is no longer answered KNOWN.** A text-only match
+  must share a strict majority of the question's content words (never fewer
+  than two), not any two; three of four unanswerable questions on a sample
+  service had returned KNOWN. Plural/third-person `s` is folded so answerable
+  questions are not refused over grammatical number.
+- **A stale candidate is never hidden behind a fresh one.** Any stale verified
+  candidate makes the answer STALE, citing every verified candidate with its own
+  state; a relevant runbook that had just gone stale used to vanish behind a
+  weakly matching fresh one.
+- **A probe contradiction reaches `ask` at once.** A revision a drifted probe
+  contradicts is served STALE with `contradicted_by_observation` from the moment
+  `adopt probe run` records the conflict, matching the pack's "Contradicted by
+  observation" section. A conflict stops applying once its item is re-confirmed
+  or rewritten (its contradicted revision is no longer the head), in `ask`,
+  `gaps`, `pack` and `handover` alike -- derived, with no write to the conflict
+  row.
+- **`adopt ask --escalate` on a KNOWN answer reports it as wrong** (escalation
+  branch `bug_report`, citing the served revision). It used to exit 0, record
+  nothing and say nothing. Never prompted for; only the explicit flag disputes.
+- **A drill result can now go stale.** `adopt handover verify` records each
+  task's `uri`; `adopt handover status` leads with an **independence summary**
+  and judges every passed exit test `valid`, `invalidated` (with cause and
+  date), `degraded` or `unanchored`. `--strict` exits 4 when any is invalidated.
+  The drill record used to say "2 passed" forever after the referent behind a
+  passed task was renamed.
+- **No false coverage alarm after the product's own writes.** `ingest`, `bind`,
+  `answer`, review resolutions and `refresh` refresh `covered_cache` after they
+  change coverage -- only when it agreed beforehand, so a disagreement some
+  other writer caused still alarms and keeps its evidence.
+- **`adopt import --into` a missing directory creates it**, as the option always
+  promised, instead of dying with a raw `OperationalError` traceback.
+
+### Added
+
+- `independence-journey` CI job (named in `REQUIRED_JOBS`): the whole claim on
+  one AI-backed fixture, in engagement order.
 
 ## [0.4.1] — 2026-09-10
 

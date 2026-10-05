@@ -136,16 +136,21 @@ class TestNobodyChoseIsNotYes:
             is False
         )
 
-    def test_a_known_answer_never_escalates_however_the_flags_read(self) -> None:
-        """*Fails when* `--escalate` on a KNOWN answer opens a question.
-        *Matters because* the store answered: the row would be work nobody has,
-        and disagreeing with a KNOWN answer is a correction (Build 6's review
-        path), not an unanswered question. *No other instrument catches it
-        because* the flag was passed deliberately, so nothing looks wrong."""
+    def test_a_known_answer_is_disputed_only_by_the_flag_and_never_by_prompt(self) -> None:
+        """*Fails when* a KNOWN answer prompts for escalation, or when `--escalate`
+        on one is silently ignored. *Matters because* the first fills the queue
+        with questions the store answered; the second (the behaviour until
+        2026-10-05, independence transcript T2) left a receiving team served a
+        wrong answer with no way to tell the owner -- exit 0, nothing recorded.
+        *No other instrument catches it because* both failures exit 0."""
         assert may_escalate(_known()) is False
         assert (
-            consented(_known(), escalate_flag=True, interactive=True, confirm=_never_called)
+            consented(_known(), escalate_flag=False, interactive=True, confirm=_never_called)
             is False
+        )
+        assert (
+            consented(_known(), escalate_flag=True, interactive=False, confirm=_never_called)
+            is True
         )
 
 
@@ -215,11 +220,19 @@ class TestWhatTheRowCarries:
         assert writer.calls[0]["branch"] == "stale"
         assert writer.calls[0]["prior_revision_id"] == "krev_01AAA"
 
-    def test_a_known_answer_has_no_branch_to_map(self) -> None:
-        """The mapping is total over what may escalate and refuses the rest,
-        rather than falling through to a schema-valid `bug_report`."""
-        with pytest.raises(ValueError, match="not escalatable"):
-            escalation_branch(_known())
+    def test_a_disputed_known_answer_files_a_bug_report_against_what_was_served(self) -> None:
+        """*Fails when* a dispute lands as anything but `bug_report`, or loses the
+        revision the asker was served. *Matters because* whoever corrects it must
+        see exactly which answer was reported wrong; `ungrounded` would read as
+        "nobody knew", which is the opposite claim. *No other instrument catches
+        it because* every branch value is schema-valid."""
+        writer = _SpyWriter()
+
+        escalate(writer, _known(), system_id="sys_01AAA")
+
+        assert escalation_branch(_known()) == "bug_report"
+        assert writer.calls[0]["branch"] == "bug_report"
+        assert writer.calls[0]["prior_revision_id"] == _known().citations[0].revision_id
 
     def test_channel_is_never_supplied_by_this_layer(self) -> None:
         """*Fails when* `escalate` starts passing a channel. *Matters because*

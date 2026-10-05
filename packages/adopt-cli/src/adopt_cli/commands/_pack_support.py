@@ -203,9 +203,8 @@ def build_conflicts(handle: Any, *, uris: dict[str, str]) -> tuple[PackConflict,
     """
     from adopt_knowledge import rank_conflicts
 
-    from adopt_model import Conflict
+    from adopt_cli.commands._conflict_support import conflict_rows, superseded_revisions
 
-    rows = handle.export_records().table_rows("conflict", Conflict)
     return tuple(
         PackConflict(
             uri=conflict.uri,
@@ -213,7 +212,9 @@ def build_conflicts(handle: Any, *, uris: dict[str, str]) -> tuple[PackConflict,
             intent_revision_id=conflict.intent_revision_id,
             detected_at=conflict.detected_at,
         )
-        for conflict in rank_conflicts(rows, uris)
+        for conflict in rank_conflicts(
+            conflict_rows(handle), uris, superseded=superseded_revisions(handle)
+        )
     )
 
 

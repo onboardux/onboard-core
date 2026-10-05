@@ -162,10 +162,21 @@ def compose(resolved: Sequence[Resolved], verified_revision_ids: Set[str], quest
         question: Echoed into the answer so a payload is self-describing.
 
     Returns:
-        KNOWN if any resolved candidate is verified and carries no staleness
-        signal; otherwise STALE if any is verified and has gone out of date;
-        otherwise UNKNOWN. `_SERVES_AS_KNOWN` records which states are which and
-        why `unverified` freshness is not staleness.
+        KNOWN if at least one resolved candidate is verified and **every**
+        verified candidate carries no staleness signal; STALE if any verified
+        candidate has gone out of date; otherwise UNKNOWN. `_SERVES_AS_KNOWN`
+        records which states are which and why `unverified` freshness is not
+        staleness.
+
+    **A stale candidate is never dropped to make room for a fresh one.** Until
+    2026-10-05 a KNOWN answer cited only the fresh candidates, so a relevant
+    runbook that had just gone stale vanished behind a weakly matching fresh one
+    -- the answer read KNOWN, cited something else, and said nothing about the
+    stale evidence (independence transcript T3c). Now any stale verified
+    candidate makes the answer STALE: every verified candidate is cited in
+    retrieval order, each with its own `freshness_state`, and `cause` is the
+    rule that staled the first stale one. "Part of what we know about this may
+    be wrong" is the honest answer when it is true.
     """
     servable = [
         item for item in resolved if item.candidate.passage.revision_id in verified_revision_ids
@@ -176,12 +187,12 @@ def compose(resolved: Sequence[Resolved], verified_revision_ids: Set[str], quest
         if item.candidate.passage.revision_id not in verified_revision_ids
     )
 
-    fresh = [item for item in servable if item.freshness.state in _SERVES_AS_KNOWN]
-    if fresh:
+    stale = [item for item in servable if item.freshness.state not in _SERVES_AS_KNOWN]
+    if servable and not stale:
         return Answer(
             question=question,
             branch=KNOWN,
-            citations=tuple(_cite(item) for item in fresh),
+            citations=tuple(_cite(item) for item in servable),
             withheld=withheld,
         )
 
@@ -190,7 +201,7 @@ def compose(resolved: Sequence[Resolved], verified_revision_ids: Set[str], quest
             question=question,
             branch=STALE,
             citations=tuple(_cite(item) for item in servable),
-            cause=servable[0].freshness.deciding_rule,
+            cause=stale[0].freshness.deciding_rule,
             withheld=withheld,
         )
 

@@ -557,6 +557,22 @@ def test_the_drift_becomes_a_conflict_the_gaps_queue_and_the_pack_both_show(
     assert "Contradicted by observation" in document
     assert journey["uri"] in document
 
+    # ...and `ask` says the same thing, at once. Until 2026-10-05 the pack above
+    # listed the contradiction while `ask` served the same knowledge KNOWN and
+    # fresh until somebody ran `adopt refresh` (independence transcript T3a).
+    asked = _payload(
+        _run(
+            "ask",
+            f"what does {journey['uri']} do?",
+            "--store",
+            str(journey["store"]),
+            "--json",
+            cwd=journey["checkout"],
+        )
+    )
+    assert asked["branch"] == "stale", asked
+    assert asked["cause"] == "contradicted_by_observation"
+
 
 def test_rerunning_the_drift_does_not_file_the_conflict_twice(
     journey: dict[str, Any],

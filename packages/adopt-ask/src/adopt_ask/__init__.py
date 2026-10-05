@@ -59,6 +59,7 @@ from adopt_ask.escalate import (
     consented,
     escalate,
     escalation_branch,
+    may_dispute,
     may_escalate,
 )
 from adopt_ask.questionlog import QuestionLog, QuestionRecord, log_question, should_log
@@ -104,6 +105,7 @@ __all__ = [
     "is_loopback",
     "json_payload",
     "log_question",
+    "may_dispute",
     "may_escalate",
     "render",
     "retrieve",

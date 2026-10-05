@@ -169,24 +169,29 @@ def answer(
         identity_ids, unmatched = identities_to_bind(
             text, identity_views(handle, resolved_scope), explicit_uris=uri or []
         )
-        result = capture_answer(
-            _StoreAdapter(handle),
-            escalation_id=escalation_id,
-            scope=resolved_scope,
-            # The question is the title, so the captured row is findable by the
-            # words somebody actually asked. Falling back to the answer's first
-            # line would title it with whatever the human happened to type
-            # first, which is not what the next asker will search for.
-            title=title or existing.question or f"Answer to {escalation_id}",
-            body_md=text,
-            identity_ids=identity_ids,
-            # `DEFAULT_AUDIENCES` rather than a literal here: the default lives
-            # in `adopt_ask.capture` beside the rule it protects, so the CLI and
-            # the plane cannot drift into tagging captured answers differently.
-            audiences=tuple(audience) if audience else DEFAULT_AUDIENCES,
-            actor_id=actor,
-            unmatched_uris=unmatched,
-        )
+        from adopt_cli.commands._coverage_support import coverage_cache_kept_current
+
+        system_id = resolved_scope.system.id if resolved_scope.system is not None else None
+        with coverage_cache_kept_current(handle, system_id):
+            result = capture_answer(
+                _StoreAdapter(handle),
+                escalation_id=escalation_id,
+                scope=resolved_scope,
+                # The question is the title, so the captured row is findable by
+                # the words somebody actually asked. Falling back to the answer's
+                # first line would title it with whatever the human happened to
+                # type first, which is not what the next asker will search for.
+                title=title or existing.question or f"Answer to {escalation_id}",
+                body_md=text,
+                identity_ids=identity_ids,
+                # `DEFAULT_AUDIENCES` rather than a literal here: the default
+                # lives in `adopt_ask.capture` beside the rule it protects, so the
+                # CLI and the plane cannot drift into tagging captured answers
+                # differently.
+                audiences=tuple(audience) if audience else DEFAULT_AUDIENCES,
+                actor_id=actor,
+                unmatched_uris=unmatched,
+            )
 
         payload = {
             "escalation_id": result.escalation_id,

@@ -45,11 +45,13 @@ __all__ = [
     "ResolvedSystem",
     "close_handover",
     "current_owner_of",
+    "independence_of",
     "open_conflicts",
     "open_gaps",
     "open_questions",
     "opening_position",
     "records_for",
+    "referent_facts",
     "refuse_if_replica",
     "require_open",
     "resolve_system",
@@ -343,6 +345,91 @@ def open_conflicts(
     result = coverage if coverage is not None else _coverage(handle, system)
     uris = {row.identity_id: row.uri for row in result.identities}
     return build_conflicts(handle, uris=uris)
+
+
+def referent_facts(handle: Any, *, system: ResolvedSystem, uris: set[str]) -> dict[str, Any]:
+    """What is true now of each drilled referent -- the input `validity.assess` judges.
+
+    Every read is a report read (`table_rows`, or a coverage port method that
+    already exists), so independence status adds no query path to any realized
+    port. The URI is looked up **exactly**, not through `resolve_identity`'s alias
+    walk: following a moved identity to its successor would report the successor
+    `active` and hide the very move that invalidates the drill.
+    """
+    from adopt_handover.validity import ReferentFacts
+
+    from adopt_cli.commands._conflict_support import conflict_rows, superseded_revisions
+    from adopt_freshness import resolve_freshness
+    from adopt_model import Classification, Identity
+
+    if not uris:
+        return {}
+    records = handle.export_records()
+    by_uri = {row.uri: row for row in records.table_rows("identity", Identity) if row.uri in uris}
+    coverage = handle.coverage_records()
+    statuses = coverage.head_identity_statuses(system_id=system.system_id, environment_id=None)
+    wanted = {row.id for row in by_uri.values()}
+
+    changes: dict[str, list[tuple[str, _dt.datetime]]] = {}
+    for row in records.table_rows("classification", Classification):
+        if row.identity_id in wanted:
+            changes.setdefault(row.identity_id, []).append((str(row.class_), row.created_at))
+
+    binding_statuses = coverage.head_binding_statuses(
+        system_id=system.system_id, environment_id=None
+    )
+    verifications = coverage.head_item_verifications(system_id=system.system_id)
+    items_by_identity: dict[str, set[str]] = {}
+    for binding in coverage.bindings_in_scope(system_id=system.system_id, environment_id=None):
+        if (
+            binding.identity_id in wanted
+            and binding.is_load_bearing
+            and binding_statuses.get(binding.id) == "active"
+            and verifications.get(binding.item_id) == "verified"
+        ):
+            items_by_identity.setdefault(binding.identity_id, set()).add(binding.item_id)
+
+    superseded = superseded_revisions(handle)
+    contradicted_identities = {
+        row.identity_id
+        for row in conflict_rows(handle)
+        if str(row.disposition) == "open"
+        and row.intent_revision_id is not None
+        and row.intent_revision_id not in superseded
+    }
+
+    freshness_records = handle.freshness_records()
+    facts: dict[str, Any] = {}
+    for uri in uris:
+        identity = by_uri.get(uri)
+        if identity is None:
+            facts[uri] = ReferentFacts(found=False)
+            continue
+        stale_rule: str | None = None
+        degraded_rule: str | None = None
+        for item_id in sorted(items_by_identity.get(identity.id, ())):
+            resolution = resolve_freshness(freshness_records, item_id)
+            if resolution.state == "stale" and stale_rule is None:
+                stale_rule = resolution.deciding_rule
+            elif resolution.state == "observation_stale" and degraded_rule is None:
+                degraded_rule = resolution.deciding_rule
+        facts[uri] = ReferentFacts(
+            found=True,
+            status=statuses.get(identity.id),
+            changes=tuple(changes.get(identity.id, ())),
+            contradicted=identity.id in contradicted_identities,
+            stale_rule=stale_rule,
+            degraded_rule=degraded_rule,
+        )
+    return facts
+
+
+def independence_of(handle: Any, *, system: ResolvedSystem, record: Any) -> Any:
+    """Each passed exit test's validity now (`adopt_handover.validity`)."""
+    from adopt_handover.validity import assess, passed_tasks
+
+    uris = {task.uri for task in passed_tasks(record) if task.uri is not None}
+    return assess(record, referent_facts(handle, system=system, uris=uris))
 
 
 def open_questions(handle: Any, *, system_id: str) -> tuple[OpenQuestion, ...]:

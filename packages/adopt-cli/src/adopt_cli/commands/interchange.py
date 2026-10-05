@@ -87,6 +87,11 @@ def import_(
     json_output: JsonOption = False,
 ) -> None:
     """Verify a bundle whole, then restore it into an empty store."""
+    # `--into` is "created empty if absent", and that has to include its
+    # directory: the restore is often a beneficiary's first command on their own
+    # machine, and SQLite refuses a path whose parent does not exist with a raw
+    # `OperationalError` rather than anything an operator can act on.
+    into.parent.mkdir(parents=True, exist_ok=True)
     with open_named_store(into, migrate=True) as handle:
         manifest = apply_bundle(handle.import_records(), directory)
     emit(_payload(directory, manifest), as_json=json_output, title="adopt import")

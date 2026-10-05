@@ -55,6 +55,7 @@ __all__ = [
     "FRESHNESS_LEVELS",
     "RULE_BINDING_RETIRED",
     "RULE_BINDING_STALE",
+    "RULE_CONTRADICTED_BY_OBSERVATION",
     "RULE_ITEM_RETIRED",
     "RULE_ITEM_STATE",
     "RULE_SENSOR_MISSED_CADENCE",
@@ -88,6 +89,11 @@ RULE_BINDING_STALE: Final[str] = "load_bearing_binding_stale"
 RULE_SENSOR_UNHEALTHY: Final[str] = "sensor_health_override"
 RULE_SENSOR_MISSED_CADENCE: Final[str] = "sensor_missed_cadence"
 RULE_ITEM_STATE: Final[str] = "item_state"
+#: Not decided by `resolve_freshness`, which reads no conflict: applied by a
+#: caller holding an open, applicable probe conflict against the item's head
+#: revision (`adopt_knowledge.contradicted_revisions`). Declared here so the one
+#: vocabulary of deciding rules stays in one module.
+RULE_CONTRADICTED_BY_OBSERVATION: Final[str] = "contradicted_by_observation"
 
 _HEALTHY: Final[str] = "HEALTHY"
 _SENSOR_STALE: Final[str] = "STALE"

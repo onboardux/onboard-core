@@ -114,7 +114,7 @@ def answer_question(
     """
     from adopt_ask import compose, guard, json_payload, render, retrieve
     from adopt_ask.branch import Resolved
-    from adopt_ask.escalate import consented, escalate, may_escalate
+    from adopt_ask.escalate import consented, escalate, may_dispute, may_escalate
     from adopt_ask.questionlog import log_question, should_log
     from adopt_ask.synthesis import SYNTHESIS_PROMPT_REF, render_with
 
@@ -134,11 +134,22 @@ def answer_question(
             [candidate.passage.revision_id for candidate in candidates]
         )
 
+    from adopt_cli.commands._conflict_support import contradicted_now
+
     freshness_records = handle.freshness_records()
+    # A revision a drifted probe currently contradicts is served STALE, whatever
+    # its bindings say, so `ask` agrees with the pack's "Contradicted by
+    # observation" from the moment `adopt probe run` records the conflict rather
+    # than from the next `refresh` (independence transcript T3a).
+    contradicted = contradicted_now(handle) if candidates else frozenset()
     resolved = tuple(
         Resolved(
             candidate=candidate,
-            freshness=resolve_freshness(freshness_records, candidate.passage.item_id, clock=clock),
+            freshness=_unless_contradicted(
+                resolve_freshness(freshness_records, candidate.passage.item_id, clock=clock),
+                candidate.passage.revision_id,
+                contradicted,
+            ),
         )
         for candidate in candidates
     )
@@ -224,15 +235,45 @@ def answer_question(
         payload["escalation_id"] = escalation_id
         payload["routed_to_plane"] = routed_to_plane
         where = "on the control plane" if routed_to_plane else "in this store"
-        human += f"\n\nRecorded as open question {escalation_id} {where}."
+        if may_dispute(answer):
+            human += f"\n\nReported as wrong: open question {escalation_id} {where}."
+        else:
+            human += f"\n\nRecorded as open question {escalation_id} {where}."
         human += f'\nAnswer it with: adopt answer {escalation_id} --text "..."'
         if routed_to_plane:
             human += "\nIts owner has been routed a draft reply."
+    elif may_dispute(answer) and escalate_flag:
+        # Remote mode only: the plane composes its own answer, and opens no
+        # question for one it answered KNOWN. Said out loud, because the silent
+        # version of this (exit 0, nothing recorded) is the defect being fixed.
+        human += (
+            "\n\nThe control plane answered this KNOWN and recorded no dispute. "
+            "Tell the system's owner directly, or correct the cited item with `adopt review`."
+        )
     elif may_escalate(answer) and not escalate_flag:
         human += "\n\nRecord it as an open question with `--escalate`."
 
     return AskOutcome(
         payload=payload, human=human, branch=answer.branch, escalation_id=escalation_id
+    )
+
+
+def _unless_contradicted(resolution: Any, revision_id: str, contradicted: frozenset[str]) -> Any:
+    """`resolution`, or STALE with `contradicted_by_observation` if a probe disagrees.
+
+    Only a resolution that would otherwise serve as KNOWN is replaced: an item
+    already stale keeps the rule that staled it, because that rule is the more
+    specific statement of what went wrong.
+    """
+    from adopt_freshness import RULE_CONTRADICTED_BY_OBSERVATION, FreshnessResolution
+
+    if revision_id not in contradicted or resolution.state not in ("fresh", "unverified"):
+        return resolution
+    return FreshnessResolution(
+        item_id=resolution.item_id,
+        state="stale",
+        level="knowledge_revision",
+        deciding_rule=RULE_CONTRADICTED_BY_OBSERVATION,
     )
 
 

@@ -64,6 +64,14 @@ OutOption = Annotated[
 ]
 StoreOption = Annotated[Path | None, typer.Option("--store", help="Path to the store.")]
 JsonOption = Annotated[bool, typer.Option("--json", help="Machine-readable output.")]
+StrictOption = Annotated[
+    bool,
+    typer.Option(
+        "--strict",
+        help="Exit 4 when any exit test the receiving team passed has since been invalidated "
+        "by a change. For a pipeline that gates on independence; off by default.",
+    ),
+]
 AudienceOption = Annotated[
     list[str] | None,
     typer.Option("--audience", help="Emit this audience. Repeatable; defaults to all four."),
@@ -433,8 +441,18 @@ def verify(
                         question=question_for(task),
                     )
                     opened.append({"task_id": task.id, "escalation_id": escalation_id})
+                # `uri` is what lets the result go stale: it names the referent the
+                # task exercised, so a later change to it invalidates this pass
+                # (`adopt_handover.validity`). Until 2026-10-05 it was parsed and
+                # then dropped, and a passed task could never be invalidated.
                 outcomes.append(
-                    {"id": task.id, "outcome": task.outcome, "escalation_id": escalation_id}
+                    {
+                        "id": task.id,
+                        "outcome": task.outcome,
+                        "escalation_id": escalation_id,
+                        "uri": task.uri,
+                        "performed_by": task.performed_by,
+                    }
                 )
 
             detail = {
@@ -644,14 +662,21 @@ def close(
 def status(
     system: SystemOption = None,
     scope: ScopeOption = None,
+    strict: StrictOption = False,
     store: StoreOption = None,
     json_output: JsonOption = False,
 ) -> None:
-    """Every step recorded, what comes next, and what is still open.
+    """Every step recorded, what comes next, what is still open -- and what still holds.
 
     Reads only, and answers for a closed handover as readily as an open one --
     the record is what both parties keep, and it must still describe itself a
     year later.
+
+    **Independence leads.** Each exit test the receiving team passed is judged
+    against what has changed since (`adopt_handover.validity`): `valid`,
+    `invalidated` with its cause, `degraded`, or `unanchored` when the task named
+    no `uri`. A drill result that could not go stale would be a certificate;
+    this is the proof that says when it stopped being true.
     """
     from adopt_handover import VERB_FOR, record_payload
 
@@ -700,12 +725,18 @@ def status(
                     system_owner=owner,
                     written_by=writer_identity(),
                 ),
+                "independence": _independence_payload(
+                    support.independence_of(handle, system=resolved, record=record)
+                ),
             }
     finally:
         handle.close()
 
+    invalidated = bool(payload.get("independence", {}).get("invalidated"))
     if json_output:
         emit(payload, as_json=True)
+        if strict and invalidated:
+            raise typer.Exit(4)  # const-sync: ok -- exit code, not a version.
         return
     if payload["state"] == "none":
         typer.echo(
@@ -713,12 +744,22 @@ def status(
             "`adopt handover start --receiving-owner <group>` opens one."
         )
         return
+    independence = payload["independence"]
     lines = [
         f"Handover {payload['handover_id']} [{payload['state']}] {payload['scope']}",
-        f"  receiving owner: {payload['receiving_owner']}",
-        f"  owner now:       {payload['current_owner'] or 'nobody'}",
-        "",
+        f"  independence:    {independence['summary']}",
     ]
+    for task in independence["tasks"]:
+        if task["status"] != "valid":
+            since = f" since {task['since']}" if task["since"] else ""
+            lines.append(f"    {task['status']}: {task['task_id']} ({task['cause']}){since}")
+    lines.extend(
+        [
+            f"  receiving owner: {payload['receiving_owner']}",
+            f"  owner now:       {payload['current_owner'] or 'nobody'}",
+            "",
+        ]
+    )
     for step in payload["steps"]:
         mark = "x" if step["done"] else " "
         when = f"  {step['at']}" if step["at"] else ""
@@ -740,6 +781,38 @@ def status(
             "unreadable detail; the trail was edited outside this product."
         )
     typer.echo("\n".join(lines))
+    if strict and invalidated:
+        raise typer.Exit(4)  # const-sync: ok -- exit code, not a version.
+
+
+def _independence_payload(independence: Any) -> dict[str, Any]:
+    """The `independence` block of `adopt handover status --json`."""
+    from adopt_handover.validity import DEGRADED, INVALIDATED, UNANCHORED, VALID
+
+    from adopt_obs import format_timestamp
+
+    def stamp(value: Any) -> str | None:
+        return None if value is None else format_timestamp(value)
+
+    return {
+        "summary": independence.summary,
+        "passed": independence.passed,
+        "valid": independence.count(VALID),
+        "invalidated": independence.count(INVALIDATED),
+        "degraded": independence.count(DEGRADED),
+        "unanchored": independence.count(UNANCHORED),
+        "tasks": [
+            {
+                "task_id": task.task_id,
+                "uri": task.uri,
+                "status": task.status,
+                "cause": task.cause,
+                "verified_at": stamp(task.verified_at),
+                "since": stamp(task.since),
+            }
+            for task in independence.tasks
+        ],
+    }
 
 
 def _write_acceptance(

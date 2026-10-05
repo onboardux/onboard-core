@@ -147,17 +147,25 @@ def content_terms(question: str) -> tuple[str, ...]:
 def covers_question(passage: Passage, terms: Sequence[str]) -> bool:
     """Whether `passage` matches enough of `terms` to be about the question.
 
-    **The rule: two distinct content terms, or all of them when the question has
-    fewer than two.** One shared word is a coincidence; two is a topic. This is
-    what stands between "the store mentions your word somewhere" and "the store
-    answers your question", and without it BM25 will happily rank a runbook
-    first because it says "API" once.
+    **The rule: a strict majority of the question's distinct content terms, and
+    never fewer than two -- or all of them when the question has fewer than
+    two.** One shared word is a coincidence. Two shared words are a topic only
+    for a short question: *"how do I rotate the database password for the
+    support assistant?"* shares "support" and "assistant" with a runbook about
+    operating the assistant and says nothing about passwords, and the previous
+    two-word rule served that runbook as KNOWN (independence transcript T1,
+    2026-10-05: three of four unanswerable questions answered KNOWN). A question
+    is about what *most* of its words name, so most of them must appear.
 
-    Both literals are `1` and `2`, which the constants rule exempts, and
-    deliberately so rather than as a loophole: this is not a tunable awaiting
-    measurement. It is the smallest coverage that can distinguish a topic from a
-    coincidence, and a store where the right value is `5` is a store whose
-    questions should be narrowing scope instead.
+    This is what stands between "the store mentions your words somewhere" and
+    "the store answers your question". It errs toward UNKNOWN deliberately: an
+    assurance product that labels an irrelevant document an answer has made the
+    one claim it exists not to make, while an UNKNOWN costs one escalation.
+
+    The literals are `1` and `2` and a halving, which the constants rule exempts,
+    and deliberately so rather than as a loophole: a majority is not a tunable
+    awaiting measurement. A question that names a canonical URI is never held to
+    this rule at all (see `retrieve`), which is the precise way to ask.
 
     Matched against title, body and bound URIs together: a passage is about a
     question if any of the text it was indexed on is.
@@ -165,9 +173,27 @@ def covers_question(passage: Passage, terms: Sequence[str]) -> bool:
     if not terms:
         return False
     haystack = " ".join((passage.title, passage.body_md, *passage.identity_uris)).casefold()
-    words = set(_WORD.findall(haystack))
-    matched = sum(1 for term in terms if term in words)
-    return matched >= min(2, len(terms))
+    words = {_fold(word) for word in _WORD.findall(haystack)}
+    matched = sum(1 for term in terms if _fold(term) in words)
+    required = min(len(terms), max(2, len(terms) // 2 + 1))
+    return matched >= required
+
+
+def _fold(word: str) -> str:
+    """A trailing plural or third-person `s` removed, so `refunds` meets `refund`.
+
+    Applied on both sides of `covers_question` and nowhere else: the engine query
+    is still built from `content_terms` unchanged. Without it a majority rule
+    refuses genuinely answerable questions over grammatical number alone --
+    *"why does the approval step exist on refunds?"* against a passage titled
+    "Refund approvals" that says the step "exists". Deliberately no further
+    stemming: anything that maps different words together is a way for an
+    unrelated passage to reach a majority it did not earn.
+    """
+    # const-sync: ok -- a word length (keeps "bus" and "is" whole), not a tunable.
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
 
 
 #: How a candidate was found. Carried into the answer payload because "you named

@@ -60,6 +60,7 @@ def ingest(
     """Turn documents into knowledge, bound to the identities they refer to."""
     from adopt_knowledge import discover, run_ingest
 
+    from adopt_cli.commands._coverage_support import coverage_cache_kept_current
     from adopt_cli.commands._knowledge_support import (
         StoreUnitOfWork,
         bound_pairs,
@@ -73,19 +74,21 @@ def ingest(
     try:
         resolved = resolve_scope(handle, scope)
         documents = discover(paths, root=Path.cwd(), audience=audience)
-        report = run_ingest(
-            documents,
-            scope=resolved,
-            identities=identity_views(handle, resolved),
-            stored=stored_documents(handle, resolved),
-            knowledge=handle.items(),
-            bindings=handle.bindings(),
-            reviews=handle.governance(),
-            unit=StoreUnitOfWork(handle),
-            bound_pairs=bound_pairs(handle),
-            presented_revisions=presented_revisions(handle),
-            actor_id=actor,
-        )
+        system_id = resolved.system.id if resolved.system is not None else None
+        with coverage_cache_kept_current(handle, system_id):
+            report = run_ingest(
+                documents,
+                scope=resolved,
+                identities=identity_views(handle, resolved),
+                stored=stored_documents(handle, resolved),
+                knowledge=handle.items(),
+                bindings=handle.bindings(),
+                reviews=handle.governance(),
+                unit=StoreUnitOfWork(handle),
+                bound_pairs=bound_pairs(handle),
+                presented_revisions=presented_revisions(handle),
+                actor_id=actor,
+            )
         payload = _ingest_payload(report)
     finally:
         handle.close()
@@ -307,14 +310,17 @@ def bind(
                 hint="Run `adopt map` first. A moved identity's old URI still resolves, so "
                 "this is genuine absence rather than a stale address.",
             )
-        binding_id, revision_id = handle.bindings().bind(
-            item_id=knowledge_id,
-            identity_id=identity.id,
-            is_load_bearing=not not_load_bearing,
-            extractor=EXTRACTOR_MANUAL,
-            extractor_version=INGEST_EXTRACTOR_VERSION,
-            actor_id=actor,
-        )
+        from adopt_cli.commands._coverage_support import coverage_cache_kept_current
+
+        with coverage_cache_kept_current(handle, identity.system_id):
+            binding_id, revision_id = handle.bindings().bind(
+                item_id=knowledge_id,
+                identity_id=identity.id,
+                is_load_bearing=not not_load_bearing,
+                extractor=EXTRACTOR_MANUAL,
+                extractor_version=INGEST_EXTRACTOR_VERSION,
+                actor_id=actor,
+            )
         payload = {
             "binding": binding_id,
             "revision": revision_id,
@@ -499,12 +505,13 @@ def _conflicts_payload(handle: Any, result: Any, ranker: Any) -> list[dict[str, 
     coverage just evaluated, so a conflict recorded against another system cannot
     appear in this scope's queue.
     """
-    from adopt_model import Conflict
+    from adopt_cli.commands._conflict_support import conflict_rows, superseded_revisions
 
     if result is None:
         return []
     uris = {row.identity_id: row.uri for row in result.identities}
-    rows = handle.export_records().table_rows("conflict", Conflict)
+    rows = conflict_rows(handle)
+    superseded = superseded_revisions(handle)
     return [
         {
             "uri": conflict.uri,
@@ -516,7 +523,7 @@ def _conflicts_payload(handle: Any, result: Any, ranker: Any) -> list[dict[str, 
             # exists, and so a reader of the JSON never has to assume.
             "disposition": "open",
         }
-        for conflict in ranker(rows, uris)
+        for conflict in ranker(rows, uris, superseded=superseded)
     ]
 
 
@@ -684,68 +691,71 @@ def review(
             title="adopt review",
         )
         return
+    from adopt_cli.commands._coverage_support import coverage_cache_kept_current
+
     handle = open_configured_store(store, read_only=not writing, verb="review")
     try:
         resolved = resolve_scope(handle, scope)
         identities = identity_views(handle, resolved)
         pending = pending_items(handle, resolved, identities)
-
-        if resolve_item:
-            payload = _resolve_change(
-                handle,
-                pending,
-                known_review_items(handle),
-                review_item_id=resolve_item,
-                action=action or "",
-                to_uri=to_uri,
-                actor=actor,
-            )
-        elif not writing:
-            payload = _queue_payload(pending)
-            payload.update(_refresh_payload(refresh_population(handle, resolved, pending)))
-        else:
-            targets = _targets(
-                pending,
-                known_review_items(handle),
-                confirm_item,
-                reject_item,
-                edit_item,
-                confirm_batch,
-            )
-            resolutions: list[dict[str, Any]] = []
-            for item, action in targets:
-                if action == REJECT:
-                    outcome = reject_pending(item, reviews=handle.governance())
-                elif action == CORRECT:
-                    outcome = edit_pending(
-                        item,
-                        reviews=handle.governance(),
-                        knowledge=handle.items(),
-                        unit=StoreUnitOfWork(handle),
-                        body_md=body_md,
-                        source_ref=str(file),
-                        actor_id=actor,
-                    )
-                else:
-                    outcome = confirm_pending(
-                        item,
-                        reviews=handle.governance(),
-                        bindings=handle.bindings(),
-                        unit=StoreUnitOfWork(handle),
-                        knowledge=handle.items(),
-                        bound_pairs=bound_pairs(handle),
-                        actor_id=actor,
-                    )
-                resolutions.append(
-                    {
-                        "review_item": item.review_item_id,
-                        "action": outcome.resolution,
-                        "source": item.source,
-                        "bindings": len(outcome.bindings),
-                        "revision": outcome.revision_id,
-                    }
+        system_id = resolved.system.id if writing and resolved.system is not None else None
+        with coverage_cache_kept_current(handle, system_id):
+            if resolve_item:
+                payload = _resolve_change(
+                    handle,
+                    pending,
+                    known_review_items(handle),
+                    review_item_id=resolve_item,
+                    action=action or "",
+                    to_uri=to_uri,
+                    actor=actor,
                 )
-            payload = {"resolved": len(resolutions), "resolutions": resolutions}
+            elif not writing:
+                payload = _queue_payload(pending)
+                payload.update(_refresh_payload(refresh_population(handle, resolved, pending)))
+            else:
+                targets = _targets(
+                    pending,
+                    known_review_items(handle),
+                    confirm_item,
+                    reject_item,
+                    edit_item,
+                    confirm_batch,
+                )
+                resolutions: list[dict[str, Any]] = []
+                for item, action in targets:
+                    if action == REJECT:
+                        outcome = reject_pending(item, reviews=handle.governance())
+                    elif action == CORRECT:
+                        outcome = edit_pending(
+                            item,
+                            reviews=handle.governance(),
+                            knowledge=handle.items(),
+                            unit=StoreUnitOfWork(handle),
+                            body_md=body_md,
+                            source_ref=str(file),
+                            actor_id=actor,
+                        )
+                    else:
+                        outcome = confirm_pending(
+                            item,
+                            reviews=handle.governance(),
+                            bindings=handle.bindings(),
+                            unit=StoreUnitOfWork(handle),
+                            knowledge=handle.items(),
+                            bound_pairs=bound_pairs(handle),
+                            actor_id=actor,
+                        )
+                    resolutions.append(
+                        {
+                            "review_item": item.review_item_id,
+                            "action": outcome.resolution,
+                            "source": item.source,
+                            "bindings": len(outcome.bindings),
+                            "revision": outcome.revision_id,
+                        }
+                    )
+                payload = {"resolved": len(resolutions), "resolutions": resolutions}
     finally:
         handle.close()
 

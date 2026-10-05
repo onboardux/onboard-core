@@ -195,6 +195,23 @@ both parties six months later, which is precisely when the record gets read.
 the digest, and what was still open at the time. It answers from the store, and
 the client's `acceptance.json` answers the same thing from their copy.
 
+**And it says whether the drill still holds.** Its first line is the
+independence summary — *"2 of 3 exit tests performed without the builder still
+valid (1 invalidated)"* — and every passed task is judged against what changed
+since the round that passed it:
+
+| Status | Meaning |
+|---|---|
+| `valid` | Nothing that matters has changed on the referent the task exercised |
+| `invalidated` | The referent died or moved, a non-cosmetic change hit it (a changed Dockerfile or CI step counts), a probe contradicts knowledge bound to it, or the runbook bound to it went stale. The cause and date are named. |
+| `degraded` | Nothing says it broke, but the sensor that would say so has gone quiet |
+| `unanchored` | The task named no `uri`, so nothing can tell when it stopped being true |
+
+`adopt handover status --strict` exits `4` when any passed task is invalidated,
+so a pipeline can gate on independence. The re-verification is a second
+`verify` round on the affected tasks: the newer sitting supersedes the older one
+for that task, and both stay in the record.
+
 **The Answer and Freshness services keep running.** A handover transfers
 responsibility for a system; it does not stop the system changing. If the
 engagement continues in an operated form, the pack sections stay current through

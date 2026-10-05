@@ -57,7 +57,11 @@ def test_cuj6_export_import_export_is_byte_identical(
     source_store: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     first = tmp_path / "b1"
-    restored = tmp_path / "s2.db"
+    # Inside a directory that does not exist yet: `--into` promises "Created empty
+    # if absent", and until 2026-10-05 a missing parent made `import` die with a
+    # raw `OperationalError` traceback and no envelope (independence transcript
+    # T6) -- the beneficiary's first command on their own machine.
+    restored = tmp_path / "beneficiary" / "s2.db"
     second = tmp_path / "b2"
 
     code, exported = _run(["export", str(first), "--json"], capsys)

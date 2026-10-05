@@ -152,14 +152,19 @@ def refresh(
                 allow_network=allow_network,
             )
         )
-        outcome = record_refresh(
-            handle,
-            scope=resolved,
-            diff=diff,
-            batch_key=batch_key,
-            probes=probes,
-            actor_id=actor,
-        )
+        from adopt_cli.commands._coverage_support import coverage_cache_kept_current
+
+        with coverage_cache_kept_current(
+            handle, resolved.system.id if resolved.system is not None else None
+        ):
+            outcome = record_refresh(
+                handle,
+                scope=resolved,
+                diff=diff,
+                batch_key=batch_key,
+                probes=probes,
+                actor_id=actor,
+            )
         outcome.files_hashed = files_hashed
         # After the canonical write commits, never before: a snapshot saved
         # first would let a crash between the two leave the store claiming this

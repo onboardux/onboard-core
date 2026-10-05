@@ -21,7 +21,7 @@ from collections.abc import Callable
 
 import pytest
 from adopt_handover import PackConflict, assemble, render
-from adopt_knowledge import rank_conflicts
+from adopt_knowledge import contradicted_revisions, rank_conflicts
 from adopt_probe import ConflictIntent, conflicting_intents
 
 from adopt_model import (
@@ -327,6 +327,15 @@ def test_the_gaps_report_lists_open_conflicts_scoped_to_the_identities_it_evalua
 
     # The same row, with the identity out of scope: dropped, not renamed.
     assert rank_conflicts(rows, {}) == ()
+
+    # Re-confirmed after the drift: the contradicted revision is no longer the
+    # item's head, so the conflict no longer applies anywhere -- not in this
+    # queue, not in `ask` (2026-10-05) -- while the row itself stays as the
+    # record. Without this, a contradiction once recorded would stale its item
+    # forever, since a conflict has no update path.
+    assert contradicted_revisions(rows) == {revision_id}
+    assert rank_conflicts(rows, {identity_id: URI}, superseded={revision_id}) == ()
+    assert contradicted_revisions(rows, superseded={revision_id}) == frozenset()
 
 
 def test_a_dispositioned_conflict_leaves_the_queue_but_not_the_store(

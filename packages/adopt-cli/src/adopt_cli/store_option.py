@@ -101,6 +101,17 @@ def open_configured_store(
             **capture** paths are refused separately, where they write canon.
     """
     path = configured_store_path(override)
+    if not path.exists():
+        # The library's own hint names `migrate=True`, an argument no operator can
+        # pass. Missing here means `init` has not run, or the command ran from
+        # somewhere other than the repository -- say which, and how to tell.
+        raise AdoptError(
+            ErrorCode.SCHEMA_MIGRATION_PENDING,
+            message=f"no store exists at {path}",
+            hint="Run `adopt init` in the repository first, or run this from the directory "
+            "that holds `.adopt/`, or name the store with --store or ADOPT_STORE_PATH. "
+            "`adopt doctor` shows which store path resolved and where it came from.",
+        )
     if not read_only and non_canon_reason is None:
         refuse_write_to_replica(path, verb=verb)
     return open_store(path, read_only=read_only)

@@ -33,6 +33,7 @@ second thing they never looked at.
 | **suggestion** (`ingest:`) | "is this document about this identity?" | creates the binding rows |
 | **candidate** (`harvest:`) | "is this commit a real decision worth keeping?" | appends a `verified` revision |
 | **draft** (`draft:`) | "is this drafted section true of the system?" | appends a `verified` revision |
+| **unverified document** (`ingest-unverified:`) | "is this document, which nobody has vouched for, true?" | appends a `verified` revision |
 
 A candidate already **has** its bindings -- its commit's files are structural
 evidence and bound at harvest (plan D4) -- so confirming one adds no link. A
@@ -65,7 +66,11 @@ from collections.abc import Container, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
-from adopt_knowledge.ingest import EXTRACTOR_NAME_CONFIRMED, INGEST_EXTRACTOR_VERSION
+from adopt_knowledge.ingest import (
+    EXTRACTOR_NAME_CONFIRMED,
+    INGEST_EXTRACTOR_VERSION,
+    UNVERIFIED_BATCH_PREFIX,
+)
 from adopt_knowledge.matchers import IdentityView, Match, name_matches
 from adopt_knowledge.ports import BindingWriter, KnowledgeWriter, ReviewWriter, UnitOfWork
 from adopt_model._enums import AuthorityClass, ReviewResolution, SourceType, Verification
@@ -76,6 +81,7 @@ __all__ = [
     "SOURCE_DRAFT",
     "SOURCE_HARVEST",
     "SOURCE_INGEST",
+    "SOURCE_INGEST_UNVERIFIED",
     "SOURCE_REFRESH",
     "SOURCE_SENSE",
     "ChangeCause",
@@ -117,13 +123,20 @@ SOURCE_REFRESH: Final[str] = "refresh"
 #: `SOURCE_DRAFT`'s reason twice over: the string is this queue's vocabulary, and
 #: the producer is in another repository entirely.
 SOURCE_SENSE: Final[str] = "sense"
+#: `adopt ingest --unverified` -- documents nobody has vouched for, typically
+#: text a coding agent wrote. Imported from the producer rather than restated,
+#: because `ingest` has no import back into this module and one spelling is
+#: better than two that agree.
+SOURCE_INGEST_UNVERIFIED: Final[str] = UNVERIFIED_BATCH_PREFIX
 
 #: Populations whose confirmation **appends a verified revision** rather than
 #: creating bindings. Membership, not a branch: a draft and a harvest candidate
 #: are the same shape to a reviewer -- unverified text already bound to what it
 #: is about -- so they take one code path, and the next population that fits
-#: joins by being added here.
-_APPENDS_REVISION: Final[frozenset[str]] = frozenset({SOURCE_HARVEST, SOURCE_DRAFT})
+#: joins by being added here. An unverified document did exactly that.
+_APPENDS_REVISION: Final[frozenset[str]] = frozenset(
+    {SOURCE_HARVEST, SOURCE_DRAFT, SOURCE_INGEST_UNVERIFIED}
+)
 
 #: Populations whose subject is **a change to the system** rather than a proposal
 #: about knowledge, and which therefore take the three change actions in

@@ -444,7 +444,7 @@ def open_store(
         raise AdoptError(
             ErrorCode.SCHEMA_MIGRATION_PENDING,
             message=f"no store exists at {store_path}",
-            hint="Pass migrate=True to create schema version 3.",
+            hint=f"Pass migrate=True to create schema version {SCHEMA_VERSION}.",
         )
 
     if read_only:

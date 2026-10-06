@@ -7,7 +7,7 @@ three answers:
 | Action | What the reviewer is saying | The store-state consequence |
 |---|---|---|
 | **retire** | "this note is obsolete" | a terminal knowledge revision; the item resolves `retired` |
-| **rebind** | "it followed the referent that replaced it" | the old link appends `moved`; a new binding to the successor |
+| **rebind** | "it followed the referent that replaced it" | the replaced link appends `moved`; a new binding to the successor; links to referents that merely changed are re-affirmed |
 | **confirm-current** | "it is still true as written" | a `human_confirmed`/`verified` revision; the staled links go `fresh` |
 
 **The resolution enum is the disposition; the store state is the record.**
@@ -140,9 +140,10 @@ class ChangeOutcome:
     superseded_bindings: tuple[str, ...] = ()
     new_binding_id: str | None = None
     freshened_bindings: tuple[str, ...] = ()
-    #: Referents whose staleness this action could not clear, by URI. Populated
-    #: only by `confirm-current`, and reported rather than suppressed: an item
-    #: that stays STALE after a confirmation needs the reason on screen.
+    #: Referents whose staleness this action could not clear, by URI: the dead
+    #: or moved ones a `confirm-current` cannot revive, and the live ones a
+    #: `rebind` given no freshener left alone. Reported rather than suppressed:
+    #: an item that stays STALE after a resolution needs the reason on screen.
     still_stale: tuple[str, ...] = ()
 
 
@@ -209,14 +210,29 @@ def rebind_item(
     target_identity_id: str,
     target_uri: str,
     actor_id: str | None = None,
+    freshener: BindingFreshener | None = None,
 ) -> ChangeOutcome:
     """Re-point the item at the referent that replaced the changed one.
 
     Two writes, in this order and for this reason: every load-bearing link to
-    the changed referent appends `moved` -- *replaced*, not withdrawn -- and one
+    the replaced referent appends `moved` -- *replaced*, not withdrawn -- and one
     new binding is created to the target. Superseding first means there is never
     an instant in which the item is anchored to two live links, which is what a
     coverage recount happening between the writes would otherwise see.
+
+    **Which links are "replaced" when an item has more than one cause.** A
+    refresh coalesces an item's causes into one entry, so a note bound to a
+    renamed route and to a settings key whose type changed arrives as one item
+    with a DEAD and a SEMANTICS cause -- and one `--to`. Only the dead or moved
+    links are replaced: superseding the other would mark a link to a referent
+    that still exists as `moved`, drop the note's binding to it, and leave no
+    way back through `bind`. Those live links are **re-affirmed** instead, when
+    a `freshener` is given, because the entry has exactly one resolution: the
+    reviewer saw every cause on it and kept the note in service, and a link left
+    stale here could never be cleared again. Without a freshener they are left
+    as they are and named in `still_stale`. An item whose causes are *all*
+    semantic keeps the old meaning: the reviewer named a different referent, so
+    its links are the ones replaced.
 
     The new binding is **load-bearing**, on `review.confirm`'s precedent: only
     load-bearing links are superseded, and a human who named the successor has
@@ -231,9 +247,10 @@ def rebind_item(
             to both.
     """
     _require_change_item(item, ACTION_REBIND)
-    superseded_links = tuple(
-        link for link in affected if link.is_load_bearing and link.item_id == item.item_id
-    )
+    mine = tuple(link for link in affected if link.is_load_bearing and link.item_id == item.item_id)
+    replaced = tuple(link for link in mine if link.is_source_ruled)
+    superseded_links = replaced or mine
+    live = tuple(link for link in mine if link not in superseded_links)
     if not superseded_links:
         raise AdoptError(
             ErrorCode.BIND_TARGET_NOT_FOUND,
@@ -261,18 +278,25 @@ def rebind_item(
             actor_id=actor_id,
         )
 
+        freshened: tuple[str, ...] = ()
+        if live and freshener is not None:
+            freshened = freshener.freshen_bindings([link.binding_id for link in live])
+
     _log.info(
         "change.resolved",
         action=ACTION_REBIND,
         review_item=item.review_item_id,
         batch=item.review_batch_id,
         superseded=len(superseded),
+        freshened=len(freshened),
     )
     return ChangeOutcome(
         action=ACTION_REBIND,
         resolution=CORRECTED,
         superseded_bindings=tuple(superseded),
         new_binding_id=new_binding_id,
+        freshened_bindings=freshened,
+        still_stale=() if freshened else tuple(sorted({link.identity_uri for link in live})),
     )
 
 

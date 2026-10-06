@@ -14,6 +14,9 @@ the `ChangeOutcome`, except where the outcome is the *only* record of something
 -- `still_stale`, which exists to be printed.
 """
 
+import json
+from pathlib import Path
+
 import pytest
 from adopt_knowledge import (
     ACTION_CONFIRM_CURRENT,
@@ -26,6 +29,7 @@ from adopt_knowledge import (
 )
 
 from adopt_cli.commands._knowledge_support import StoreUnitOfWork
+from adopt_cli.commands.knowledge import bind
 from adopt_freshness import RULE_BINDING_STALE, RULE_SOURCE_IDENTITY_DEAD, resolve_freshness
 from adopt_model import BindingRevision, KnowledgeRevision
 from adopt_obs import AdoptError, ErrorCode, ManualClock
@@ -176,6 +180,123 @@ class TestRebind:
         served = resolve_freshness(s4_store.freshness_records(), pending.item_id, clock=s4_clock)
         assert served.deciding_rule != RULE_SOURCE_IDENTITY_DEAD
         assert served.state != "stale"
+
+    @pytest.mark.parametrize("with_freshener", [True, False], ids=["cli", "no-freshener"])
+    def test_a_mixed_item_replaces_only_the_dead_link(
+        self,
+        s4_store: SqliteStoreHandle,
+        s4_scope: Scope,
+        s4_clock: ManualClock,
+        with_freshener: bool,
+    ) -> None:
+        """*Fails when* a rebind supersedes a link to a referent that still
+        exists. *Matters because* refresh coalesces an item's causes, so a note
+        bound to a renamed route and to a settings key whose type changed is one
+        entry with one `--to`: superseding both marked the live key's link
+        `moved`, dropped the note's binding to it, and `bind` could not put it
+        back -- measured on a client repository. *No other instrument catches
+        it because* every write is valid: a `moved` revision and a new binding
+        are exactly what a rebind writes, just to one link too many."""
+        pending, route_link, route_id = _queued(s4_store, s4_scope, key="POST /cancel")
+        key = s4_store.identities().observe(
+            scope=s4_scope, kind="config_key", namespace="env", key="THRESHOLD"
+        )
+        key_binding, _ = s4_store.bindings().create(
+            item_id=pending.item_id,
+            identity_id=key.id,
+            is_load_bearing=True,
+            revision=BindingRevisionDraft(status="active"),
+        )
+        s4_store.changes().stale_load_bearing_bindings(
+            s4_store.bindings().for_identity(key.id), identity_ids=[key.id]
+        )
+        s4_store.identities().retire(identity_id=route_id, reason="renamed")
+        successor = s4_store.identities().observe(
+            scope=s4_scope, kind="endpoint", namespace=None, key="POST /cancellation"
+        )
+        dead = ChangedBinding(
+            binding_id=route_link.binding_id,
+            item_id=pending.item_id,
+            identity_id=route_id,
+            identity_uri=route_link.identity_uri,
+            impact_class=_DEAD,
+            is_load_bearing=True,
+        )
+        live = ChangedBinding(
+            binding_id=key_binding,
+            item_id=pending.item_id,
+            identity_id=key.id,
+            identity_uri=key.uri,
+            impact_class=_SEMANTICS,
+            is_load_bearing=True,
+        )
+
+        outcome = rebind_item(
+            pending,
+            reviews=s4_store.governance(),
+            unit=StoreUnitOfWork(s4_store),
+            bindings=s4_store.bindings(),
+            affected=[dead, live],
+            target_identity_id=successor.id,
+            target_uri=successor.uri,
+            # Omitted rather than `None` without one: that is the plane's call.
+            **({"freshener": s4_store.changes()} if with_freshener else {}),
+        )
+
+        assert outcome.superseded_bindings == (route_link.binding_id,)
+        heads = s4_store.freshness_records().head_binding_statuses(
+            [route_link.binding_id, key_binding]
+        )
+        assert heads == {route_link.binding_id: "moved", key_binding: "active"}
+        after = resolve_freshness(s4_store.freshness_records(), pending.item_id, clock=s4_clock)
+        if with_freshener:
+            # One resolution per entry: the reviewer kept the note with every
+            # cause in view, so the live link is re-affirmed, not left stale
+            # with nothing that could ever clear it.
+            assert outcome.freshened_bindings == (key_binding,)
+            assert after.state != "stale"
+        else:
+            assert outcome.still_stale == (key.uri,)
+            assert after.deciding_rule == RULE_BINDING_STALE
+
+    def test_bind_revives_a_superseded_pair_and_still_refuses_a_live_one(
+        self,
+        s4_store: SqliteStoreHandle,
+        s4_scope: Scope,
+        s4_clock: ManualClock,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """*Fails when* `adopt bind` refuses a pair whose link was superseded.
+        *Matters because* one item and one identity have one binding for ever,
+        so without this a link a rebind or a retirement set aside could never
+        be restored, and the refusal (`REVISION_CHAIN_FORK`, exit 1, integrity)
+        told an agent to stop trusting the store. *No other instrument catches
+        it because* refusing a live duplicate is correct, and it is the same
+        code path."""
+        pending, link, _ = _queued(s4_store, s4_scope)
+        s4_store.changes().stale_load_bearing_bindings(
+            s4_store.bindings().for_identity(link.identity_id), identity_ids=[link.identity_id]
+        )
+        s4_store.bindings().supersede(binding_id=link.binding_id)
+
+        bind(pending.item_id, link.identity_uri, store=tmp_path / "store.db", json_output=True)
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["reactivated"] is True
+        assert payload["binding"] == link.binding_id
+        heads = s4_store.freshness_records().head_binding_statuses([link.binding_id])
+        assert heads == {link.binding_id: "active"}
+        revived = s4_store.bindings().get(link.binding_id)
+        assert revived is not None
+        # A new assertion, not the verdict the link was set aside with.
+        assert revived.freshness_state == "unverified"
+        after = resolve_freshness(s4_store.freshness_records(), pending.item_id, clock=s4_clock)
+        assert after.state != "stale"
+
+        with pytest.raises(AdoptError) as raised:
+            bind(pending.item_id, link.identity_uri, store=tmp_path / "store.db", json_output=True)
+        assert raised.value.code is ErrorCode.REVISION_CHAIN_FORK
 
     def test_rebinding_an_item_with_no_changed_link_is_refused(
         self, s4_store: SqliteStoreHandle, s4_scope: Scope

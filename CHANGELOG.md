@@ -13,7 +13,28 @@ it, a removed or retyped column is a rejected pull request.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The `adopt` agent plugin** (`plugins/adopt/`): seven skills that drive the
+  published CLI on a client engagement — `adopt-cli` (preflight, the JSON and
+  exit-code contract, the human gates), `adopt-onboard`, `adopt-capture`,
+  `adopt-probes`, `adopt-watch`, `adopt-handover` and `adopt-connect` — with a
+  preflight check, a runner that refuses output inside the mapped tree, and
+  command tables generated from the CLI. Install at **user scope**:
+  `npx skills add onboardux/onboard-core -g`, or in Claude Code
+  `/plugin marketplace add onboardux/onboard-core` then
+  `/plugin install adopt@onboardux`. The plugin's floor is `0.4.4`.
+  `.claude-plugin/marketplace.json` also fixes what the skills CLI found here
+  before: with no manifest it scanned the tree and offered the CLI's four
+  runtime prompts (`ask-001`, `detect-001`, `draft-001`, `probe-001`) as
+  installable skills.
+- **`skills-sync`**, a CI job: `scripts/gen_skills.py --check` fails when a
+  skill names a command or flag the CLI lacks, when a generated table is stale,
+  or when the plugin's version is not the CLI's; `--self-test` plants each kind
+  of drift. `mypy --strict` now covers `plugins/`.
+
+The plugin is served from this repository's default branch and is not one of
+the twenty published distributions; no wheel changes.
 
 ## [0.4.4] — 2026-10-06
 

@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Final
 
-from adopt_const import STORE_BUSY_TIMEOUT_MS
+from adopt_const import SCHEMA_VERSION, STORE_BUSY_TIMEOUT_MS
 from adopt_obs import AdoptError, ErrorCode
 
 __all__ = [
@@ -58,7 +58,7 @@ def connect(path: Path, *, read_only: bool = False) -> sqlite3.Connection:
             ErrorCode.SCHEMA_MIGRATION_PENDING,
             message=f"no store exists at {path}",
             hint="A read-only open never creates a store. Open it for writing with "
-            "`migrate=True` to create schema version 3.",
+            f"`migrate=True` to create schema version {SCHEMA_VERSION}.",
         )
 
     connection = sqlite3.connect(

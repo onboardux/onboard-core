@@ -161,6 +161,27 @@ def test_a_missing_parameter_exits_two_through_main(capsys: pytest.CaptureFixtur
     assert "--scope" in captured.err
 
 
+@pytest.mark.unit
+def test_a_command_with_no_store_tells_the_operator_what_to_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """*Fails when* a command run before `adopt init` -- or from outside the
+    repository -- answers with the store library's hint. *Matters because* that
+    hint said "Pass migrate=True to create schema version 3": a Python argument no
+    operator can pass, naming a schema two versions gone, on the first error a new
+    FDE is likely to meet. *No other instrument catches it because* every journey
+    runs `init` first, and the refusal's code and exit were already correct."""
+    code = main(["gaps", "--store", str(tmp_path / "absent" / "store.db"), "--json"])
+
+    captured = capsys.readouterr()
+    assert code == ExitCode.USAGE_ERROR
+    assert captured.out == ""
+    assert '"code": "SCHEMA_MIGRATION_PENDING"' in captured.err
+    assert "adopt init" in captured.err
+    assert "migrate=True" not in captured.err
+    assert not (tmp_path / "absent").exists(), "a refusal must not create the directory"
+
+
 def _run(*argv: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(ENTRY_POINT), *argv],
